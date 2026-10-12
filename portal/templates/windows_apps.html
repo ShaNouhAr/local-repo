@@ -106,7 +106,7 @@
     var out = document.getElementById('wincmd');
     function update() {
       var picked = Array.prototype.map.call(document.querySelectorAll('.pick:checked'), function (c) { return c.value; });
-      out.value = picked.length ? "irm {{ public_url }}/win/i/" + picked.join(',') + " | iex" : 'Cochez au moins un logiciel';
+      out.value = picked.length ? "irm '{{ public_url }}/win/i/" + picked.join(',') + "' | iex" : 'Cochez au moins un logiciel';
     }
     document.querySelectorAll('.pick').forEach(function (c) { c.addEventListener('change', update); });
   })();

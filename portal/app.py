@@ -634,7 +634,7 @@ def windows_apps_delete(slug):
 
 @app.route("/win/i/<slugs>")
 def windows_install_script(slugs):
-    """Script PowerShell d'installation : irm http://hôte:port/win/i/app1,app2 | iex"""
+    """Script PowerShell d'installation : irm 'http://hôte:port/win/i/app1,app2' | iex"""
     wanted = [s for s in slugs.lower().split(",") if s]
     if not wanted or not all(SLUG_RE.match(s) for s in wanted):
         abort(404)

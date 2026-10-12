@@ -61,9 +61,10 @@ Dans le portail, **Logiciels Windows** → ajouter un logiciel par URL (téléch
 Cochez ensuite un ou plusieurs logiciels et copiez la commande, à lancer dans un PowerShell **administrateur** :
 
 ```powershell
-irm http://<ip>:8088/win/i/7-zip,vlc | iex
+irm 'http://<ip>:8088/win/i/7-zip,vlc' | iex
 ```
 
+Les guillemets sont nécessaires : sans eux, PowerShell lit la virgule comme un tableau.
 Le script télécharge depuis le serveur, vérifie le SHA256 et installe en silence :
 
 | Type | Commande lancée | Arguments par défaut |
