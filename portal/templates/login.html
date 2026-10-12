@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="login">
+  <h1>local-repo</h1>
+  <form method="post" class="card">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Mot de passe
+      <input type="password" name="password" autofocus required>
+    </label>
+    <button>Connexion</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Paquets Linux</h1>
+
+<div class="card">
+  <h2>Configurer un poste Debian / Ubuntu</h2>
+  <p class="muted">Ajoute le dépôt local et fait passer apt par le cache apt-cacher-ng.</p>
+  <div class="cmd"><input id="setup" readonly value="curl -fsSL {{ public_url }}/linux/setup.sh | sudo sh"><button data-copy="setup">Copier</button></div>
+  <p class="muted small">Dépôt local seulement : ajouter <code>-s -- --no-proxy</code> après <code>sh</code>. Annuler : <code>-s -- --remove</code>.</p>
+</div>
+
+<div class="grid two">
+  <div class="card">
+    <h2>Cache apt-cacher-ng <span class="dot {{ 'on' if acng else 'off' }}"></span></h2>
+    <p class="big">{{ stats.get('acng', 0)|human }}</p>
+    <p class="muted">Proxy <code>http://{{ host }}:{{ acng_port }}</code> ·
+      <a href="http://{{ host }}:{{ acng_port }}/acng-report.html" target="_blank">rapport détaillé</a></p>
+  </div>
+  <div class="card">
+    <h2>Ajouter des paquets .deb</h2>
+    <form method="post" action="{{ url_for('linux_upload') }}" enctype="multipart/form-data" class="stack">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="file" name="files" accept=".deb" multiple>
+      <input type="url" name="url" placeholder="ou URL d'un fichier .deb">
+      <button>Ajouter</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Dépôt local <span class="muted">({{ debs|length }})</span></h2>
+  {% if debs %}
+  <table>
+    <thead><tr><th>Paquet</th><th>Version</th><th>Arch.</th><th>Taille</th><th></th></tr></thead>
+    <tbody>
+    {% for d in debs %}
+      <tr>
+        <td><strong>{{ d.package }}</strong></td>
+        <td>{{ d.version|replace('%3a', ':') }}</td>
+        <td>{{ d.arch }}</td>
+        <td>{{ d.size|human }}</td>
+        <td class="actions">
+          <a href="{{ public_url }}/apt/pool/{{ d.file }}">Télécharger</a>
+          <form method="post" action="{{ url_for('linux_delete') }}" onsubmit='return confirm("Supprimer " + {{ d.package|tojson }} + " ?")'>
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="file" value="{{ d.file }}">
+            <button class="link danger">Supprimer</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">Aucun paquet pour l'instant. Une fois ajoutés, ils s'installent avec <code>sudo apt install &lt;paquet&gt;</code> sur les postes configurés.</p>
+  {% endif %}
+</div>
+{% endblock %}

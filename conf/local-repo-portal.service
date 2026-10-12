@@ -1,0 +1,28 @@
+[Unit]
+Description=local-repo - portail web
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=localrepo
+Group=localrepo
+SupplementaryGroups=adm
+Environment=LR_DATA=@DATA@
+Environment=LR_STATE=/var/lib/local-repo
+Environment=LR_PUBLIC_URL=@PUBLIC_URL@
+Environment=LR_HOST=@HOST@
+Environment=LR_ACNG_PORT=3142
+Environment=TMPDIR=@DATA@/.tmp
+WorkingDirectory=/opt/local-repo/portal
+ExecStart=/usr/bin/gunicorn --workers 1 --threads 8 --timeout 120 --bind 127.0.0.1:@APP_PORT@ app:app
+Restart=always
+RestartSec=3
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=@DATA@ /var/lib/local-repo
+
+[Install]
+WantedBy=multi-user.target

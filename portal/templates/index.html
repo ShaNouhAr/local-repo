@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Tableau de bord</h1>
+<div class="grid">
+  <a class="card tile" href="{{ url_for('linux') }}">
+    <h2>Paquets Linux <span class="dot {{ 'on' if acng else 'off' }}"></span></h2>
+    <p class="big">{{ stats.get('acng', 0)|human }}</p>
+    <p class="muted">en cache apt-cacher-ng · {{ debs }} paquet(s) local(aux)</p>
+  </a>
+  <a class="card tile" href="{{ url_for('windows_update') }}">
+    <h2>Windows Update <span class="dot {{ 'on' if nginx else 'off' }}"></span></h2>
+    <p class="big">{{ stats.get('wucache', 0)|human }}</p>
+    <p class="muted">en cache · {{ wu.ratio }} % servi depuis le cache</p>
+  </a>
+  <a class="card tile" href="{{ url_for('windows_apps') }}">
+    <h2>Logiciels Windows</h2>
+    <p class="big">{{ apps.n }}</p>
+    <p class="muted">logiciel(s) · {{ apps.s|human }}</p>
+  </a>
+</div>
+
+{% set used = disk.total - disk.free %}
+<div class="card">
+  <h2>Espace disque</h2>
+  <div class="bar"><span style="width: {{ (100 * used / disk.total)|round|int }}%"></span></div>
+  <p class="muted">{{ disk.free|human }} libres sur {{ disk.total|human }}
+    {% if stats.updated %}· tailles mises à jour le {{ stats.updated }}{% endif %}</p>
+</div>
+{% endblock %}

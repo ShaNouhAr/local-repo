@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Windows Update</h1>
+
+<div class="grid">
+  <div class="card tile">
+    <h2>Cache <span class="dot {{ 'on' if nginx else 'off' }}"></span></h2>
+    <p class="big">{{ stats.get('wucache', 0)|human }}</p>
+    <p class="muted">sur disque</p>
+  </div>
+  <div class="card tile">
+    <h2>Servi depuis le cache</h2>
+    <p class="big">{{ wu.hit_bytes|human }}</p>
+    <p class="muted">{{ wu.ratio }} % du trafic récent ({{ wu.hits }} requêtes)</p>
+  </div>
+  <div class="card tile">
+    <h2>Téléchargé sur Internet</h2>
+    <p class="big">{{ wu.miss_bytes|human }}</p>
+    <p class="muted">{{ wu.misses }} requêtes</p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Fonctionnement</h2>
+  <p>Le cache reçoit les téléchargements Windows Update à la place de Microsoft : le DNS du réseau doit
+    répondre <code>{{ host }}</code> pour les domaines ci-dessous. Le premier poste télécharge depuis
+    Internet, les suivants sont servis en local. Le trafic HTTPS de ces domaines est relayé tel quel.</p>
+  <p><a class="button" href="{{ url_for('windows_update_dns') }}">Script DNS Active Directory (.ps1)</a></p>
+  <p class="muted small">À lancer en administrateur sur le contrôleur de domaine. <code>-Remove</code> annule tout.
+    Les domaines sont redirigés avec tous leurs sous-domaines.</p>
+</div>
+
+<div class="card">
+  <h2>Domaines redirigés</h2>
+  <form method="post" action="{{ url_for('windows_update_domains') }}" class="stack">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <textarea name="domains" rows="5">{{ domains|join('\n') }}</textarea>
+    <button>Enregistrer</button>
+  </form>
+  <p class="muted small">Après modification, relancer le script DNS pour l'appliquer.</p>
+</div>
+{% endblock %}

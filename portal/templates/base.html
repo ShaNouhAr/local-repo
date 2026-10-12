@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}local-repo{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  {% if session.auth %}
+  <header>
+    <a class="brand" href="{{ url_for('index') }}">local-repo</a>
+    <nav>
+      {% set ep = request.endpoint or '' %}
+      <a href="{{ url_for('index') }}" {% if ep == 'index' %}class="active"{% endif %}>Accueil</a>
+      <a href="{{ url_for('linux') }}" {% if ep.startswith('linux') %}class="active"{% endif %}>Paquets Linux</a>
+      <a href="{{ url_for('windows_update') }}" {% if ep.startswith('windows_update') %}class="active"{% endif %}>Windows Update</a>
+      <a href="{{ url_for('windows_apps') }}" {% if ep.startswith('windows_apps') %}class="active"{% endif %}>Logiciels Windows</a>
+    </nav>
+    <form method="post" action="{{ url_for('logout') }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="link">Déconnexion</button>
+    </form>
+  </header>
+  {% endif %}
+  <main>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in messages %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+  <script>
+    // Copie dans le presse-papiers (fonctionne aussi en HTTP simple).
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-copy]');
+      if (!btn) return;
+      var el = document.getElementById(btn.dataset.copy);
+      var text = el.value !== undefined ? el.value : el.textContent;
+      var ta = document.createElement('textarea');
+      ta.value = text.trim(); document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+      var old = btn.textContent; btn.textContent = 'Copié'; setTimeout(function () { btn.textContent = old; }, 1200);
+    });
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,9 @@
+[Unit]
+Description=local-repo - calcul périodique de la taille des caches
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+
+[Install]
+WantedBy=timers.target
