@@ -1,0 +1,105 @@
+"""Base SQLite : connexion par requête et migrations versionnées."""
+
+import os
+import sqlite3
+from contextlib import contextmanager
+
+from flask import g
+
+from . import config
+
+MIGRATIONS = [
+    # 1 : catalogue Windows (schéma historique)
+    """
+    CREATE TABLE IF NOT EXISTS win_apps (
+        id INTEGER PRIMARY KEY,
+        slug TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        version TEXT NOT NULL DEFAULT '',
+        kind TEXT NOT NULL DEFAULT 'exe',
+        args TEXT NOT NULL DEFAULT '',
+        source_url TEXT NOT NULL DEFAULT '',
+        filename TEXT NOT NULL DEFAULT '',
+        size INTEGER NOT NULL DEFAULT 0,
+        sha256 TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'pending',
+        error TEXT NOT NULL DEFAULT '',
+        updated_at TEXT NOT NULL DEFAULT ''
+    );
+    """,
+    # 2 : comptes, journal d'audit, échecs de connexion
+    """
+    CREATE TABLE users (
+        id INTEGER PRIMARY KEY,
+        username TEXT UNIQUE NOT NULL COLLATE NOCASE,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'admin',
+        disabled INTEGER NOT NULL DEFAULT 0,
+        must_change INTEGER NOT NULL DEFAULT 0,
+        pw_version INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT '',
+        last_login TEXT NOT NULL DEFAULT ''
+    );
+    CREATE TABLE audit (
+        id INTEGER PRIMARY KEY,
+        at TEXT NOT NULL,
+        username TEXT NOT NULL DEFAULT '',
+        ip TEXT NOT NULL DEFAULT '',
+        action TEXT NOT NULL,
+        detail TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX audit_at ON audit(at);
+    CREATE TABLE login_failures (
+        at REAL NOT NULL,
+        ip TEXT NOT NULL,
+        username TEXT NOT NULL
+    );
+    CREATE INDEX login_failures_at ON login_failures(at);
+    """,
+]
+
+
+def connect():
+    conn = sqlite3.connect(config.DB_PATH, timeout=30)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+@contextmanager
+def transaction():
+    """Connexion hors requête : validée à la sortie (annulée en cas d'erreur), puis fermée."""
+    conn = connect()
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
+
+
+def db():
+    if "db" not in g:
+        g.db = connect()
+    return g.db
+
+
+def close_db(_exc=None):
+    conn = g.pop("db", None)
+    if conn is not None:
+        conn.close()
+
+
+def migrate():
+    """Crée ou met à jour le schéma ; renvoie la version atteinte."""
+    os.makedirs(config.STATE, exist_ok=True)
+    with transaction() as conn:
+        conn.execute("PRAGMA journal_mode = WAL")
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        for number, script in enumerate(MIGRATIONS, start=1):
+            if number > version:
+                conn.executescript(script)
+                conn.execute(f"PRAGMA user_version = {number}")
+        # Un téléchargement interrompu par un redémarrage ne reprendra jamais.
+        conn.execute("UPDATE win_apps SET status='error', error='Interrompu (redémarrage du service)' "
+                     "WHERE status='downloading'")
+        return conn.execute("PRAGMA user_version").fetchone()[0]

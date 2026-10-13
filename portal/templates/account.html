@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Mon compte{% endblock %}
+{% block content %}
+<div class="head">
+  <div>
+    <h1>Mon compte</h1>
+    <p><span class="mono">{{ current_user.username }}</span> · {{ roles[current_user.role] }}{% if current_user.last_login %} · dernière connexion {{ current_user.last_login|date_fr }}{% endif %}</p>
+  </div>
+</div>
+
+<div class="cols">
+  <section class="panel">
+    <div class="panel-h"><h2>Changer de mot de passe</h2></div>
+    <form class="panel-b" method="post">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      {% if current_user.must_change %}<p class="note warn">Ce mot de passe est temporaire : choisissez-en un nouveau pour continuer.</p>{% endif %}
+      <label class="f"><span>Mot de passe actuel</span><input type="password" name="current" required autocomplete="current-password"></label>
+      <label class="f"><span>Nouveau mot de passe</span><input type="password" name="new" required minlength="{{ min_password }}" autocomplete="new-password"></label>
+      <label class="f"><span>Confirmation</span><input type="password" name="confirm" required minlength="{{ min_password }}" autocomplete="new-password"></label>
+      <button class="btn primary"><span class="spin"></span>Enregistrer</button>
+    </form>
+  </section>
+  <div class="stack">
+  <section class="panel">
+    <div class="panel-h"><h2>Affichage</h2></div>
+    <div class="panel-b">
+      <div class="theme" role="group" aria-label="Thème">
+        <button type="button" data-theme="auto">Auto</button><button type="button" data-theme="light">Clair</button><button type="button" data-theme="oled">OLED</button>
+      </div>
+      <p class="hint">Automatique suit le réglage du système. Choix mémorisé par ce navigateur.</p>
+    </div>
+  </section>
+  <section class="panel">
+    <div class="panel-h"><h2>Règles</h2></div>
+    <div class="panel-b">
+      <ol class="steps">
+        <li><span>Au moins {{ min_password }} caractères, sans le nom du compte.</span></li>
+        <li><span>Changer de mot de passe ferme les autres sessions de ce compte.</span></li>
+        <li><span>Une session inactive pendant 8 heures est fermée.</span></li>
+        <li><span>Après plusieurs échecs, la connexion est bloquée quelques minutes.</span></li>
+      </ol>
+    </div>
+  </section>
+  </div>
+</div>
+{% endblock %}

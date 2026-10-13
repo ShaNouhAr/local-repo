@@ -12,7 +12,7 @@
   </div>
 </div>
 
-<div class="stack">
+<div class="stack" data-poll="{{ url_for('api_wu') }}" data-poll-kind="wu" data-poll-every="5000">
   <div class="metrics">
     <div class="metric"><div class="k">En cache</div><div class="v" data-bind="cache_size" data-fmt="bytes">{{ stats.get('wucache', 0)|human }}</div><div class="s">{{ service(nginx) }}</div></div>
     <div class="metric"><div class="k">Servi en local</div><div class="v" data-bind="hit_bytes" data-fmt="bytes">{{ wu.hit_bytes|human }}</div><div class="s"><span data-bind="hits">{{ wu.hits }}</span> requêtes</div></div>
@@ -35,12 +35,16 @@
 
     <section class="panel">
       <div class="panel-h"><h2>Domaines redirigés</h2><div class="aside">sous-domaines compris</div></div>
+      {% if can_edit %}
       <form class="panel-b" method="post" action="{{ url_for('windows_update_domains') }}" data-ajax>
         <input type="hidden" name="csrf" value="{{ csrf }}">
         <textarea name="domains" rows="4" spellcheck="false" aria-label="Un domaine par ligne">{{ domains|join('\n') }}</textarea>
         <p class="hint">Un domaine par ligne. Appliqué au cache dès l'enregistrement ; relancer ensuite le script DNS (<code>-Remove</code> annule).</p>
         <button class="btn primary"><span class="spin"></span>Enregistrer</button>
       </form>
+      {% else %}
+      <div class="panel-b"><p class="mono">{{ domains|join('<br>'|safe) }}</p></div>
+      {% endif %}
     </section>
   </div>
 
@@ -65,28 +69,4 @@
     </div>
   </section>
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-(function () {
-  var body = document.getElementById("wu-log"), none = document.getElementById("wu-none");
-  function esc(s) { var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
-  lrPoll("{{ url_for('api_wu') }}", 5000, function (d) {
-    lrBind(d);
-    var known = {};
-    Array.prototype.forEach.call(body.rows, function (r) { known[r.dataset.key] = 1; });
-    body.innerHTML = d.recent.map(function (r) {
-      var key = r.time + r.client + r.file;
-      var file = r.file.length > 70 ? r.file.slice(0, 70) + "…" : r.file;
-      return '<tr' + (known[key] ? "" : ' class="new"') + ' data-key="' + esc(key) + '">' +
-        '<td class="mono muted nowrap">' + esc(r.time) + '</td><td class="mono nowrap">' + esc(r.client) + '</td>' +
-        '<td><span class="mono">' + esc(file) + '</span><span class="sub">' + esc(r.host) + '</span></td>' +
-        '<td class="num nowrap">' + (r.size ? lrBytes(r.size) : "—") + '</td>' +
-        '<td class="mono' + (r.cache === "HIT" ? "" : " muted") + '">' + esc(r.cache.toLowerCase()) + '</td></tr>';
-    }).join("");
-    none.classList.toggle("hidden", d.recent.length > 0);
-  });
-})();
-</script>
 {% endblock %}

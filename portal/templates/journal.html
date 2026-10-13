@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Journal{% endblock %}
+{% block content %}
+<div class="head">
+  <div>
+    <h1>Journal</h1>
+    <p>Connexions et modifications, avec le compte et l'adresse d'origine. Aussi envoyé à journald (<code>journalctl -u local-repo-portal</code>).</p>
+  </div>
+</div>
+
+<section class="panel">
+  <div class="panel-h"><h2>500 derniers événements</h2>
+    {% if rows %}<div class="aside"><input type="search" class="search-sm" placeholder="Filtrer" data-filter="#audit tbody tr" data-empty="#audit-none"></div>{% endif %}
+  </div>
+  {% if rows %}
+  <div class="table-wrap">
+    <table id="audit">
+      <thead><tr><th>Date</th><th>Compte</th><th>Adresse</th><th>Action</th><th>Détail</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td class="mono muted nowrap">{{ r.at }}</td>
+          <td class="mono">{{ r.username or '—' }}</td>
+          <td class="mono muted">{{ r.ip }}</td>
+          <td class="mono">{% if r.action.endswith(('echec', 'bloquee')) %}<span class="st err">{{ r.action }}</span>{% else %}{{ r.action }}{% endif %}</td>
+          <td>{{ r.detail }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <div id="audit-none" class="empty hidden">Aucun événement ne correspond.</div>
+  </div>
+  {% else %}
+  <div class="empty">Aucun événement.</div>
+  {% endif %}
+</section>
+{% endblock %}

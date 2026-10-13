@@ -8,14 +8,17 @@
       <div class="panel-h"><h2>Connexion</h2></div>
       <div class="panel-b">
         <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label class="f"><span>Identifiant</span>
+          <input type="text" name="username" value="{{ username }}" required autocomplete="username" autocapitalize="none" spellcheck="false" {{ 'autofocus' if not username }}>
+        </label>
         <label class="f"><span>Mot de passe</span>
-          <input type="password" name="password" autofocus required autocomplete="current-password">
+          <input type="password" name="password" required autocomplete="current-password" {{ 'autofocus' if username }}>
         </label>
         <button class="btn primary"><span class="spin"></span>Se connecter</button>
       </div>
     </form>
     <div class="foot">
-      <span>Interface d'administration</span>
+      <span>local-repo {{ version }}</span>
       <div class="theme" role="group" aria-label="Thème">
         <button type="button" data-theme="auto">Auto</button><button type="button" data-theme="light">Clair</button><button type="button" data-theme="oled">OLED</button>
       </div>

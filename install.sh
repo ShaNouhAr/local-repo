@@ -1,19 +1,28 @@
 #!/bin/bash
 # local-repo : installe le dépôt local (paquets Linux, Windows Update, logiciels Windows)
-# sur Debian / Ubuntu, sans Docker. Relançable sans risque pour mettre à jour.
+# sur Debian 12+ / Ubuntu 22.04+, sans Docker. Relançable sans risque pour mettre à jour ou reconfigurer.
 #
 #   sudo ./install.sh [options]
 #
-#   --port N            port HTTP des postes clients : dépôt, installeurs, scripts (défaut : 8088)
-#   --https-port N      port HTTPS de l'interface d'administration (défaut : 8443)
-#   --tls-cert F --tls-key F   utiliser son propre certificat au lieu de l'autorité locale
-#   --host IP           adresse annoncée aux clients (défaut : IP de la route par défaut)
-#   --data DIR          dossier des données et des caches (défaut : /srv/local-repo)
-#   --wu-cache-size T   taille max du cache Windows Update, ex. 50g (défaut : moitié de l'espace libre, max 200g)
-#   --resolvers "A B"   DNS publics utilisés par le cache (défaut : "1.1.1.1 9.9.9.9")
-#   --password MDP      définit le mot de passe du portail (sinon généré à la première installation)
-#   --no-wu             n'installe pas le cache Windows Update (libère les ports 80 et 443)
-#   --wu                le réactive après un --no-wu
+#   --host IP                adresse annoncée aux postes (défaut : IP de la route par défaut)
+#   --https-port N           port HTTPS de l'interface et des postes (défaut : 8443)
+#   --http-port N            port HTTP d'amorçage des postes (défaut : 8088)
+#   --no-http / --http       désactive / réactive le port HTTP (HTTPS seul : autorité déployée sur les postes)
+#   --allow "CIDR ..."       réseaux autorisés à utiliser les dépôts et caches (défaut : réseaux privés)
+#   --admin-allow "CIDR ..." réseaux autorisés à ouvrir l'interface (défaut : comme --allow)
+#   --proxy URL / --no-proxy proxy HTTP d'entreprise pour sortir sur Internet (apt-cacher-ng, téléchargements)
+#   --data DIR               dossier des données et des caches (défaut : /srv/local-repo)
+#   --wu-cache-size T        taille max du cache Windows Update, ex. 50g (défaut : moitié de l'espace libre, max 200g)
+#   --resolvers "A B"        DNS utilisés par le cache Windows Update (défaut : "1.1.1.1 9.9.9.9") ;
+#                            ne pas mettre un DNS qui redirige lui-même les domaines Windows Update
+#   --max-upload T           taille max d'un fichier envoyé au portail (défaut : 8g)
+#   --backup-keep N          sauvegardes quotidiennes conservées (défaut : 3 ; 0 = désactivées)
+#   --backup-dir DIR         dossier des sauvegardes (défaut : /var/backups/local-repo)
+#   --password MDP           définit le mot de passe du compte « admin »
+#   --tls-cert F --tls-key F certificat fourni au lieu de l'autorité locale
+#   --no-wu / --wu           sans / avec le cache Windows Update (ports 80 et 443)
+#   --no-flatpak / --flatpak sans / avec Flatpak (cache Flathub et dépôt Flatpak local)
+#   --flatpak-cache-size T   taille max du cache Flathub (défaut : quart de l'espace libre, max 100g)
 set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,7 +31,8 @@ PREFIX=/opt/local-repo
 ETC=/etc/local-repo
 STATE=/var/lib/local-repo
 APP_PORT=8089
-PACKAGES=(nginx libnginx-mod-stream apt-cacher-ng apt-utils gnupg python3-flask gunicorn curl openssl)
+PACKAGES=(nginx libnginx-mod-stream apt-cacher-ng apt-utils gnupg python3-flask gunicorn curl openssl ca-certificates)
+PRIVATE_NETS="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7 fe80::/10"
 
 say()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
@@ -34,43 +44,95 @@ LOG=/var/log/local-repo-install.log
 command -v apt-get >/dev/null || die "Debian ou Ubuntu requis (apt-get introuvable)."
 command -v systemctl >/dev/null || die "systemd requis."
 
-# Valeurs déjà installées (relance) puis options de la ligne de commande.
-PORTAL_PORT=8088 HTTPS_PORT=8443 HOST="" DATA=/srv/local-repo WU_CACHE_SIZE="" RESOLVERS="1.1.1.1 9.9.9.9" WU_ENABLED=1
+# Python sert à valider la configuration : installé d'abord s'il manque (système minimal).
+if ! command -v python3 >/dev/null; then
+    mkdir -p "$STATE"
+    echo python3 >> "$STATE/installed-packages"
+    { apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -y -q python3; } >/dev/null 2>&1 \
+        || die "impossible d'installer python3."
+fi
+
+# ---------------------------------------------------------------- réglages
+# Valeurs par défaut, puis celles de l'installation précédente, puis les options.
+PORTAL_PORT=8088 HTTPS_PORT=8443 HTTP_ENABLED=1 HOST="" DATA=/srv/local-repo WU_CACHE_SIZE=""
+RESOLVERS="1.1.1.1 9.9.9.9" WU_ENABLED=1 ALLOW="$PRIVATE_NETS" ADMIN_ALLOW="" UPSTREAM_PROXY=""
+MAX_UPLOAD=8g BACKUP_KEEP=3 BACKUP_DIR=/var/backups/local-repo FLATPAK_ENABLED=1 FLATPAK_CACHE_SIZE=""
 # shellcheck disable=SC1091
 [ -f "$ETC/local-repo.conf" ] && . "$ETC/local-repo.conf"
 PASSWORD="" TLS_CERT="" TLS_KEY=""
+need() { [ $# -ge 2 ] || die "l'option $1 attend une valeur."; }
 while [ $# -gt 0 ]; do
     case "$1" in
-        --port) PORTAL_PORT="$2"; shift 2 ;;
-        --https-port) HTTPS_PORT="$2"; shift 2 ;;
-        --tls-cert) TLS_CERT="$2"; shift 2 ;;
-        --tls-key) TLS_KEY="$2"; shift 2 ;;
-        --host) HOST="$2"; shift 2 ;;
-        --data) DATA="$2"; shift 2 ;;
-        --wu-cache-size) WU_CACHE_SIZE="$2"; shift 2 ;;
-        --resolvers) RESOLVERS="$2"; shift 2 ;;
-        --password) PASSWORD="$2"; shift 2 ;;
+        --host) need "$@"; HOST="$2"; shift 2 ;;
+        --https-port) need "$@"; HTTPS_PORT="$2"; shift 2 ;;
+        --http-port|--port) need "$@"; PORTAL_PORT="$2"; shift 2 ;;
+        --no-http) HTTP_ENABLED=0; shift ;;
+        --http) HTTP_ENABLED=1; shift ;;
+        --allow) need "$@"; ALLOW="$2"; shift 2 ;;
+        --admin-allow) need "$@"; ADMIN_ALLOW="$2"; shift 2 ;;
+        --proxy) need "$@"; UPSTREAM_PROXY="$2"; shift 2 ;;
+        --no-proxy) UPSTREAM_PROXY=""; shift ;;
+        --data) need "$@"; DATA="$2"; shift 2 ;;
+        --wu-cache-size) need "$@"; WU_CACHE_SIZE="$2"; shift 2 ;;
+        --resolvers) need "$@"; RESOLVERS="$2"; shift 2 ;;
+        --max-upload) need "$@"; MAX_UPLOAD="$2"; shift 2 ;;
+        --backup-keep) need "$@"; BACKUP_KEEP="$2"; shift 2 ;;
+        --backup-dir) need "$@"; BACKUP_DIR="$2"; shift 2 ;;
+        --password) need "$@"; PASSWORD="$2"; shift 2 ;;
+        --tls-cert) need "$@"; TLS_CERT="$2"; shift 2 ;;
+        --tls-key) need "$@"; TLS_KEY="$2"; shift 2 ;;
+        --no-flatpak) FLATPAK_ENABLED=0; shift ;;
+        --flatpak) FLATPAK_ENABLED=1; shift ;;
+        --flatpak-cache-size) need "$@"; FLATPAK_CACHE_SIZE="$2"; shift 2 ;;
         --no-wu) WU_ENABLED=0; shift ;;
         --wu) WU_ENABLED=1; shift ;;
-        -h|--help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) die "option inconnue : $1 (voir --help)" ;;
     esac
 done
+if [ -z "$ADMIN_ALLOW" ]; then ADMIN_ALLOW="$ALLOW"; fi
 
-[[ "$PORTAL_PORT" =~ ^[0-9]+$ ]] || die "--port doit être un nombre."
-[[ "$HTTPS_PORT" =~ ^[0-9]+$ ]] || die "--https-port doit être un nombre."
-[ "$PORTAL_PORT" != "$HTTPS_PORT" ] || die "--port et --https-port doivent être différents."
+# ---------------------------------------------------------------- vérifications
+num() { [[ "$2" =~ ^[0-9]+$ ]] || die "$1 doit être un nombre."; }
+num --https-port "$HTTPS_PORT"; num --http-port "$PORTAL_PORT"; num --backup-keep "$BACKUP_KEEP"
+[ "$PORTAL_PORT" != "$HTTPS_PORT" ] || die "--http-port et --https-port doivent être différents."
+[[ "$MAX_UPLOAD" =~ ^[0-9]+[kKmMgG]?$ ]] || die "--max-upload : taille invalide (ex. 8g, 500m)."
+[[ "$WU_CACHE_SIZE" =~ ^([0-9]+[kKmMgGtT]?)?$ ]] || die "--wu-cache-size : taille invalide (ex. 50g)."
+[[ "$FLATPAK_CACHE_SIZE" =~ ^([0-9]+[kKmMgGtT]?)?$ ]] || die "--flatpak-cache-size : taille invalide (ex. 20g)."
+[[ "$DATA" =~ ^/[A-Za-z0-9._/-]+$ ]] && [[ "$DATA" != "/" ]] || die "--data : chemin absolu simple attendu."
+[[ "$BACKUP_DIR" =~ ^/[A-Za-z0-9._/-]+$ ]] || die "--backup-dir : chemin absolu simple attendu."
+if [ -n "$UPSTREAM_PROXY" ]; then
+    [[ "$UPSTREAM_PROXY" =~ ^http://[^[:space:]\"\']+$ ]] || die "--proxy : adresse http://hôte:port attendue."
+fi
 if [ -n "$TLS_CERT$TLS_KEY" ]; then
     [ -f "$TLS_CERT" ] && [ -f "$TLS_KEY" ] || die "--tls-cert et --tls-key doivent désigner deux fichiers existants."
 fi
+for r in $RESOLVERS; do [[ "$r" =~ ^[0-9a-fA-F.:]+$ ]] || die "--resolvers : adresse IP attendue ($r)."; done
+# Réseaux : validés et normalisés par Python ; la boucle locale est toujours autorisée.
+nets() {
+    python3 -c '
+import ipaddress, sys
+out = ["127.0.0.0/8", "::1"]
+for item in sys.argv[1].split():
+    try:
+        n = str(ipaddress.ip_network(item, strict=False))
+    except ValueError:
+        sys.exit(f"réseau invalide : {item}")
+    if n not in out:
+        out.append(n)
+print(" ".join(out))' "$1" || die "$2 : réseau invalide."
+}
+ALLOW_LIST=$(nets "$ALLOW" --allow)
+ADMIN_LIST=$(nets "$ADMIN_ALLOW" --admin-allow)
+
 if [ -z "$HOST" ]; then
     HOST=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
 fi
 [ -n "$HOST" ] || die "impossible de détecter l'IP du serveur, utilisez --host."
-PUBLIC_URL="http://$HOST:$PORTAL_PORT"
 ADMIN_URL="https://$HOST:$HTTPS_PORT"
+HTTP_URL=""
+if [ "$HTTP_ENABLED" = 1 ]; then HTTP_URL="http://$HOST:$PORTAL_PORT"; fi
 
-# ---------------------------------------------------------------- vérification des ports
 port_owner() { ss -Hltnp "sport = :$1" 2>/dev/null | grep -o 'users:(("[^"]*"' | head -1 | cut -d'"' -f2 || true; }
 check_port() {
     local owner
@@ -80,8 +142,8 @@ check_port() {
     fi
 }
 say "Vérification des ports"
-check_port "$PORTAL_PORT" nginx
 check_port "$HTTPS_PORT" nginx
+if [ "$HTTP_ENABLED" = 1 ]; then check_port "$PORTAL_PORT" nginx; fi
 check_port 3142 apt-cacher-ng
 check_port "$APP_PORT" gunicorn
 if [ "$WU_ENABLED" = 1 ]; then
@@ -90,6 +152,7 @@ if [ "$WU_ENABLED" = 1 ]; then
 fi
 
 # ---------------------------------------------------------------- paquets
+if [ "$FLATPAK_ENABLED" = 1 ]; then PACKAGES+=(flatpak ostree); fi
 say "Installation des paquets"
 mkdir -p "$STATE"
 touch "$STATE/installed-packages"
@@ -112,9 +175,11 @@ id localrepo >/dev/null 2>&1 || useradd --system --home-dir "$STATE" --shell /us
 install -d -m 755 -o localrepo -g localrepo "$DATA" "$DATA/apt" "$DATA/apt/pool" "$DATA/win"
 install -d -m 700 -o localrepo -g localrepo "$DATA/.tmp" "$STATE/gnupg"
 install -d -m 755 -o localrepo -g localrepo "$STATE" "$STATE/nginx"
-install -d -m 700 -o www-data -g www-data "$DATA/wucache"
+install -d -m 700 -o www-data -g www-data "$DATA/wucache" "$DATA/flatpakcache"
+install -d -m 755 -o localrepo -g localrepo "$DATA/flatpak"
 chown -R localrepo:localrepo "$DATA/apt" "$DATA/win" "$STATE"
 install -d -m 755 "$ETC"
+install -d -m 750 -o root -g localrepo "$BACKUP_DIR"
 
 if [ -z "$WU_CACHE_SIZE" ]; then
     free_g=$(df -BG --output=avail "$DATA" | tail -1 | tr -dc '0-9')
@@ -124,16 +189,31 @@ if [ -z "$WU_CACHE_SIZE" ]; then
     fi
 fi
 
+if [ -z "$FLATPAK_CACHE_SIZE" ]; then
+    free_g=$(df -BG --output=avail "$DATA" | tail -1 | tr -dc '0-9')
+    FLATPAK_CACHE_SIZE="$(( free_g / 4 > 100 ? 100 : (free_g / 4 < 2 ? 2 : free_g / 4) ))g"
+fi
+
 cat > "$ETC/local-repo.conf" <<EOF
 # Généré par install.sh : modifiez puis relancez sudo ./install.sh pour appliquer.
-PORTAL_PORT=$PORTAL_PORT
-HTTPS_PORT=$HTTPS_PORT
 HOST=$HOST
+HTTPS_PORT=$HTTPS_PORT
+PORTAL_PORT=$PORTAL_PORT
+HTTP_ENABLED=$HTTP_ENABLED
+ALLOW="$ALLOW"
+ADMIN_ALLOW="$ADMIN_ALLOW"
+UPSTREAM_PROXY="$UPSTREAM_PROXY"
 DATA=$DATA
-WU_CACHE_SIZE=$WU_CACHE_SIZE
-RESOLVERS="$RESOLVERS"
 WU_ENABLED=$WU_ENABLED
+WU_CACHE_SIZE=$WU_CACHE_SIZE
+FLATPAK_ENABLED=$FLATPAK_ENABLED
+FLATPAK_CACHE_SIZE=$FLATPAK_CACHE_SIZE
+RESOLVERS="$RESOLVERS"
+MAX_UPLOAD=$MAX_UPLOAD
+BACKUP_KEEP=$BACKUP_KEEP
+BACKUP_DIR=$BACKUP_DIR
 EOF
+chmod 644 "$ETC/local-repo.conf"
 
 # ---------------------------------------------------------------- code
 say "Copie du portail dans $PREFIX"
@@ -144,38 +224,47 @@ find "$PREFIX.new" -name __pycache__ -prune -exec rm -rf {} +
 chmod 755 "$PREFIX.new/bin/"* "$PREFIX.new/remove.sh"
 rm -rf "$PREFIX"
 mv "$PREFIX.new" "$PREFIX"
+ln -sf "$PREFIX/bin/local-repo-user" /usr/local/sbin/local-repo-user
+ln -sf "$PREFIX/bin/local-repo-backup" /usr/local/sbin/local-repo-backup
 
-# ---------------------------------------------------------------- secrets
-GENERATED=""
-if [ -z "$PASSWORD" ] && [ ! -f "$ETC/portal.secret" ]; then
-    PASSWORD=$(python3 -c 'import secrets; print(secrets.token_urlsafe(12))')
-    GENERATED=1
-fi
-if [ -n "$PASSWORD" ]; then
-    say "Mot de passe du portail"
-    LR_PASSWORD="$PASSWORD" python3 - "$ETC/portal.secret" <<'EOF'
-import json, os, secrets, sys
-from werkzeug.security import generate_password_hash
+cli() {
+    (cd "$PREFIX/portal" && runuser -u localrepo -- env LR_DATA="$DATA" LR_STATE="$STATE" LR_ETC="$ETC" \
+        LR_PASSWORD="${LR_PASSWORD:-}" LR_MUST_CHANGE="${LR_MUST_CHANGE:-0}" python3 -m localrepo.cli "$@")
+}
+
+# ---------------------------------------------------------------- secrets et comptes
+say "Comptes du portail"
+python3 - "$ETC/portal.secret" <<'EOF'
+import json, secrets, sys
 path = sys.argv[1]
 try:
     data = json.load(open(path))
 except (OSError, ValueError):
     data = {}
 data.setdefault("secret_key", secrets.token_hex(32))
-data["admin_hash"] = generate_password_hash(os.environ["LR_PASSWORD"])
-with open(path, "w") as f:
-    json.dump(data, f)
+json.dump(data, open(path, "w"))
 EOF
-    if [ -n "$GENERATED" ]; then
-        umask 077
-        echo "$PASSWORD" > "$ETC/admin-password"
-        umask 022
-    else
-        rm -f "$ETC/admin-password"
-    fi
-fi
 chown root:localrepo "$ETC/portal.secret"
 chmod 640 "$ETC/portal.secret"
+cli init    # migrations ; une ancienne installation à mot de passe unique devient le compte « admin »
+python3 - "$ETC/portal.secret" <<'EOF'
+import json, sys
+path = sys.argv[1]
+data = json.load(open(path))
+data.pop("admin_hash", None)   # repris dans la base des comptes
+json.dump(data, open(path, "w"))
+EOF
+rm -f "$ETC/admin-password"    # plus de mot de passe en clair sur le disque
+ISSUED=""
+if [ -n "$PASSWORD" ]; then
+    LR_PASSWORD="$PASSWORD" cli ensure-admin >/dev/null
+    LR_PASSWORD="$PASSWORD" cli user set-password admin
+else
+    ISSUED=$(python3 -c 'import secrets, string; a = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"; print("-".join("".join(secrets.choice(a) for _ in range(5)) for _ in range(4)))')
+    if [ "$(LR_PASSWORD="$ISSUED" LR_MUST_CHANGE=1 cli ensure-admin)" != "created" ]; then
+        ISSUED=""
+    fi
+fi
 
 # ---------------------------------------------------------------- clé de signature APT
 if ! runuser -u localrepo -- env GNUPGHOME="$STATE/gnupg" gpg --list-secret-keys 2>/dev/null | grep -q sec; then
@@ -185,9 +274,13 @@ if ! runuser -u localrepo -- env GNUPGHOME="$STATE/gnupg" gpg --list-secret-keys
 fi
 runuser -u localrepo -- env GNUPGHOME="$STATE/gnupg" gpg --batch --yes --export -o "$DATA/apt/local-repo.gpg"
 chmod 644 "$DATA/apt/local-repo.gpg"
-runuser -u localrepo -- env LR_DATA="$DATA" LR_STATE="$STATE" python3 "$PREFIX/portal/app.py" rebuild-apt >/dev/null
+cli rebuild-apt >/dev/null
 runuser -u localrepo -- gpgconf --homedir "$STATE/gnupg" --kill gpg-agent 2>/dev/null || true
-runuser -u localrepo -- env LR_STATE="$STATE" python3 "$PREFIX/portal/app.py" write-maps
+cli write-maps
+if [ "$FLATPAK_ENABLED" = 1 ]; then
+    cli flatpak-init
+    runuser -u localrepo -- gpgconf --homedir "$STATE/gnupg" --kill gpg-agent 2>/dev/null || true
+fi
 
 # ---------------------------------------------------------------- certificats HTTPS
 say "Certificat HTTPS"
@@ -198,11 +291,11 @@ if [ -n "$TLS_CERT" ]; then
     install -m 600 "$TLS_KEY" "$TLS/server.key"
     touch "$TLS/custom"
 elif [ ! -f "$TLS/custom" ]; then
-    # Autorité locale (10 ans) : à importer une fois sur les postes pour supprimer l'alerte du navigateur.
+    # Autorité locale (10 ans) : à importer une fois sur les postes (GPO, ou page Système).
     if [ ! -f "$TLS/ca.key" ]; then
         openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 \
             -subj "/O=local-repo/CN=local-repo CA ($(hostname))" \
-            -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" \
+            -addext "basicConstraints=critical,CA:TRUE,pathlen:0" -addext "keyUsage=critical,keyCertSign,cRLSign" \
             -keyout "$TLS/ca.key" -out "$TLS/ca.crt" 2>>"$LOG"
         chmod 600 "$TLS/ca.key"; chmod 644 "$TLS/ca.crt"
         rm -f "$TLS/server.crt"
@@ -210,7 +303,7 @@ elif [ ! -f "$TLS/custom" ]; then
     SAN="IP:$HOST,IP:127.0.0.1,DNS:$(hostname),DNS:localhost"
     FQDN=$(hostname -f 2>/dev/null || true)
     if [ -n "$FQDN" ] && [ "$FQDN" != "$(hostname)" ] && [ "$FQDN" != localhost ]; then SAN="$SAN,DNS:$FQDN"; fi
-    # Certificat serveur (825 jours, limite acceptée par Apple) : refait si absent, bientôt expiré ou si l'IP a changé.
+    # Certificat serveur (825 jours) : refait s'il manque, expire dans moins de 30 jours ou si l'IP a changé.
     if [ ! -f "$TLS/server.crt" ] || ! openssl x509 -in "$TLS/server.crt" -noout -checkend 2592000 >/dev/null 2>&1 \
        || ! openssl x509 -in "$TLS/server.crt" -noout -ext subjectAltName 2>/dev/null | grep -q "IP Address:$HOST\b"; then
         openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
@@ -223,14 +316,46 @@ elif [ ! -f "$TLS/custom" ]; then
     fi
 fi
 
+# ---------------------------------------------------------------- génération des configurations
+# Remplace @CLÉ@ par la variable LRT_CLÉ (valeurs quelconques, y compris avec des caractères spéciaux).
+render() {
+    python3 -c '
+import os, sys
+text = open(sys.argv[1]).read()
+for key, value in os.environ.items():
+    if key.startswith("LRT_"):
+        text = text.replace("@" + key[4:] + "@", value)
+sys.stdout.write(text)' "$1"
+}
+acl() { for n in $1; do echo "allow $n;"; done; echo "deny all;"; }
+PROXY_ENV=""
+if [ -n "$UPSTREAM_PROXY" ]; then
+    PROXY_ENV=$(printf 'Environment=http_proxy=%s\nEnvironment=https_proxy=%s\nEnvironment=no_proxy=localhost,127.0.0.1,%s' \
+        "$UPSTREAM_PROXY" "$UPSTREAM_PROXY" "$HOST")
+fi
+SHORT_HOSTNAME=$(hostname)
+export LRT_PORTAL_PORT="$PORTAL_PORT" LRT_HTTPS_PORT="$HTTPS_PORT" LRT_APP_PORT="$APP_PORT" LRT_DATA="$DATA" \
+       LRT_HOST="$HOST" LRT_HOSTNAME="$SHORT_HOSTNAME" LRT_ADMIN_URL="$ADMIN_URL" LRT_HTTP_URL="$HTTP_URL" \
+       LRT_WU_CACHE_SIZE="$WU_CACHE_SIZE" LRT_RESOLVERS="$RESOLVERS" LRT_MAX_UPLOAD="$MAX_UPLOAD" \
+       LRT_BACKUP_DIR="$BACKUP_DIR" LRT_PROXY_ENV="$PROXY_ENV" LRT_ALLOW_SPACE="$ALLOW_LIST" \
+       LRT_FLATPAK_CACHE_SIZE="$FLATPAK_CACHE_SIZE" LRT_FLATPAK="$FLATPAK_ENABLED"
+# Emplacements Flatpak insérés dans les deux serveurs du portail (déjà rendus).
+LRT_FLATPAK_LOCATIONS=""
+if [ "$FLATPAK_ENABLED" = 1 ]; then LRT_FLATPAK_LOCATIONS=$(render "$PREFIX/conf/nginx-flatpak-locations.conf"); fi
+export LRT_FLATPAK_LOCATIONS
+
 # ---------------------------------------------------------------- nginx
 say "Configuration de nginx"
-render() {
-    sed -e "s|@PORTAL_PORT@|$PORTAL_PORT|g" -e "s|@HTTPS_PORT@|$HTTPS_PORT|g" -e "s|@ADMIN_URL@|$ADMIN_URL|g" -e "s|@APP_PORT@|$APP_PORT|g" -e "s|@DATA@|$DATA|g" \
-        -e "s|@HOST@|$HOST|g" -e "s|@HOSTNAME@|$(hostname)|g" -e "s|@PUBLIC_URL@|$PUBLIC_URL|g" \
-        -e "s|@WU_CACHE_SIZE@|$WU_CACHE_SIZE|g" -e "s|@RESOLVERS@|$RESOLVERS|g" "$1"
-}
-render "$PREFIX/conf/nginx-portal.conf" > /etc/nginx/sites-available/local-repo-portal.conf
+install -d /etc/nginx/snippets
+{ echo "# local-repo : réseaux autorisés pour les postes (--allow)."; acl "$ALLOW_LIST"; } > /etc/nginx/snippets/local-repo-clients.conf
+{ echo "# local-repo : réseaux autorisés pour l'interface (--admin-allow)."; acl "$ADMIN_LIST"; } > /etc/nginx/snippets/local-repo-admin.conf
+render "$PREFIX/conf/nginx-proxy-snippet.conf" > /etc/nginx/snippets/local-repo-proxy.conf
+render "$PREFIX/conf/nginx-flathub-proxy-snippet.conf" > /etc/nginx/snippets/local-repo-flathub-proxy.conf
+{
+    if [ "$FLATPAK_ENABLED" = 1 ]; then render "$PREFIX/conf/nginx-flatpak-cache.conf"; fi
+    render "$PREFIX/conf/nginx-portal.conf"
+    if [ "$HTTP_ENABLED" = 1 ]; then render "$PREFIX/conf/nginx-portal-http.conf"; fi
+} > /etc/nginx/sites-available/local-repo-portal.conf
 ln -sf ../sites-available/local-repo-portal.conf /etc/nginx/sites-enabled/local-repo-portal.conf
 # Site nginx par défaut (port 80) : désactivé si nginx a été installé par local-repo,
 # ou si le cache Windows Update a besoin du port 80 ; sinon on le laisse (ou le remet) en place.
@@ -263,11 +388,42 @@ if ! nginx -t >/dev/null 2>&1; then
     die "configuration nginx refusée (voir ci-dessus). Un autre site occupe peut-être le port 80 : essayez --no-wu."
 fi
 
+# ---------------------------------------------------------------- apt-cacher-ng
+say "Configuration d'apt-cacher-ng"
+if [ ! -s "$ETC/acng-admin" ]; then
+    (umask 077; echo "admin:$(python3 -c 'import secrets; print(secrets.token_urlsafe(18))')" > "$ETC/acng-admin")
+fi
+{
+    echo "# Géré par local-repo (install.sh) : ne pas modifier."
+    echo "AdminAuth: $(cat "$ETC/acng-admin")"
+    echo "UseWrap: 1"
+    if [ -n "$UPSTREAM_PROXY" ]; then echo "Proxy: $UPSTREAM_PROXY"; fi
+} > /etc/apt-cacher-ng/zz-local-repo.conf
+# Filtrage par apt-cacher-ng lui-même (tcpwrappers) : fonctionne aussi là où systemd ne peut pas filtrer (LXC).
+WRAP_NETS=$(python3 -c '
+import ipaddress, sys
+out = []
+for item in sys.argv[1].split():
+    n = ipaddress.ip_network(item)
+    out.append(f"{n.network_address}/{n.netmask}" if n.version == 4 else f"[{n.network_address}]/{n.prefixlen}")
+print(" ".join(out))' "$ALLOW_LIST")
+for f in /etc/hosts.allow /etc/hosts.deny; do
+    touch "$f"
+    sed -i '/# local-repo$/d' "$f"
+done
+echo "apt-cacher-ng: $WRAP_NETS # local-repo" >> /etc/hosts.allow
+echo "apt-cacher-ng: ALL # local-repo" >> /etc/hosts.deny
+chown root:apt-cacher-ng /etc/apt-cacher-ng/zz-local-repo.conf
+chmod 640 /etc/apt-cacher-ng/zz-local-repo.conf
+install -d /etc/systemd/system/apt-cacher-ng.service.d
+render "$PREFIX/conf/apt-cacher-ng-override.conf" > /etc/systemd/system/apt-cacher-ng.service.d/local-repo.conf
+
 # ---------------------------------------------------------------- services
 say "Services"
 render "$PREFIX/conf/local-repo-portal.service" > /etc/systemd/system/local-repo-portal.service
 cp "$PREFIX/conf/local-repo-stats.service" "$PREFIX/conf/local-repo-stats.timer" \
-   "$PREFIX/conf/local-repo-nginx.service" "$PREFIX/conf/local-repo-nginx.path" /etc/systemd/system/
+   "$PREFIX/conf/local-repo-nginx.service" "$PREFIX/conf/local-repo-nginx.path" \
+   "$PREFIX/conf/local-repo-backup.service" "$PREFIX/conf/local-repo-backup.timer" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable apt-cacher-ng nginx >/dev/null 2>&1
 systemctl restart apt-cacher-ng || die "apt-cacher-ng ne démarre pas (journalctl -u apt-cacher-ng)."
@@ -280,9 +436,14 @@ systemctl enable local-repo-portal local-repo-stats.timer local-repo-nginx.path 
 systemctl start local-repo-nginx.path
 systemctl restart local-repo-portal
 systemctl start local-repo-stats.timer local-repo-stats.service
+if [ "$BACKUP_KEEP" -gt 0 ]; then
+    systemctl enable --now local-repo-backup.timer >/dev/null 2>&1
+else
+    systemctl disable --now local-repo-backup.timer >/dev/null 2>&1 || true
+fi
 
-for _ in $(seq 1 20); do
-    curl -fs "http://127.0.0.1:$PORTAL_PORT/healthz" >/dev/null 2>&1 && break
+for _ in $(seq 1 30); do
+    curl -fsk "https://127.0.0.1:$HTTPS_PORT/healthz" >/dev/null 2>&1 && break
     sleep 0.5
 done
 curl -fsk "https://127.0.0.1:$HTTPS_PORT/healthz" >/dev/null || die "le portail ne répond pas (journalctl -u local-repo-portal)."
@@ -290,19 +451,26 @@ curl -fsk "https://127.0.0.1:$HTTPS_PORT/healthz" >/dev/null || die "le portail 
 # ---------------------------------------------------------------- résumé
 echo
 say "local-repo est installé"
-echo "    Portail            : $ADMIN_URL"
+echo "    Interface          : $ADMIN_URL"
+if [ -n "$ISSUED" ]; then
+    echo "    Compte initial     : admin / $ISSUED   (à changer à la première connexion ; affiché une seule fois)"
+fi
+echo "    Accès perdu        : sudo local-repo-user passwd admin"
 if [ ! -f "$TLS/custom" ]; then
-    echo "    Certificat         : autorité locale, à importer sur les postes : $PUBLIC_URL/ca.crt"
+    echo "    Autorité HTTPS     : $ETC/tls/ca.crt (à déployer sur les postes, par GPO par exemple)"
     echo "                         empreinte $(openssl x509 -in "$TLS/ca.crt" -noout -fingerprint -sha256 | cut -d= -f2)"
 fi
-if [ -f "$ETC/admin-password" ]; then
-    echo "    Mot de passe       : $(cat "$ETC/admin-password")   (copie dans $ETC/admin-password)"
-elif [ -n "$PASSWORD" ]; then
-    echo "    Mot de passe       : modifié"
-fi
-echo "    Cache paquets      : http://$HOST:3142"
-echo "    Postes Linux       : curl -fsSL $PUBLIC_URL/linux/setup.sh | sudo sh"
+echo "    Postes Linux       : curl -fsSL $ADMIN_URL/linux/setup.sh | sudo sh"
+if [ -n "$HTTP_URL" ]; then echo "                         sans l'autorité : curl -fsSL $HTTP_URL/linux/setup.sh | sudo sh -s -- --trust-ca"; fi
+echo "    Réseaux autorisés  : postes $ALLOW | interface $ADMIN_ALLOW"
+if [ -n "$UPSTREAM_PROXY" ]; then echo "    Proxy sortant      : $UPSTREAM_PROXY (le cache Windows Update sort en direct)"; fi
 if [ "$WU_ENABLED" = 1 ]; then
     echo "    Cache Windows Upd. : $WU_CACHE_SIZE max, DNS à configurer depuis le portail"
+fi
+if [ "$FLATPAK_ENABLED" = 1 ]; then
+    echo "    Flatpak            : curl -fsSL $ADMIN_URL/flatpak/setup.sh | sudo sh   (cache Flathub $FLATPAK_CACHE_SIZE max)"
+fi
+if [ "$BACKUP_KEEP" -gt 0 ]; then
+    echo "    Sauvegardes        : quotidiennes dans $BACKUP_DIR ($BACKUP_KEEP conservées)"
 fi
 echo "    Désinstaller       : sudo $PREFIX/remove.sh"

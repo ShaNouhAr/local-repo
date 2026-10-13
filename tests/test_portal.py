@@ -1,0 +1,197 @@
+"""Tests du portail (bibliothèque standard + Flask) : python3 -m unittest discover -s tests"""
+
+import os
+import re
+import shutil
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TMP = tempfile.mkdtemp(prefix="lr-test-")
+for sub in ("data", "state", "etc"):
+    os.makedirs(os.path.join(TMP, sub), exist_ok=True)
+os.environ.update(LR_DATA=os.path.join(TMP, "data"), LR_STATE=os.path.join(TMP, "state"), LR_ETC=os.path.join(TMP, "etc"),
+                  LR_SECURE_COOKIE="0", LR_ADMIN_URL="https://repo.test:8443", LR_PUBLIC_URL="http://repo.test:8088",
+                  LR_HOST="repo.test", LR_WU_LOG=os.path.join(TMP, "wu.log"))
+sys.path.insert(0, os.path.join(ROOT, "portal"))
+
+import localrepo  # noqa: E402
+from localrepo import auth, config, util  # noqa: E402
+from localrepo.db import transaction as connect  # noqa: E402
+
+localrepo.startup()
+ADMIN_PW = "Admin-Password-2026"
+with connect() as conn:
+    auth.create_user(conn, "admin", ADMIN_PW, "admin", must_change=False)
+
+
+def tearDownModule():
+    shutil.rmtree(TMP, ignore_errors=True)
+
+
+class Browser:
+    def __init__(self):
+        self.c = localrepo.app.test_client()
+
+    def token(self, path="/login"):
+        html = self.c.get(path).get_data(as_text=True)
+        m = re.search(r'name="csrf" value="([^"]+)"', html)
+        return m.group(1) if m else ""
+
+    def login(self, user, pw):
+        return self.c.post("/login", data={"csrf": self.token(), "username": user, "password": pw})
+
+    def post(self, path, data=None, page="/"):
+        d = dict(data or {})
+        d["csrf"] = self.token(page)
+        return self.c.post(path, data=d)
+
+
+def reset_failures():
+    with connect() as conn:
+        conn.execute("DELETE FROM login_failures")
+
+
+class TestUtil(unittest.TestCase):
+    def test_safe_next(self):
+        for bad in ("//evil.example", "/\\evil.example", "https://evil.example", "/\t/evil", "javascript:x", ""):
+            self.assertEqual(util.safe_next(bad), "/", bad)
+        self.assertEqual(util.safe_next("/linux?x=1"), "/linux?x=1")
+
+    def test_helpers(self):
+        self.assertEqual(util.slugify("L'été « spécial »"), "l-ete-special")
+        self.assertEqual(util.kind_for("Setup.MSI"), "msi")
+        self.assertEqual(util.kind_for("archive"), "file")
+        self.assertEqual(util.human(88112952), "84,0 Mo")
+        self.assertEqual(util.date_fr("2026-10-12 20:57"), "12/10 20:57")
+
+    def test_download_rejects_other_schemes(self):
+        with self.assertRaises(ValueError):
+            util.download("file:///etc/passwd", TMP)
+
+    def test_password_policy(self):
+        self.assertIsNotNone(auth.password_problem("court"))
+        self.assertIsNotNone(auth.password_problem("bob-bob-bob-bob-bob", "bob"))
+        self.assertIsNotNone(auth.password_problem("aaaaaaaaaaaaaaaa"))
+        self.assertIsNone(auth.password_problem("Un-Vrai-Mot-De-Passe"))
+
+
+class TestAuth(unittest.TestCase):
+    def setUp(self):
+        reset_failures()
+
+    def test_pages_require_login(self):
+        b = Browser()
+        for path in ("/", "/linux", "/windows-apps", "/comptes", "/systeme", "/api/status"):
+            r = b.c.get(path)
+            self.assertEqual(r.status_code, 302, path)
+            self.assertIn("/login", r.headers["Location"])
+
+    def test_login_and_headers(self):
+        b = Browser()
+        self.assertEqual(b.login("admin", ADMIN_PW).status_code, 302)
+        r = b.c.get("/")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("script-src 'self'", r.headers["Content-Security-Policy"])
+        self.assertEqual(r.headers["X-Frame-Options"], "DENY")
+        self.assertNotIn("<script>", r.get_data(as_text=True))       # aucun script en ligne (CSP)
+        self.assertNotIn('style="', r.get_data(as_text=True))       # aucun style en ligne (CSP)
+
+    def test_wrong_password_and_lockout(self):
+        for _ in range(config.LOGIN_MAX_PER_USER):
+            self.assertEqual(Browser().login("admin", "mauvais").status_code, 401)
+        r = Browser().login("admin", ADMIN_PW)
+        self.assertEqual(r.status_code, 429)
+        reset_failures()
+        self.assertEqual(Browser().login("admin", ADMIN_PW).status_code, 302)
+
+    def test_csrf_required(self):
+        b = Browser()
+        b.login("admin", ADMIN_PW)
+        self.assertEqual(b.c.post("/windows-apps/add", data={"name": "x"}).status_code, 400)
+
+    def test_viewer_and_must_change(self):
+        with connect() as conn:
+            auth.create_user(conn, "lecteur", "Temporaire-123456", "viewer", must_change=True)
+        b = Browser()
+        r = b.login("lecteur", "Temporaire-123456")
+        self.assertTrue(r.headers["Location"].endswith("/compte"))
+        self.assertTrue(b.c.get("/linux").headers["Location"].endswith("/compte"))
+        r = b.post("/compte", {"current": "Temporaire-123456", "new": "court", "confirm": "court"}, page="/compte")
+        self.assertIn("au moins", b.c.get(r.headers["Location"]).get_data(as_text=True))
+        b.post("/compte", {"current": "Temporaire-123456", "new": "Nouveau-Secret-2026x", "confirm": "Nouveau-Secret-2026x"},
+               page="/compte")
+        self.assertEqual(b.c.get("/linux").status_code, 200)
+        self.assertEqual(b.post("/windows-apps/add", {"name": "x", "url": "https://x.test/a.exe"}).status_code, 403)
+        self.assertEqual(b.c.get("/comptes").status_code, 403)
+        with connect() as conn:
+            conn.execute("DELETE FROM users WHERE username='lecteur'")
+
+    def test_last_admin_protected(self):
+        b = Browser()
+        b.login("admin", ADMIN_PW)
+        with connect() as conn:
+            uid = conn.execute("SELECT id FROM users WHERE username='admin'").fetchone()[0]
+        b.post(f"/comptes/{uid}/supprimer", page="/comptes")
+        with connect() as conn:
+            self.assertIsNotNone(conn.execute("SELECT 1 FROM users WHERE username='admin'").fetchone())
+
+
+class TestClients(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        with connect() as conn:
+            conn.execute("INSERT INTO win_apps (slug, name, kind, args, filename, sha256, status) VALUES "
+                         "('app-o-test', 'L''appli « test »', 'exe', '/S', 'setup prog.exe', 'ab12', 'ready')")
+
+    def test_install_script_follows_scheme(self):
+        c = localrepo.app.test_client()
+        https = c.get("/win/i/app-o-test,absent", base_url="https://repo.test:8443").get_data(as_text=True)
+        self.assertIn("'https://repo.test:8443/win/files/app-o-test/setup%20prog.exe'", https)
+        self.assertIn("Name = 'L''appli « test »'", https)            # apostrophe échappée pour PowerShell
+        self.assertIn("Absent du catalogue (ou pas encore pret) : absent", https)
+        http = c.get("/win/i/app-o-test", base_url="http://repo.test:8088").get_data(as_text=True)
+        self.assertIn("'http://repo.test:8088/win/files/", http)
+
+    def test_install_script_rejects_bad_slugs(self):
+        c = localrepo.app.test_client()
+        self.assertEqual(c.get("/win/i/..%2fetc").status_code, 404)
+        self.assertEqual(c.get("/win/i/" + ",".join(["a"] * 101)).status_code, 404)
+
+    def test_setup_script(self):
+        c = localrepo.app.test_client()
+        s = c.get("/linux/setup.sh", base_url="http://repo.test:8088").get_data(as_text=True)
+        self.assertIn('BASE="http://repo.test:8088"', s)
+        self.assertIn('HTTPS_BASE="https://repo.test:8443"', s)
+        self.assertIn("--trust-ca", s)
+
+    def test_flatpak_endpoints(self):
+        os.makedirs(config.APT_DIR, exist_ok=True)
+        with open(os.path.join(config.APT_DIR, "local-repo.gpg"), "wb") as f:
+            f.write(b"\x99cle-de-test")
+        c = localrepo.app.test_client()
+        repo = c.get("/flatpak/local-repo.flatpakrepo", base_url="https://repo.test:8443").get_data(as_text=True)
+        self.assertIn("Url=https://repo.test:8443/flatpak/repo/", repo)
+        self.assertIn("GPGKey=mWNsZS1kZS10ZXN0", repo)
+        setup = c.get("/flatpak/setup.sh", base_url="http://repo.test:8088").get_data(as_text=True)
+        self.assertIn('BASE="http://repo.test:8088"', setup)
+        self.assertIn("flatpak remote-modify --system flathub", setup)
+
+    def test_flatpak_rejects_bad_ref(self):
+        reset_failures()
+        b = Browser()
+        b.login("admin", ADMIN_PW)
+        for ref in ("app/../../etc/x86_64/stable", "app/org.x/x86_64/stable;rm", "--delete"):
+            self.assertEqual(b.post("/flatpak/delete", {"ref": ref}).status_code, 400, ref)
+
+    def test_metrics(self):
+        with mock.patch("localrepo.system.service_active", return_value=True):
+            body = localrepo.app.test_client().get("/metrics").get_data(as_text=True)
+        self.assertIn('local_repo_info{version="%s"} 1' % config.VERSION, body)
+        self.assertIn('local_repo_windows_apps{status="ready"}', body)
+
+
+if __name__ == "__main__":
+    unittest.main()

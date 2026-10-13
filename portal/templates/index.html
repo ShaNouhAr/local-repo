@@ -9,7 +9,7 @@
   </div>
 </div>
 
-<div class="stack">
+<div class="stack" data-poll="{{ url_for('api_status') }}" data-poll-kind="status" data-poll-every="10000">
   <div class="metrics">
     <div class="metric">
       <div class="k">Cache APT</div>
@@ -17,7 +17,7 @@
       <div class="s"><span data-bind="debs">{{ d.debs }}</span> paquet(s) local(aux)</div>
     </div>
     <div class="metric">
-      <div class="k">Cache Windows Update</div>
+      <div class="k">Cache Windows</div>
       <div class="v" data-bind="wucache_size" data-fmt="bytes">{{ d.wucache_size|human }}</div>
       <div class="s">sur disque</div>
     </div>
@@ -31,42 +31,50 @@
       <div class="v" data-bind="apps">{{ d.apps }}</div>
       <div class="s" data-bind="apps_size" data-fmt="bytes">{{ d.apps_size|human }}</div>
     </div>
+    {% if flatpak_enabled %}
+    <div class="metric">
+      <div class="k">Cache Flathub</div>
+      <div class="v" data-bind="flatpak_cache" data-fmt="bytes">{{ d.flatpak_cache|human }}</div>
+      <div class="s">applications Flatpak</div>
+    </div>
+    {% endif %}
     <div class="metric">
       <div class="k">Disque</div>
       <div class="v"><span data-bind="disk.free" data-fmt="bytes">{{ d.disk.free|human }}</span></div>
       <div class="s">libres sur {{ d.disk.total|human }}</div>
-      <div class="meter {{ 'err' if d.disk.pct >= 90 else 'warn' if d.disk.pct >= 80 }}"><i data-bind="disk.pct" data-fmt="meter" style="width: {{ d.disk.pct }}%"></i></div>
+      <div class="meter {{ 'err' if d.disk.pct >= 90 else 'warn' if d.disk.pct >= 80 }}"><i data-bind="disk.pct" data-fmt="meter" data-width="{{ d.disk.pct }}"></i></div>
     </div>
   </div>
 
   <div class="cols w21">
     <div class="stack">
       <section class="panel">
-        <div class="panel-h"><h2>Services</h2><div class="aside"><a href="{{ url_for('system') }}">Détails</a></div></div>
+        <div class="panel-h"><h2>Services</h2>{% if can_edit %}<div class="aside"><a href="{{ url_for('system') }}">Détails</a></div>{% endif %}</div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Service</th><th class="hide-sm">Rôle</th><th>Adresse</th><th>État</th></tr></thead>
             <tbody>
               <tr><td>apt-cacher-ng</td><td class="muted hide-sm">Cache des paquets Debian / Ubuntu</td><td class="mono">:{{ acng_port }}</td><td><span data-bind="services.acng" data-fmt="service">{{ service(d.services.acng) }}</span></td></tr>
               <tr><td>Cache Windows Update</td><td class="muted hide-sm">nginx, ports 80 et 443</td><td class="mono">:80 :443</td><td><span data-bind="services.nginx" data-fmt="service">{{ service(d.services.nginx) }}</span></td></tr>
-              <tr><td>Portail</td><td class="muted hide-sm">Interface (HTTPS) et fichiers clients (HTTP)</td><td class="mono nowrap">{{ admin_url.rsplit(':', 1)[1] }} / {{ public_url.rsplit(':', 1)[1] }}</td><td>{{ service(true) }}</td></tr>
+              {% if flatpak_enabled %}<tr><td>Cache Flathub</td><td class="muted hide-sm">nginx, avec le portail</td><td class="mono nowrap">/flathub/</td><td><span data-bind="services.nginx" data-fmt="service">{{ service(d.services.nginx) }}</span></td></tr>{% endif %}
+              <tr><td>Portail</td><td class="muted hide-sm">Interface et postes clients{% if http_url %} (HTTP pour l'amorçage){% endif %}</td><td class="mono nowrap">{{ https_url.rsplit(':', 1)[1] }}{% if http_url %} / {{ http_url.rsplit(':', 1)[1] }}{% endif %}</td><td>{{ service(true) }}</td></tr>
             </tbody>
           </table>
         </div>
       </section>
 
       <section class="panel">
-        <div class="panel-h"><h2>Brancher un poste</h2></div>
+        <div class="panel-h"><h2>Brancher un poste</h2><div class="aside">HTTPS : autorité local-repo importée sur le poste</div></div>
         <div class="panel-b">
           <div>
             <span class="cmd-label">Debian / Ubuntu</span>
-            {{ cmd('cmd-linux', 'curl -fsSL ' ~ public_url ~ '/linux/setup.sh | sudo sh') }}
-            <span class="hint">Sans curl : <code>wget -qO- {{ public_url }}/linux/setup.sh | sudo sh</code></span>
+            {{ cmd('cmd-linux', 'curl -fsSL ' ~ client_url ~ '/linux/setup.sh | sudo sh') }}
+            {% if http_url %}<span class="hint">Premier branchement, autorité pas encore importée : <code>curl -fsSL {{ http_url }}/linux/setup.sh | sudo sh -s -- --trust-ca</code></span>{% endif %}
           </div>
           <div>
             <span class="cmd-label">Windows, PowerShell administrateur</span>
-            {{ cmd('cmd-win', "irm '" ~ public_url ~ "/win/i/<logiciel>' | iex", 'PS>') }}
-            <span class="hint">Liste des identifiants dans <a href="{{ url_for('windows_apps') }}">Logiciels Windows</a>.</span>
+            {{ cmd('cmd-win', "irm '" ~ client_url ~ "/win/i/<logiciel>' | iex", 'PS>') }}
+            <span class="hint">Identifiants dans <a href="{{ url_for('windows_apps') }}">Logiciels Windows</a>. L'autorité se déploie par GPO{% if can_edit %} (voir <a href="{{ url_for('system') }}">Système</a>){% endif %}.</span>
           </div>
         </div>
       </section>
@@ -93,8 +101,4 @@
     </section>
   </div>
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script>lrPoll("{{ url_for('api_status') }}", 10000, lrBind);</script>
 {% endblock %}

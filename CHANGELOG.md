@@ -1,0 +1,42 @@
+# Journal des versions
+
+## 1.0.0 — 2026-10-13
+
+Première version destinée à un usage en entreprise.
+
+### Ajouté
+- **Flatpak** : cache Flathub (objets immuables gardés 6 mois, signatures Flathub vérifiées par les postes)
+  et dépôt Flatpak local signé, alimenté par envoi de paquets `.flatpak` ; script `flatpak/setup.sh`.
+- **Comptes nommés** (administrateur, lecture seule), mot de passe temporaire à changer, blocage après échecs,
+  expiration des sessions, journal d'audit, gestion en ligne de commande (`local-repo-user`).
+- **HTTPS partout** : postes clients en HTTPS par défaut, scripts suivant le protocole utilisé,
+  `setup.sh --trust-ca` pour l'amorçage, `--no-http` pour fermer le port HTTP.
+- **Réseaux autorisés** (`--allow`, `--admin-allow`) appliqués par nginx, apt-cacher-ng et systemd.
+- **Proxy d'entreprise** (`--proxy`) pour apt-cacher-ng et les téléchargements du portail.
+- **Sauvegardes** quotidiennes avec rotation, restauration sur le même serveur ou un nouveau
+  (`local-repo-backup`).
+- **Supervision** : `/metrics` (Prometheus) et `/healthz`.
+- Page **Administration** (comptes, journal, système, sauvegardes).
+- Tests unitaires, test de bout en bout (`tests/e2e.sh`) et intégration continue GitHub.
+- Guide d'exploitation (`docs/EXPLOITATION.md`) et politique de sécurité (`SECURITY.md`).
+
+### Modifié
+- Politique de contenu stricte (CSP) : plus aucun script ni style en ligne.
+- Unité systemd du portail confinée ; mots de passe d'apt-cacher-ng pour sa maintenance.
+- Portail réorganisé en paquet Python ; base SQLite en WAL avec migrations versionnées.
+- Interface : navigation regroupée, sélecteur de thème dans *Mon compte*.
+
+### Sécurité
+- Le compte unique des versions précédentes devient le compte `admin` (même mot de passe) ;
+  le fichier `/etc/local-repo/admin-password` est supprimé.
+
+## 0.3 — 2026-10-13
+- Interface en HTTPS (autorité locale), refonte visuelle sobre (IBM Plex, thèmes clair et OLED).
+
+## 0.2 — 2026-10-13
+- Cache Windows Update limité aux domaines de la liste, fichiers immuables seuls en cache,
+  corrections issues des tests (Debian 12/13, Ubuntu 24.04, Windows 11).
+
+## 0.1 — 2026-10-12
+- Première version : apt-cacher-ng et dépôt APT local, cache Windows Update, catalogue de logiciels Windows,
+  portail web, `install.sh` et `remove.sh`.

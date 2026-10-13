@@ -247,18 +247,66 @@
     refresh();
   }
 
+  /* ---------------------------------------------------------------- jauges */
+
+  $$("[data-width]").forEach(function (el) { el.style.width = Math.max(0, Math.min(100, Number(el.dataset.width))) + "%"; });
+
   /* ---------------------------------------------------------------- actualisation en direct */
 
-  window.lrPoll = function (url, every, fn) {
+  function poll(url, every, fn) {
     var busy = false;
     var tick = function () {
       if (document.hidden || busy) return;
       busy = true;
       fetch(url, { headers: { "X-Requested-With": "fetch" }, credentials: "same-origin" })
-        .then(function (r) { if (r.redirected || !r.ok) throw new Error(r.status); return r.json(); })
+        .then(function (r) { if (r.status === 401) { window.location.reload(); throw new Error("401"); } if (!r.ok) throw new Error(r.status); return r.json(); })
         .then(fn).catch(function () {}).then(function () { busy = false; });
     };
     setInterval(tick, every);
     return tick;
-  };
+  }
+
+  function esc(s) { var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+
+  // Journal Windows Update : remplace les lignes, en signalant les nouvelles.
+  function renderWuLog(d) {
+    var body = $("#wu-log"), none = $("#wu-none");
+    var known = {};
+    Array.prototype.forEach.call(body.rows, function (r) { known[r.dataset.key] = 1; });
+    body.innerHTML = d.recent.map(function (r) {
+      var key = r.time + r.client + r.file;
+      var file = r.file.length > 70 ? r.file.slice(0, 70) + "…" : r.file;
+      return '<tr' + (known[key] ? "" : ' class="new"') + ' data-key="' + esc(key) + '">' +
+        '<td class="mono muted nowrap">' + esc(r.time) + '</td><td class="mono nowrap">' + esc(r.client) + '</td>' +
+        '<td><span class="mono">' + esc(file) + '</span><span class="sub">' + esc(r.host) + '</span></td>' +
+        '<td class="num nowrap">' + (r.size ? bytes(r.size) : "—") + '</td>' +
+        '<td class="mono' + (r.cache === "HIT" ? "" : " muted") + '">' + esc(r.cache.toLowerCase()) + '</td></tr>';
+    }).join("");
+    none.classList.toggle("hidden", d.recent.length > 0);
+  }
+
+  // Catalogue Windows : progression des téléchargements, rechargement quand un état change.
+  function renderApps(d) {
+    var changed = false;
+    d.apps.forEach(function (a) {
+      var row = $('tr[data-slug="' + a.slug + '"]');
+      if (!row) return;
+      if (row.dataset.status !== a.status) { changed = true; return; }
+      var el = $("[data-progress]", row);
+      if (!el || !a.progress.done) return;
+      el.textContent = a.progress.total
+        ? "téléchargement " + Math.round(100 * a.progress.done / a.progress.total) + " %"
+        : "téléchargement " + bytes(a.progress.done);
+    });
+    if (changed) window.location.reload();
+  }
+
+  var live = $("[data-poll]");
+  if (live) {
+    var kind = live.dataset.pollKind;
+    if (kind === "apps" && !$('tr[data-status="downloading"]')) return;
+    var handler = { status: bind, wu: function (d) { bind(d); renderWuLog(d); }, apps: renderApps }[kind];
+    var tick = poll(live.dataset.poll, Number(live.dataset.pollEvery) || 10000, handler);
+    if (kind === "apps") tick();
+  }
 })();

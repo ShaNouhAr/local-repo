@@ -7,15 +7,17 @@
     <h1>Logiciels Windows</h1>
     <p>Installeurs stockés sur le serveur et installés en silence par PowerShell. Cochez des logiciels pour obtenir la commande.</p>
   </div>
+  {% if can_edit %}
   <div class="actions">
     <button type="button" class="btn primary" data-open="#add">Ajouter un logiciel</button>
   </div>
+  {% endif %}
 </div>
 
-<section class="panel">
+<section class="panel" data-poll="{{ url_for('api_apps') }}" data-poll-kind="apps" data-poll-every="1500">
   <div class="panel-h">
-    <h2>Catalogue <span class="faint" style="font-weight:400">{{ apps|length }} · {{ apps|sum(attribute='size')|human }}</span></h2>
-    {% if apps %}<div class="aside"><input type="search" placeholder="Filtrer" data-filter="#apps tbody tr:not(.note-row)" data-empty="#apps-none" style="width:220px;height:28px"></div>{% endif %}
+    <h2>Catalogue <span class="h-count">{{ apps|length }} · {{ apps|sum(attribute='size')|human }}</span></h2>
+    {% if apps %}<div class="aside"><input type="search" placeholder="Filtrer" data-filter="#apps tbody tr:not(.note-row)" data-empty="#apps-none" class="search-sm"></div>{% endif %}
   </div>
   {% if apps %}
   <div class="table-wrap">
@@ -41,6 +43,7 @@
             {% else %}<span class="st">en attente</span>{% endif %}
           </td>
           <td class="right">
+            {% if can_edit %}
             <div class="acts">
               <button type="button" class="linkbtn" data-open="#edit"
                 data-app='{{ {"slug": a.slug, "name": a.name, "version": a.version, "kind": a.kind, "args": a.args, "url": a.source_url, "filename": a.filename, "sha256": a.sha256}|tojson|forceescape }}'>Modifier</button>
@@ -55,6 +58,7 @@
                 <button class="linkbtn del">Supprimer</button>
               </form>
             </div>
+            {% endif %}
           </td>
         </tr>
         {% if a.status == 'error' %}
@@ -70,10 +74,10 @@
   {% else %}
   <div class="empty">Catalogue vide. Ajoutez un installeur par lien ou par fichier.</div>
   {% endif %}
-  <div class="panel-f">Chaque installeur a 30 minutes pour se terminer (variable <code>LR_TIMEOUT</code> pour changer). Le fichier est vérifié par SHA256 avant installation.</div>
+  <div class="panel-f">Commande en HTTPS : l'autorité local-repo doit être importée sur le poste (GPO).{% if http_url %} Sans elle, remplacer l'adresse par <code>{{ http_url }}</code>.{% endif %} Chaque installeur a 30 minutes pour se terminer (<code>LR_TIMEOUT</code>) et le fichier est vérifié par SHA256 avant installation.</div>
 </section>
 
-<div class="selbar" data-base="{{ public_url }}/win/i/">
+<div class="selbar" data-base="{{ client_url }}/win/i/">
   <div class="selbar-in">
     <span class="count">0 sélectionné</span>
     {{ cmd('cmd-sel', '', 'PS>') }}
@@ -81,6 +85,7 @@
   </div>
 </div>
 
+{% if can_edit %}
 {# ------------------------------------------------------------ ajout #}
 <dialog id="add">
   <form method="post" action="{{ url_for('windows_apps_add') }}" enctype="multipart/form-data" data-ajax>
@@ -112,7 +117,7 @@
           </select>
         </label>
         <label class="f"><span>Arguments silencieux</span><input type="text" name="args" placeholder="/S"></label>
-        <p class="hint wide" style="margin-top:-6px">Par défaut : msi <code>{{ default_args.msi }}</code>, msu <code>{{ default_args.msu }}</code>. Pour un exe, selon l'éditeur : <code>/S</code>, <code>/silent</code>, <code>/quiet</code>…</p>
+        <p class="hint wide hint-tight">Par défaut : msi <code>{{ default_args.msi }}</code>, msu <code>{{ default_args.msu }}</code>. Pour un exe, selon l'éditeur : <code>/S</code>, <code>/silent</code>, <code>/quiet</code>…</p>
       </div>
       <div class="progress"><div class="meter"><i></i></div><div class="row"><span data-size></span><span data-pct></span></div></div>
     </div>
@@ -151,27 +156,5 @@
     </div>
   </form>
 </dialog>
-{% endblock %}
-
-{% block scripts %}
-<script>
-(function () {
-  if (!document.querySelector('tr[data-status="downloading"]')) return;
-  var tick = lrPoll("{{ url_for('api_apps') }}", 1500, function (d) {
-    var changed = false;
-    d.apps.forEach(function (a) {
-      var row = document.querySelector('tr[data-slug="' + a.slug + '"]');
-      if (!row) return;
-      if (row.dataset.status !== a.status) { changed = true; return; }
-      var el = row.querySelector("[data-progress]");
-      if (!el || !a.progress.done) return;
-      el.textContent = a.progress.total
-        ? "téléchargement " + Math.round(100 * a.progress.done / a.progress.total) + " %"
-        : "téléchargement " + lrBytes(a.progress.done);
-    });
-    if (changed) window.location.reload();
-  });
-  tick();
-})();
-</script>
+{% endif %}
 {% endblock %}

@@ -1,0 +1,8 @@
+[Unit]
+Description=local-repo - sauvegarde
+
+[Service]
+Type=oneshot
+Nice=19
+IOSchedulingClass=idle
+ExecStart=/opt/local-repo/bin/local-repo-backup create

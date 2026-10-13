@@ -304,3 +304,22 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
   .selbar-in { padding: 10px 16px; flex-wrap: wrap; }
   .selbar .cmd { flex-basis: 100%; order: 3; }
 }
+
+/* ------------------------------------------------------------------ compléments */
+
+.search-sm { width: 220px !important; height: 28px !important; }
+.h-count { font-weight: 400; color: var(--text-3); }
+.hint-tight { margin-top: -6px; }
+.userbox { display: flex; align-items: center; gap: 14px; white-space: nowrap; font-size: 13.5px; }
+.userbox a { color: var(--text-2); text-decoration: none; }
+.userbox a:hover, .userbox a.on { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+.issued { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.issued code { font-size: 15px; padding: 4px 8px; }
+.inline-form { display: inline-flex; gap: 6px; align-items: center; }
+.inline-form select { height: 26px; width: auto; padding: 0 26px 0 8px; font-size: 13px; }
+.role { font: 500 12px var(--mono); color: var(--text-2); }
+.badge-ro { font-size: 12px; color: var(--text-3); border: 1px solid var(--line-2); border-radius: 3px; padding: 0 5px; }
+.subnav { margin: -8px 0 24px; }
+.subnav a { padding: 0 0 8px; margin-bottom: -1px; border-bottom: 2px solid transparent; color: var(--text-2); text-decoration: none; font-size: 13.5px; }
+.subnav a:hover { color: var(--text); }
+.subnav a.on { color: var(--text); border-bottom-color: var(--text); font-weight: 500; }

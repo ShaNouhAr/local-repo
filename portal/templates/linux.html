@@ -16,23 +16,25 @@
   <div class="metrics">
     <div class="metric"><div class="k">Cache apt-cacher-ng</div><div class="v">{{ stats.get('acng', 0)|human }}</div><div class="s">{{ service(acng) }} · <span class="mono">:{{ acng_port }}</span></div></div>
     <div class="metric"><div class="k">Dépôt local</div><div class="v">{{ debs|length }}</div><div class="s">paquet(s) · {{ debs|sum(attribute='size')|human }}</div></div>
-    <div class="metric"><div class="k">Signature</div><div class="v">GPG</div><div class="s"><a href="{{ public_url }}/apt/local-repo.gpg">clé publique</a></div></div>
+    <div class="metric"><div class="k">Signature</div><div class="v">GPG</div><div class="s"><a href="{{ client_url }}/apt/local-repo.gpg">clé publique</a></div></div>
   </div>
 
   <section class="panel">
     <div class="panel-h"><h2>Brancher un poste</h2><div class="aside">à lancer sur la machine à configurer</div></div>
     <div class="panel-b">
       <div class="tabs" role="tablist" data-target="#cmd-setup">
-        <button type="button" data-tab="full" aria-selected="true" data-cmd="curl -fsSL {{ public_url }}/linux/setup.sh | sudo sh">Cache et dépôt</button>
-        <button type="button" data-tab="repo" aria-selected="false" data-cmd="curl -fsSL {{ public_url }}/linux/setup.sh | sudo sh -s -- --no-proxy">Dépôt seul</button>
-        <button type="button" data-tab="remove" aria-selected="false" data-cmd="curl -fsSL {{ public_url }}/linux/setup.sh | sudo sh -s -- --remove">Retirer</button>
+        <button type="button" data-tab="full" aria-selected="true" data-cmd="curl -fsSL {{ client_url }}/linux/setup.sh | sudo sh">Cache et dépôt</button>
+        <button type="button" data-tab="repo" aria-selected="false" data-cmd="curl -fsSL {{ client_url }}/linux/setup.sh | sudo sh -s -- --no-proxy">Dépôt seul</button>
+        <button type="button" data-tab="remove" aria-selected="false" data-cmd="curl -fsSL {{ client_url }}/linux/setup.sh | sudo sh -s -- --remove">Retirer</button>
       </div>
-      {{ cmd('cmd-setup', 'curl -fsSL ' ~ public_url ~ '/linux/setup.sh | sudo sh') }}
-      <p class="hint">Sans curl, remplacer <code>curl -fsSL</code> par <code>wget -qO-</code>. Les dépôts HTTPS (Docker…) restent en accès direct, les dépôts HTTP passent par le cache.</p>
+      {{ cmd('cmd-setup', 'curl -fsSL ' ~ client_url ~ '/linux/setup.sh | sudo sh') }}
+      <p class="hint">Nécessite l'autorité local-repo sur le poste.{% if http_url %} Premier branchement : <code>curl -fsSL {{ http_url }}/linux/setup.sh | sudo sh -s -- --trust-ca</code> (importe l'autorité, puis passe en HTTPS).{% endif %}
+        Sans curl, remplacer <code>curl -fsSL</code> par <code>wget -qO-</code>. Les dépôts HTTPS des éditeurs restent en accès direct, les dépôts HTTP passent par le cache.</p>
     </div>
   </section>
 
-  <div class="cols w12">
+  <div class="cols {{ 'w12' if can_edit else '' }}">
+    {% if can_edit %}
     <section class="panel">
       <div class="panel-h"><h2>Ajouter des paquets</h2></div>
       <form class="panel-b" method="post" action="{{ url_for('linux_upload') }}" enctype="multipart/form-data" data-ajax>
@@ -47,11 +49,12 @@
         <p class="hint">Les paquets sont indexés et signés aussitôt, puis installables avec <code>apt install</code>.</p>
       </form>
     </section>
+    {% endif %}
 
     <section class="panel">
       <div class="panel-h">
         <h2>Dépôt local</h2>
-        {% if debs %}<div class="aside"><input type="search" placeholder="Filtrer" data-filter="#debs tbody tr" data-empty="#debs-none" style="width:200px;height:28px"></div>{% endif %}
+        {% if debs %}<div class="aside"><input type="search" placeholder="Filtrer" data-filter="#debs tbody tr" data-empty="#debs-none" class="search-sm"></div>{% endif %}
       </div>
       {% if debs %}
       <div class="table-wrap">
@@ -66,12 +69,12 @@
               <td class="num">{{ d.size|human }}</td>
               <td class="right">
                 <div class="acts">
-                  <a href="{{ public_url }}/apt/pool/{{ d.file }}">Télécharger</a>
-                  <form method="post" action="{{ url_for('linux_delete') }}" data-ajax data-confirm="Supprimer {{ d.package }} {{ d.version }} ?" data-confirm-text="Le paquet est retiré du dépôt local. Les postes qui l'ont installé le gardent." data-confirm-ok="Supprimer">
+                  <a href="{{ client_url }}/apt/pool/{{ d.file }}">Télécharger</a>
+                  {% if can_edit %}<form method="post" action="{{ url_for('linux_delete') }}" data-ajax data-confirm="Supprimer {{ d.package }} {{ d.version }} ?" data-confirm-text="Le paquet est retiré du dépôt local. Les postes qui l'ont installé le gardent." data-confirm-ok="Supprimer">
                     <input type="hidden" name="csrf" value="{{ csrf }}">
                     <input type="hidden" name="file" value="{{ d.file }}">
                     <button class="linkbtn del">Supprimer</button>
-                  </form>
+                  </form>{% endif %}
                 </div>
               </td>
             </tr>

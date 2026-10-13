@@ -22,7 +22,7 @@
       </div>
       {% if cert %}
       <dl class="kv">
-        <dt>Adresse</dt><dd class="mono"><a href="{{ admin_url }}">{{ admin_url }}</a></dd>
+        <dt>Adresse</dt><dd class="mono"><a href="{{ https_url }}">{{ https_url }}</a></dd>
         <dt>Noms couverts</dt><dd class="mono">{{ cert.san|join(', ') }}</dd>
         <dt>Émis par</dt><dd>{{ cert.issuer }}</dd>
         <dt>Validité</dt><dd>du {{ cert.start.text }} au {{ cert.end.text }}</dd>
@@ -34,17 +34,17 @@
     </section>
 
     <section class="panel">
-      <div class="panel-h"><h2>Autorité de certification locale</h2><div class="aside"><a href="{{ public_url }}/ca.crt">ca.crt</a></div></div>
+      <div class="panel-h"><h2>Autorité de certification locale</h2><div class="aside"><a href="{{ https_url }}/ca.crt">ca.crt</a></div></div>
       {% if ca %}
       <div class="panel-b">
         <p class="muted">Le certificat du portail est signé par cette autorité, créée à l'installation. L'importer une fois sur un poste supprime l'alerte du navigateur, y compris après renouvellement du certificat.</p>
         <div>
           <span class="cmd-label">Windows, PowerShell administrateur</span>
-          {{ cmd('ca-win', "Invoke-WebRequest -UseBasicParsing " ~ public_url ~ "/ca.crt -OutFile $env:TEMP\\local-repo-ca.crt; Import-Certificate -FilePath $env:TEMP\\local-repo-ca.crt -CertStoreLocation Cert:\\LocalMachine\\Root", 'PS>') }}
+          {{ cmd('ca-win', "Invoke-WebRequest -UseBasicParsing " ~ (http_url or https_url) ~ "/ca.crt -OutFile $env:TEMP\\local-repo-ca.crt; Import-Certificate -FilePath $env:TEMP\\local-repo-ca.crt -CertStoreLocation Cert:\\LocalMachine\\Root", 'PS>') }}
         </div>
         <div>
           <span class="cmd-label">Debian / Ubuntu</span>
-          {{ cmd('ca-linux', 'curl -fsSL ' ~ public_url ~ '/ca.crt | sudo tee /usr/local/share/ca-certificates/local-repo.crt >/dev/null && sudo update-ca-certificates') }}
+          {{ cmd('ca-linux', 'curl -fsSL ' ~ (http_url or https_url) ~ '/ca.crt | sudo tee /usr/local/share/ca-certificates/local-repo.crt >/dev/null && sudo update-ca-certificates') }}
         </div>
         <p class="hint">Vérifier l'empreinte avant d'importer : <span class="mono break">{{ ca.sha256 }}</span>. Firefox sous Linux utilise son propre magasin (Paramètres › Certificats › Importer). Sur un domaine, l'autorité peut aussi être déployée par GPO.</p>
       </div>
@@ -61,7 +61,7 @@
         <table>
           <thead><tr><th>Unité systemd</th><th class="hide-sm">Rôle</th><th>État</th></tr></thead>
           <tbody>
-          {% for unit, label, desc, active in services %}
+          {% for unit, desc, active in services %}
             <tr><td class="mono nowrap">{{ unit }}</td><td class="muted hide-sm">{{ desc }}</td><td>{{ service(active) }}</td></tr>
           {% endfor %}
           </tbody>
@@ -79,5 +79,22 @@
       </dl>
     </section>
   </div>
+
+  <section class="panel">
+    <div class="panel-h"><h2>Sauvegardes</h2><div class="aside mono">{{ backup_dir }}</div></div>
+    {% if backups %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Archive</th><th>Date</th><th class="num">Taille</th></tr></thead>
+        <tbody>
+        {% for b in backups %}<tr><td class="mono">{{ b.name }}</td><td class="mono muted">{{ b.when|date_fr }}</td><td class="num">{{ b.size|human }}</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">Aucune sauvegarde pour l'instant.</div>
+    {% endif %}
+    <div class="panel-f">Quotidienne (configuration, comptes, clés, dépôt et catalogue ; hors caches). À la main : <code>sudo local-repo-backup create</code> ; restauration : <code>sudo local-repo-backup restore ARCHIVE</code>.</div>
+  </section>
 </div>
 {% endblock %}

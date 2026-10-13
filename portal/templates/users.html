@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Comptes{% endblock %}
+{% block content %}
+<div class="head">
+  <div>
+    <h1>Comptes</h1>
+    <p>Accès au portail. Les administrateurs modifient tout ; la lecture seule consulte et copie les commandes.</p>
+  </div>
+</div>
+
+<div class="stack">
+  {% if issued %}
+  <section class="panel">
+    <div class="panel-h"><h2>Mot de passe temporaire</h2><div class="aside">affiché une seule fois</div></div>
+    <div class="panel-b issued">
+      <span>Compte <b class="mono">{{ issued.username }}</b></span>
+      <div class="cmd"><code id="issued-pw" data-prompt="">{{ issued.password }}</code><button type="button" class="copy">Copier</button></div>
+      <span class="hint">À transmettre à la personne : il devra être changé à la première connexion.</span>
+    </div>
+  </section>
+  {% endif %}
+
+  <div class="cols w21">
+    <section class="panel">
+      <div class="panel-h"><h2>Comptes <span class="h-count">{{ users|length }}</span></h2></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Identifiant</th><th>Rôle et état</th><th>Dernière connexion</th><th></th></tr></thead>
+          <tbody>
+          {% for u in users %}
+            {% set me = u.id == current_user.id %}
+            <tr>
+              <td><span class="mono">{{ u.username }}</span>{% if me %} <span class="faint small">(vous)</span>{% endif %}
+                <span class="sub">créé le {{ u.created_at|date_fr }}</span></td>
+              <td>
+                {% if me %}
+                  <span class="role">{{ roles[u.role] }}</span>
+                {% else %}
+                <form method="post" action="{{ url_for('users_update', user_id=u.id) }}" class="inline-form" data-ajax>
+                  <input type="hidden" name="csrf" value="{{ csrf }}">
+                  <select name="role" aria-label="Rôle">{% for k, label in roles.items() %}<option value="{{ k }}" {{ 'selected' if u.role == k }}>{{ label }}</option>{% endfor %}</select>
+                  <select name="disabled" aria-label="État"><option value="0" {{ 'selected' if not u.disabled }}>actif</option><option value="1" {{ 'selected' if u.disabled }}>désactivé</option></select>
+                  <button class="btn sm">Appliquer</button>
+                </form>
+                {% endif %}
+                {% if u.disabled %}<span class="st err small">désactivé</span>{% elif u.must_change %}<span class="st warn small">mot de passe temporaire</span>{% endif %}
+              </td>
+              <td class="mono muted nowrap">{{ u.last_login|date_fr if u.last_login else '—' }}</td>
+              <td class="right">
+                {% if not me %}
+                <div class="acts">
+                  <form method="post" action="{{ url_for('users_reset', user_id=u.id) }}" data-ajax data-confirm="Réinitialiser le mot de passe de {{ u.username }} ?" data-confirm-text="Un mot de passe temporaire sera généré et ses sessions seront fermées." data-confirm-ok="Réinitialiser">
+                    <input type="hidden" name="csrf" value="{{ csrf }}"><button class="linkbtn">Réinitialiser</button>
+                  </form>
+                  <form method="post" action="{{ url_for('users_delete', user_id=u.id) }}" data-ajax data-confirm="Supprimer le compte {{ u.username }} ?" data-confirm-text="Le compte est supprimé ; ses actions restent dans le journal." data-confirm-ok="Supprimer">
+                    <input type="hidden" name="csrf" value="{{ csrf }}"><button class="linkbtn del">Supprimer</button>
+                  </form>
+                </div>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-h"><h2>Nouveau compte</h2></div>
+      <form class="panel-b" method="post" action="{{ url_for('users_add') }}" data-ajax>
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label class="f"><span>Identifiant</span><input type="text" name="username" required pattern="[a-z0-9][a-z0-9._\-]{1,31}" placeholder="prenom.nom" autocapitalize="none" spellcheck="false"></label>
+        <label class="f"><span>Rôle</span><select name="role">{% for k, label in roles.items() %}<option value="{{ k }}" {{ 'selected' if k == 'viewer' }}>{{ label }}</option>{% endfor %}</select></label>
+        <button class="btn primary"><span class="spin"></span>Créer le compte</button>
+        <p class="hint">Un mot de passe temporaire est généré ; il devra être changé à la première connexion. En cas de perte de tous les accès : <code>sudo local-repo-user passwd admin</code>.</p>
+      </form>
+    </section>
+  </div>
+</div>
+{% endblock %}

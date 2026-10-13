@@ -42,16 +42,26 @@ if [ "$YES" = 0 ]; then
 fi
 
 say "Arrêt des services"
-systemctl disable --now local-repo-portal local-repo-stats.timer local-repo-nginx.path >/dev/null 2>&1 || true
+systemctl disable --now local-repo-portal local-repo-stats.timer local-repo-nginx.path local-repo-backup.timer \
+    >/dev/null 2>&1 || true
 rm -f /etc/systemd/system/local-repo-portal.service /etc/systemd/system/local-repo-stats.service \
       /etc/systemd/system/local-repo-stats.timer /etc/systemd/system/local-repo-nginx.service \
-      /etc/systemd/system/local-repo-nginx.path
+      /etc/systemd/system/local-repo-nginx.path /etc/systemd/system/local-repo-backup.service \
+      /etc/systemd/system/local-repo-backup.timer
+rm -rf /etc/systemd/system/apt-cacher-ng.service.d/local-repo.conf
+rmdir /etc/systemd/system/apt-cacher-ng.service.d 2>/dev/null || true
+rm -f /etc/apt-cacher-ng/zz-local-repo.conf /usr/local/sbin/local-repo-user /usr/local/sbin/local-repo-backup
+for f in /etc/hosts.allow /etc/hosts.deny; do
+    if [ -f "$f" ]; then sed -i '/# local-repo$/d' "$f"; fi
+done
 systemctl daemon-reload
 
 say "Configuration nginx"
 rm -f /etc/nginx/sites-enabled/local-repo-portal.conf /etc/nginx/sites-available/local-repo-portal.conf \
       /etc/nginx/sites-enabled/local-repo-wucache.conf /etc/nginx/sites-available/local-repo-wucache.conf \
-      /etc/nginx/modules-enabled/99-local-repo-stream.conf
+      /etc/nginx/modules-enabled/99-local-repo-stream.conf /etc/nginx/snippets/local-repo-clients.conf \
+      /etc/nginx/snippets/local-repo-admin.conf /etc/nginx/snippets/local-repo-proxy.conf \
+      /etc/nginx/snippets/local-repo-flathub-proxy.conf
 if [ -f "$STATE/nginx-default-disabled" ]; then
     [ -e /etc/nginx/sites-available/default ] && ln -sf ../sites-available/default /etc/nginx/sites-enabled/default
     rm -f "$STATE/nginx-default-disabled"
@@ -68,8 +78,9 @@ if [ ${#PKGS[@]} -gt 0 ]; then
     DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y -q >/dev/null || true
 fi
 if systemctl is-active -q nginx 2>/dev/null; then
-    nginx -t >/dev/null 2>&1 && systemctl reload nginx
+    if nginx -t >/dev/null 2>&1; then systemctl reload nginx; fi
 fi
+if systemctl is-active -q apt-cacher-ng 2>/dev/null; then systemctl restart apt-cacher-ng || true; fi
 
 say "Suppression du programme"
 rm -rf "$PREFIX" "$PREFIX.new"
@@ -84,6 +95,10 @@ if [ "$PURGE" = 1 ]; then
         rm -rf /var/cache/apt-cacher-ng /var/log/apt-cacher-ng
     fi
     userdel localrepo 2>/dev/null || true
+    BACKUP_DIR=${BACKUP_DIR:-/var/backups/local-repo}
+    if [ -d "$BACKUP_DIR" ]; then
+        echo "    Sauvegardes conservées : $BACKUP_DIR (à supprimer à la main si inutiles)"
+    fi
 else
     echo "    Données conservées : $DATA, $STATE, $ETC (sudo ./remove.sh --purge pour tout effacer)"
 fi
