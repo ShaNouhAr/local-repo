@@ -1,0 +1,7 @@
+[Unit]
+Description=local-repo - recharge nginx après un changement de domaines
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/nginx -t -q
+ExecStart=/bin/systemctl reload nginx

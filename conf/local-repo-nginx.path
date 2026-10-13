@@ -1,0 +1,8 @@
+[Unit]
+Description=local-repo - surveille la liste des domaines Windows Update
+
+[Path]
+PathChanged=/var/lib/local-repo/nginx/wu-http.map
+
+[Install]
+WantedBy=multi-user.target

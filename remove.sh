@@ -42,9 +42,10 @@ if [ "$YES" = 0 ]; then
 fi
 
 say "Arrêt des services"
-systemctl disable --now local-repo-portal local-repo-stats.timer >/dev/null 2>&1 || true
+systemctl disable --now local-repo-portal local-repo-stats.timer local-repo-nginx.path >/dev/null 2>&1 || true
 rm -f /etc/systemd/system/local-repo-portal.service /etc/systemd/system/local-repo-stats.service \
-      /etc/systemd/system/local-repo-stats.timer
+      /etc/systemd/system/local-repo-stats.timer /etc/systemd/system/local-repo-nginx.service \
+      /etc/systemd/system/local-repo-nginx.path
 systemctl daemon-reload
 
 say "Configuration nginx"
@@ -65,7 +66,6 @@ if [ ${#PKGS[@]} -gt 0 ]; then
     say "Désinstallation des paquets : ${PKGS[*]}"
     DEBIAN_FRONTEND=noninteractive apt-get purge -y -q "${PKGS[@]}" >/dev/null || true
     DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y -q >/dev/null || true
-    rm -f "$STATE/installed-packages"
 fi
 if systemctl is-active -q nginx 2>/dev/null; then
     nginx -t >/dev/null 2>&1 && systemctl reload nginx
@@ -77,8 +77,12 @@ rm -rf "$PREFIX" "$PREFIX.new"
 if [ "$PURGE" = 1 ]; then
     say "Suppression des données"
     case "$DATA" in /|/srv|/var|/home|/opt|"") die "dossier de données suspect : '$DATA'" ;; esac
-    rm -rf "$DATA" "$STATE" "$ETC" /var/cache/apt-cacher-ng
-    rm -f /var/log/nginx/local-repo-*.log*
+    rm -rf "$DATA" "$STATE" "$ETC"
+    rm -f /var/log/nginx/local-repo-*.log* /var/log/local-repo-install.log
+    # Cache et journaux d'apt-cacher-ng seulement s'il avait été installé par local-repo.
+    if printf '%s\n' "${PKGS[@]}" | grep -qx apt-cacher-ng; then
+        rm -rf /var/cache/apt-cacher-ng /var/log/apt-cacher-ng
+    fi
     userdel localrepo 2>/dev/null || true
 else
     echo "    Données conservées : $DATA, $STATE, $ETC (sudo ./remove.sh --purge pour tout effacer)"

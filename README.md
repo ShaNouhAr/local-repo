@@ -57,6 +57,8 @@ Seuls les paquets installés par `install.sh` sont retirés ; ceux qui étaient 
 curl -fsSL http://<ip>:8088/linux/setup.sh | sudo sh
 ```
 
+Sur un système minimal sans `curl` : `wget -qO- http://<ip>:8088/linux/setup.sh | sudo sh`.
+
 Le poste passe par le cache apt-cacher-ng et voit le dépôt local. Variantes :
 `| sudo sh -s -- --no-proxy` (dépôt local seul), `| sudo sh -s -- --remove` (annuler).
 
@@ -84,6 +86,11 @@ Le script télécharge depuis le serveur, vérifie le SHA256 et installe en sile
 | fichier | copie dans `C:\Users\Public\Downloads` | — |
 
 **Actualiser** retélécharge depuis l'URL source : pratique avec les liens « dernière version ».
+Le type (exe, msi…) est déduit du fichier réellement reçu, même si le lien n'a pas d'extension.
+
+Chaque installeur a 30 minutes pour se terminer (`$env:LR_TIMEOUT = 600` avant la commande pour changer) :
+un `.exe` lancé sans argument silencieux attend un clic et serait sinon bloqué indéfiniment.
+Le portail signale ces logiciels. Une mise à jour `.msu` déjà installée ou non applicable est indiquée comme telle.
 
 ### Windows Update
 
@@ -106,6 +113,13 @@ Le trafic HTTPS vers ces domaines est relayé tel quel (port 443, sans déchiffr
 téléchargements HTTP sont mis en cache, ce qui couvre l'essentiel du volume des mises à jour.
 Le premier poste télécharge depuis Internet, les suivants sont servis en local.
 
+Seuls les fichiers immuables (nom contenant une empreinte ou un identifiant unique, comme les paquets de
+mise à jour) sont gardés en cache ; les fichiers qui changent, comme les listes de certificats
+(`authrootstl.cab`), passent toujours chez Microsoft. Les requêtes partielles (Delivery Optimization) sont gérées.
+
+Seuls les domaines de la liste sont acceptés, sur 80 comme sur 443 : le reste est refusé. Une modification de
+la liste dans le portail est appliquée à nginx automatiquement (service `local-repo-nginx.path`).
+
 ## Fonctionnement
 
 | Élément | Où | Port |
@@ -121,12 +135,13 @@ Le premier poste télécharge depuis Internet, les suivants sont servis en local
 Tout vient des dépôts officiels Debian (`nginx`, `apt-cacher-ng`, `python3-flask`, `gunicorn`, `gnupg`) :
 les mises à jour de sécurité arrivent avec `apt upgrade`.
 
-Journaux : `journalctl -u local-repo-portal`, `/var/log/nginx/local-repo-*.log`.
+Journaux : `journalctl -u local-repo-portal`, `/var/log/nginx/local-repo-*.log`,
+sortie d'apt de la dernière installation dans `/var/log/local-repo-install.log`.
 
 ## Sécurité
 
 - Pensé pour un **réseau local de confiance** : n'exposez pas ces ports sur Internet.
-  Le cache Windows Update (80/443) relaie toute requête qu'il reçoit, comme lancache.
+  Le cache Windows Update (80/443) ne relaie que les domaines de sa liste.
 - Le portail d'administration est protégé par mot de passe (session + jeton CSRF).
   Les téléchargements (`/apt/`, `/win/files/`, scripts d'installation) sont publics sur le réseau.
 - Le dépôt APT local est signé par une clé générée à l'installation.

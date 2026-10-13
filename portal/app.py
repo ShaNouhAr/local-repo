@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import urllib.parse
 import urllib.request
 from functools import wraps
@@ -38,6 +39,7 @@ TMP_DIR = os.path.join(DATA, ".tmp")
 DB_PATH = os.path.join(STATE, "portal.db")
 STATS_PATH = os.path.join(STATE, "stats.json")
 WU_DOMAINS_PATH = os.path.join(STATE, "wu-domains.txt")
+NGINX_MAP_DIR = os.path.join(STATE, "nginx")
 
 DEFAULT_WU_DOMAINS = [
     "windowsupdate.com",
@@ -109,6 +111,15 @@ def init_db():
         # Un téléchargement interrompu par un redémarrage ne reprendra jamais.
         conn.execute("UPDATE win_apps SET status='error', error='Interrompu (redémarrage du service)' "
                      "WHERE status='downloading'")
+    # Fichiers temporaires laissés par un arrêt brutal (téléchargements, envois).
+    for root in (WIN_DIR, TMP_DIR, POOL_DIR):
+        for dirpath, _dirs, files in os.walk(root):
+            for name in files:
+                if name.startswith((".dl-", ".up-")):
+                    try:
+                        os.unlink(os.path.join(dirpath, name))
+                    except OSError:
+                        pass
 
 
 def now():
@@ -195,10 +206,17 @@ def read_stats():
 
 
 PROGRESS = {}  # slug -> [octets reçus, taille totale]
+CANCELLED = set()  # slugs supprimés pendant leur téléchargement
+
+
+class Cancelled(Exception):
+    pass
 
 
 def download(url, dest_dir, progress_key=None):
     """Télécharge url dans dest_dir. Retourne (chemin, nom de fichier)."""
+    if not url.lower().startswith(("http://", "https://")):
+        raise ValueError("Le lien doit commencer par http:// ou https://.")
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, timeout=60) as resp:
         name = ""
@@ -218,6 +236,8 @@ def download(url, dest_dir, progress_key=None):
                     chunk = resp.read(1024 * 1024)
                     if not chunk:
                         break
+                    if progress_key in CANCELLED:
+                        raise Cancelled()
                     out.write(chunk)
                     done += len(chunk)
                     if progress_key:
@@ -267,6 +287,16 @@ def inject_globals():
             "acng_port": ACNG_PORT, "nav": nav, "asset_v": ASSET_V}
 
 
+def safe_next(target):
+    """Chemin local uniquement (pas de //hôte, /\\hôte ni schéma) : évite les redirections ouvertes."""
+    target = target or "/"
+    parsed = urllib.parse.urlparse(target.replace("\\", "/"))
+    if (not target.startswith("/") or parsed.scheme or parsed.netloc or target.startswith("//")
+            or re.search(r"[\x00-\x1f\x7f]", target)):
+        return "/"
+    return target
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -275,8 +305,8 @@ def login():
             session.clear()
             session.permanent = True
             session["auth"] = True
-            target = request.args.get("next", "/")
-            return redirect(target if target.startswith("/") and not target.startswith("//") else "/")
+            return redirect(safe_next(request.args.get("next", "/")))
+        time.sleep(1)  # freine les essais en rafale
         flash("Mot de passe incorrect.", "error")
     return render_template("login.html")
 
@@ -346,23 +376,30 @@ def api_status():
 # --------------------------------------------------------------------------- paquets Linux
 
 def list_debs():
+    """Paquets du dépôt local, lus dans l'index Packages (versions exactes, epoch compris)."""
     debs = []
-    if not os.path.isdir(POOL_DIR):
+    try:
+        with open(os.path.join(APT_DIR, "Packages")) as f:
+            stanzas = f.read().split("\n\n")
+    except OSError:
         return debs
-    for name in sorted(os.listdir(POOL_DIR)):
-        if not name.endswith(".deb"):
+    for stanza in stanzas:
+        fields = dict(line.split(": ", 1) for line in stanza.splitlines() if ": " in line and not line.startswith(" "))
+        if "Filename" not in fields:
             continue
-        parts = name[:-4].split("_")
+        name = os.path.basename(fields["Filename"])
         path = os.path.join(POOL_DIR, name)
+        if not os.path.isfile(path):
+            continue
         debs.append({
             "file": name,
-            "package": parts[0],
-            "version": parts[1] if len(parts) > 1 else "",
-            "arch": parts[2] if len(parts) > 2 else "",
+            "package": fields.get("Package", ""),
+            "version": fields.get("Version", ""),
+            "arch": fields.get("Architecture", ""),
             "size": os.path.getsize(path),
             "mtime": os.path.getmtime(path),
         })
-    return debs
+    return sorted(debs, key=lambda d: (d["package"], d["version"]))
 
 
 def deb_fields(path):
@@ -408,7 +445,9 @@ def rebuild_apt():
 
 def add_deb(tmp_path):
     fields = deb_fields(tmp_path)
-    name = secure_filename(f"{fields['Package']}_{fields['Version'].replace(':', '%3a')}_{fields['Architecture']}.deb")
+    # Convention Debian : l'epoch (« 1: ») n'apparaît pas dans le nom du fichier.
+    version = fields["Version"].split(":", 1)[-1]
+    name = secure_filename(f"{fields['Package']}_{version}_{fields['Architecture']}.deb")
     os.chmod(tmp_path, 0o644)
     os.replace(tmp_path, os.path.join(POOL_DIR, name))
     rebuild_apt()
@@ -493,8 +532,25 @@ def read_wu_domains():
 LOG_RE = re.compile(r'^(\S+) \[([^\]]+)\] "(\S+) (\S+)[^"]*" (\d+) (\d+) (\S+) "([^"]*)"$')
 
 
+_WU_CACHE = {}
+
+
 def wu_stats(max_bytes=20 * 1024 * 1024, recent=0):
     """Lit la fin du journal du cache Windows Update : compteurs HIT/MISS et dernières requêtes."""
+    try:
+        st = os.stat(WU_LOG)
+        key = (st.st_ino, st.st_size, st.st_mtime_ns, recent)
+    except OSError:
+        key = None
+    if key and _WU_CACHE.get("key") == key:
+        return json.loads(_WU_CACHE["value"])
+    res = _wu_stats(max_bytes, recent)
+    if key:
+        _WU_CACHE.update(key=key, value=json.dumps(res))
+    return res
+
+
+def _wu_stats(max_bytes, recent):
     res = {"hit_bytes": 0, "miss_bytes": 0, "hits": 0, "misses": 0, "ok": False, "recent": []}
     try:
         with open(WU_LOG, "rb") as f:
@@ -515,7 +571,7 @@ def wu_stats(max_bytes=20 * 1024 * 1024, recent=0):
         if cache == "HIT":
             res["hits"] += 1
             res["hit_bytes"] += size
-        elif cache in ("MISS", "EXPIRED", "UPDATING", "STALE"):
+        elif cache in ("MISS", "EXPIRED", "UPDATING", "STALE", "BYPASS"):
             res["misses"] += 1
             res["miss_bytes"] += size
         if recent:
@@ -544,6 +600,19 @@ def api_wu():
     return wu
 
 
+def write_wu_maps(domains=None):
+    """Écrit la liste des domaines autorisés pour nginx (le service local-repo-nginx recharge nginx)."""
+    domains = domains or read_wu_domains()
+    os.makedirs(NGINX_MAP_DIR, exist_ok=True)
+    for name, value in (("wu-stream.map", "$ssl_preread_server_name:443"), ("wu-http.map", "1")):
+        body = "".join(f".{d} {value};\n" for d in domains if DOMAIN_RE.match(d))
+        tmp = os.path.join(NGINX_MAP_DIR, f".{name}.tmp")
+        with open(tmp, "w") as f:
+            f.write("# Généré par le portail local-repo, ne pas modifier.\n" + body)
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, os.path.join(NGINX_MAP_DIR, name))
+
+
 @app.route("/windows-update/domains", methods=["POST"])
 @login_required
 def windows_update_domains():
@@ -556,9 +625,11 @@ def windows_update_domains():
     if bad:
         flash("Domaines ignorés (invalides) : " + ", ".join(bad), "error")
     if domains:
+        domains = list(dict.fromkeys(domains))
         with open(WU_DOMAINS_PATH, "w") as f:
-            f.write("\n".join(dict.fromkeys(domains)) + "\n")
-        flash("Liste des domaines enregistrée.", "ok")
+            f.write("\n".join(domains) + "\n")
+        write_wu_maps(domains)
+        flash("Domaines enregistrés et appliqués au cache.", "ok")
     return back("windows_update")
 
 
@@ -591,6 +662,12 @@ def store_file(row_id, slug, tmp, filename):
     with sqlite3.connect(DB_PATH, timeout=30) as conn:
         conn.execute("UPDATE win_apps SET filename=?, size=?, sha256=?, status='ready', error='', updated_at=? "
                      "WHERE id=?", (filename, size, digest, now(), row_id))
+        # Type choisi « automatique » : on le déduit du vrai nom de fichier, avec ses arguments par défaut.
+        row = conn.execute("SELECT kind, args FROM win_apps WHERE id=?", (row_id,)).fetchone()
+        if row and row[0] == "auto":
+            kind = kind_for(filename)
+            conn.execute("UPDATE win_apps SET kind=?, args=? WHERE id=?",
+                         (kind, row[1] or DEFAULT_ARGS[kind], row_id))
 
 
 def fetch_app(row_id, slug, url):
@@ -598,7 +675,18 @@ def fetch_app(row_id, slug, url):
     tmp = None
     try:
         os.makedirs(app_dir(slug), exist_ok=True)
-        tmp, filename = download(url, app_dir(slug), progress_key=slug)
+        try:
+            tmp, filename = download(url, app_dir(slug), progress_key=slug)
+        except Cancelled:
+            shutil.rmtree(app_dir(slug), ignore_errors=True)
+            return
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            still_there = conn.execute("SELECT 1 FROM win_apps WHERE id=?", (row_id,)).fetchone()
+        if not still_there:  # supprimé pendant le téléchargement
+            os.unlink(tmp)
+            tmp = None
+            shutil.rmtree(app_dir(slug), ignore_errors=True)
+            return
         store_file(row_id, slug, tmp, filename)
         tmp = None
     except Exception as e:  # noqa: BLE001
@@ -607,6 +695,7 @@ def fetch_app(row_id, slug, url):
                          (explain(e), now(), row_id))
     finally:
         PROGRESS.pop(slug, None)
+        CANCELLED.discard(slug)
         if tmp and os.path.exists(tmp):
             os.unlink(tmp)
 
@@ -658,11 +747,11 @@ def windows_apps_add():
         flash(f"L'identifiant « {slug} » existe déjà.", "error")
         return back("windows_apps")
 
-    filename = secure_filename(upload.filename) if has_upload else os.path.basename(urllib.parse.urlparse(url).path)
-    kind = request.form.get("kind") or kind_for(filename)
-    if kind not in DEFAULT_ARGS:
-        kind = "exe"
-    args = request.form.get("args", "").strip() or DEFAULT_ARGS[kind]
+    filename = secure_filename(upload.filename) if has_upload else ""
+    kind = request.form.get("kind") or "auto"
+    if kind not in DEFAULT_ARGS and kind != "auto":
+        kind = "auto"
+    args = request.form.get("args", "").strip() or DEFAULT_ARGS.get(kind, "")
     cur = db().execute(
         "INSERT INTO win_apps (slug, name, version, kind, args, source_url, status, updated_at) "
         "VALUES (?,?,?,?,?,?,?,?)",
@@ -677,10 +766,14 @@ def windows_apps_add():
         try:
             upload.save(tmp)
             store_file(row["id"], slug, tmp, filename or "installer.bin")
+            flash(f"{name} ajouté au catalogue.", "ok")
+        except OSError as e:
+            db().execute("UPDATE win_apps SET status='error', error=? WHERE id=?", (f"Envoi impossible : {e}", row["id"]))
+            db().commit()
+            flash(f"Envoi de {name} impossible : {e}", "error")
         finally:
             if os.path.exists(tmp):
                 os.unlink(tmp)
-        flash(f"{name} ajouté au catalogue.", "ok")
     else:
         start_fetch(row)
         flash(f"Téléchargement de {name} lancé.", "ok")
@@ -699,7 +792,7 @@ def get_app(slug):
 def windows_apps_edit(slug):
     row = get_app(slug)
     kind = request.form.get("kind", row["kind"])
-    if kind not in DEFAULT_ARGS:
+    if kind not in DEFAULT_ARGS and kind != "auto":
         kind = row["kind"]
     url = request.form.get("url", "").strip()
     if url and not url.startswith(("http://", "https://")):
@@ -741,6 +834,8 @@ def windows_apps_refresh(slug):
 @login_required
 def windows_apps_delete(slug):
     row = get_app(slug)
+    if row["status"] == "downloading":
+        CANCELLED.add(slug)
     shutil.rmtree(app_dir(slug), ignore_errors=True)
     db().execute("DELETE FROM win_apps WHERE id=?", (row["id"],))
     db().commit()
@@ -773,5 +868,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "rebuild-apt":
         rebuild_apt()
         print("Index APT régénéré.")
+    elif len(sys.argv) > 1 and sys.argv[1] == "write-maps":
+        write_wu_maps()
     else:
         app.run(host="127.0.0.1", port=8089, debug=True)

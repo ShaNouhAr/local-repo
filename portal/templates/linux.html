@@ -44,7 +44,8 @@
     </div>
   </div>
   {{ term('cmd-setup', 'curl -fsSL ' ~ public_url ~ '/linux/setup.sh | sudo sh') }}
-  <p class="faint small" style="margin:12px 0 0">Les dépôts HTTPS (Docker, etc.) restent en accès direct ; les dépôts HTTP passent par le cache.</p>
+  <p class="faint small" style="margin:12px 0 0">Sans <code>curl</code> (Debian / Ubuntu minimal) : remplacez <code>curl -fsSL</code> par <code>wget -qO-</code>.
+    Les dépôts HTTPS (Docker, etc.) restent en accès direct ; les dépôts HTTP passent par le cache.</p>
 </div>
 
 <div class="grid g-12 reveal">
@@ -82,7 +83,7 @@
         {% for d in debs %}
           <tr>
             <td><div class="pkg"><span class="ico t-violet"><svg class="i i-sm"><use href="#i-package"/></svg></span><b>{{ d.package }}</b></div></td>
-            <td class="mono">{{ d.version|replace('%3a', ':') }}</td>
+            <td class="mono">{{ d.version }}</td>
             <td><span class="tag">{{ d.arch }}</span></td>
             <td class="right num muted">{{ d.size|human }}</td>
             <td class="right">

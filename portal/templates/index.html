@@ -92,6 +92,7 @@
     <div class="field" style="margin-bottom:16px">
       <span>Poste Linux (Debian / Ubuntu)</span>
       {{ term('cmd-linux', 'curl -fsSL ' ~ public_url ~ '/linux/setup.sh | sudo sh') }}
+      <span class="hint">Sans curl : <code>wget -qO- {{ public_url }}/linux/setup.sh | sudo sh</code></span>
     </div>
     <div class="field">
       <span>Poste Windows (PowerShell administrateur)</span>

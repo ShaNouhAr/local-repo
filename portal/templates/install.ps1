@@ -14,6 +14,21 @@ $apps = @(
 {% for a in apps %}    @{ Name = {{ q(a.name) }}; Url = {{ q(base ~ '/win/files/' ~ a.slug ~ '/' ~ quote(a.filename)) }}; File = {{ q(a.filename) }}; Sha = {{ q(a.sha256) }}; Kind = {{ q(a.kind) }}; Args = {{ q(a.args) }} }{% if not loop.last %},{% endif %}
 {% endfor %})
 
+# Délai maximal par installeur (secondes) : un installeur qui attend un clic est arrêté.
+$timeout = 1800
+if ($env:LR_TIMEOUT) { $timeout = [int]$env:LR_TIMEOUT }
+
+function Start-Installer($file, $arguments) {
+    if ($arguments) { $p = Start-Process $file -ArgumentList $arguments -PassThru }
+    else { $p = Start-Process $file -PassThru }
+    $null = $p.Handle  # nécessaire pour lire le code de sortie ensuite
+    if (-not $p.WaitForExit($timeout * 1000)) {
+        try { $p.Kill() } catch {}
+        throw "pas termine apres $timeout s : l'installeur attend sans doute une action (verifiez les arguments silencieux)"
+    }
+    return $p
+}
+
 $dir = Join-Path $env:TEMP ('local-repo-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $dir | Out-Null
 $failed = 0
@@ -26,13 +41,10 @@ foreach ($a in $apps) {
         if ((Get-FileHash $dest -Algorithm SHA256).Hash -ne $a.Sha) { throw 'somme SHA256 invalide' }
         $p = $null
         switch ($a.Kind) {
-            'msi' { $p = Start-Process msiexec.exe -ArgumentList "/i `"$dest`" $($a.Args)" -Wait -PassThru }
-            'msu' { $p = Start-Process wusa.exe -ArgumentList "`"$dest`" $($a.Args)" -Wait -PassThru }
-            'ps1' { $p = Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$dest`" $($a.Args)" -Wait -PassThru }
-            'exe' {
-                if ($a.Args) { $p = Start-Process $dest -ArgumentList $a.Args -Wait -PassThru }
-                else { $p = Start-Process $dest -Wait -PassThru }
-            }
+            'msi' { $p = Start-Installer msiexec.exe "/i `"$dest`" $($a.Args)" }
+            'msu' { $p = Start-Installer wusa.exe "`"$dest`" $($a.Args)" }
+            'ps1' { $p = Start-Installer powershell.exe "-NoProfile -ExecutionPolicy Bypass -File `"$dest`" $($a.Args)" }
+            'exe' { $p = Start-Installer $dest $a.Args }
             default {
                 $target = Join-Path $env:PUBLIC 'Downloads'
                 Copy-Item $dest $target -Force
@@ -42,7 +54,8 @@ foreach ($a in $apps) {
         if ($p) {
             $code = $p.ExitCode
             if ($code -eq 3010 -or $code -eq 1641) { Write-Host '    OK (redemarrage necessaire)' -ForegroundColor Yellow }
-            elseif ($code -eq 2359302) { Write-Host '    Deja installe' -ForegroundColor Green }
+            elseif ($code -eq 2359302 -or $code -eq 1638) { Write-Host '    Deja installe' -ForegroundColor Green }
+            elseif ($code -eq -2145124329) { Write-Host '    Non applicable a ce systeme' -ForegroundColor Yellow }
             elseif ($code -ne 0) { throw "code de sortie $code" }
             else { Write-Host '    OK' -ForegroundColor Green }
         }

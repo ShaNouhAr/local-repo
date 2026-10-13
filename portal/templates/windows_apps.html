@@ -36,6 +36,8 @@
     </div>
     {% elif a.status == 'error' %}
     <div class="err-msg">{{ a.error }}</div>
+    {% elif a.kind == 'exe' and not a.args %}
+    <div class="warn-msg" title="Ajoutez-en un via Modifier (souvent /S, /silent ou /quiet).">Sans argument silencieux, l'installeur risque d'attendre un clic.</div>
     {% endif %}
 
     <div class="meta">
@@ -156,7 +158,7 @@
         <label class="field"><span>Version</span><input type="text" name="version"></label>
         <label class="field wide"><span>Lien source</span><div class="input-icon"><svg class="i i-sm"><use href="#i-link"/></svg><input type="url" name="url"></div></label>
         <label class="field"><span>Type</span>
-          <select name="kind">{% for k in ['exe', 'msi', 'msu', 'ps1', 'file'] %}<option>{{ k }}</option>{% endfor %}</select>
+          <select name="kind"><option value="auto">Automatique</option>{% for k in ['exe', 'msi', 'msu', 'ps1', 'file'] %}<option>{{ k }}</option>{% endfor %}</select>
         </label>
         <label class="field"><span>Arguments</span><input type="text" name="args"></label>
         <label class="drop wide" style="min-height:100px">

@@ -25,6 +25,8 @@ PACKAGES=(nginx libnginx-mod-stream apt-cacher-ng apt-utils gnupg python3-flask 
 say()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31mErreur :\033[0m %s\n' "$*" >&2; exit 1; }
+trap 'die "échec inattendu ligne $LINENO : $BASH_COMMAND"' ERR
+LOG=/var/log/local-repo-install.log
 
 [ "$(id -u)" -eq 0 ] || die "lancez ce script en root (sudo ./install.sh)."
 command -v apt-get >/dev/null || die "Debian ou Ubuntu requis (apt-get introuvable)."
@@ -86,15 +88,18 @@ for p in "${PACKAGES[@]}"; do
 done
 echo "apt-cacher-ng apt-cacher-ng/tunnelenable boolean false" | debconf-set-selections
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -q
-apt-get install -y -q --no-install-recommends "${PACKAGES[@]}"
+: > "$LOG"
+if ! { apt-get update -q && apt-get install -y -q --no-install-recommends "${PACKAGES[@]}"; } >> "$LOG" 2>&1; then
+    tail -15 "$LOG" >&2
+    die "installation des paquets impossible (journal complet : $LOG)."
+fi
 
 # ---------------------------------------------------------------- utilisateur et dossiers
 say "Utilisateur et dossiers"
 id localrepo >/dev/null 2>&1 || useradd --system --home-dir "$STATE" --shell /usr/sbin/nologin localrepo
 install -d -m 755 -o localrepo -g localrepo "$DATA" "$DATA/apt" "$DATA/apt/pool" "$DATA/win"
 install -d -m 700 -o localrepo -g localrepo "$DATA/.tmp" "$STATE/gnupg"
-install -d -m 755 -o localrepo -g localrepo "$STATE"
+install -d -m 755 -o localrepo -g localrepo "$STATE" "$STATE/nginx"
 install -d -m 700 -o www-data -g www-data "$DATA/wucache"
 chown -R localrepo:localrepo "$DATA/apt" "$DATA/win" "$STATE"
 install -d -m 755 "$ETC"
@@ -102,6 +107,9 @@ install -d -m 755 "$ETC"
 if [ -z "$WU_CACHE_SIZE" ]; then
     free_g=$(df -BG --output=avail "$DATA" | tail -1 | tr -dc '0-9')
     WU_CACHE_SIZE="$(( free_g / 2 > 200 ? 200 : (free_g / 2 < 5 ? 5 : free_g / 2) ))g"
+    if [ "$WU_ENABLED" = 1 ] && [ "$free_g" -lt 10 ]; then
+        warn "seulement ${free_g} Go libres dans $DATA : le cache Windows Update ($WU_CACHE_SIZE) risque de remplir le disque."
+    fi
 fi
 
 cat > "$ETC/local-repo.conf" <<EOF
@@ -166,6 +174,7 @@ runuser -u localrepo -- env GNUPGHOME="$STATE/gnupg" gpg --batch --yes --export 
 chmod 644 "$DATA/apt/local-repo.gpg"
 runuser -u localrepo -- env LR_DATA="$DATA" LR_STATE="$STATE" python3 "$PREFIX/portal/app.py" rebuild-apt >/dev/null
 runuser -u localrepo -- gpgconf --homedir "$STATE/gnupg" --kill gpg-agent 2>/dev/null || true
+runuser -u localrepo -- env LR_STATE="$STATE" python3 "$PREFIX/portal/app.py" write-maps
 
 # ---------------------------------------------------------------- nginx
 say "Configuration de nginx"
@@ -176,12 +185,18 @@ render() {
 }
 render "$PREFIX/conf/nginx-portal.conf" > /etc/nginx/sites-available/local-repo-portal.conf
 ln -sf ../sites-available/local-repo-portal.conf /etc/nginx/sites-enabled/local-repo-portal.conf
-if [ "$WU_ENABLED" = 1 ]; then
-    # Le cache Windows Update doit être le serveur par défaut du port 80.
+# Site nginx par défaut (port 80) : désactivé si nginx a été installé par local-repo,
+# ou si le cache Windows Update a besoin du port 80 ; sinon on le laisse (ou le remet) en place.
+if [ "$WU_ENABLED" = 1 ] || grep -qx nginx "$STATE/installed-packages"; then
     if [ -L /etc/nginx/sites-enabled/default ]; then
         rm /etc/nginx/sites-enabled/default
         touch "$STATE/nginx-default-disabled"
     fi
+elif [ -f "$STATE/nginx-default-disabled" ] && [ -e /etc/nginx/sites-available/default ]; then
+    ln -sf ../sites-available/default /etc/nginx/sites-enabled/default
+    rm -f "$STATE/nginx-default-disabled"
+fi
+if [ "$WU_ENABLED" = 1 ]; then
     render "$PREFIX/conf/nginx-wucache.conf" > /etc/nginx/sites-available/local-repo-wucache.conf
     ln -sf ../sites-available/local-repo-wucache.conf /etc/nginx/sites-enabled/local-repo-wucache.conf
     render "$PREFIX/conf/nginx-stream.conf" > /etc/nginx/modules-enabled/99-local-repo-stream.conf
@@ -189,17 +204,33 @@ else
     rm -f /etc/nginx/sites-enabled/local-repo-wucache.conf /etc/nginx/sites-available/local-repo-wucache.conf \
           /etc/nginx/modules-enabled/99-local-repo-stream.conf
 fi
-nginx -t 2>&1 | grep -v -e "syntax is ok" -e "test is successful" || true
-nginx -t >/dev/null 2>&1 || die "configuration nginx invalide (voir ci-dessus)."
+if ! nginx -t >/dev/null 2>&1; then
+    nginx -t 2>&1 | grep -v -e "syntax is ok" -e "test is successful" || true
+    # On retire notre configuration pour ne pas laisser nginx dans un état cassé.
+    rm -f /etc/nginx/sites-enabled/local-repo-portal.conf /etc/nginx/sites-enabled/local-repo-wucache.conf \
+          /etc/nginx/modules-enabled/99-local-repo-stream.conf
+    if [ -f "$STATE/nginx-default-disabled" ] && [ -e /etc/nginx/sites-available/default ]; then
+        ln -sf ../sites-available/default /etc/nginx/sites-enabled/default
+        rm -f "$STATE/nginx-default-disabled"
+    fi
+    die "configuration nginx refusée (voir ci-dessus). Un autre site occupe peut-être le port 80 : essayez --no-wu."
+fi
 
 # ---------------------------------------------------------------- services
 say "Services"
 render "$PREFIX/conf/local-repo-portal.service" > /etc/systemd/system/local-repo-portal.service
-cp "$PREFIX/conf/local-repo-stats.service" "$PREFIX/conf/local-repo-stats.timer" /etc/systemd/system/
+cp "$PREFIX/conf/local-repo-stats.service" "$PREFIX/conf/local-repo-stats.timer" \
+   "$PREFIX/conf/local-repo-nginx.service" "$PREFIX/conf/local-repo-nginx.path" /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable --now apt-cacher-ng nginx >/dev/null 2>&1
-systemctl reload nginx
-systemctl enable local-repo-portal local-repo-stats.timer >/dev/null 2>&1
+systemctl enable apt-cacher-ng nginx >/dev/null 2>&1
+systemctl restart apt-cacher-ng || die "apt-cacher-ng ne démarre pas (journalctl -u apt-cacher-ng)."
+if systemctl is-active -q nginx; then
+    systemctl reload nginx
+else
+    systemctl start nginx || die "nginx ne démarre pas (journalctl -u nginx)."
+fi
+systemctl enable local-repo-portal local-repo-stats.timer local-repo-nginx.path >/dev/null 2>&1
+systemctl start local-repo-nginx.path
 systemctl restart local-repo-portal
 systemctl start local-repo-stats.timer local-repo-stats.service
 
@@ -213,8 +244,8 @@ curl -fs "http://127.0.0.1:$PORTAL_PORT/healthz" >/dev/null || die "le portail n
 echo
 say "local-repo est installé"
 echo "    Portail            : $PUBLIC_URL"
-if [ -n "$GENERATED" ]; then
-    echo "    Mot de passe       : $PASSWORD   (copie dans $ETC/admin-password)"
+if [ -f "$ETC/admin-password" ]; then
+    echo "    Mot de passe       : $(cat "$ETC/admin-password")   (copie dans $ETC/admin-password)"
 elif [ -n "$PASSWORD" ]; then
     echo "    Mot de passe       : modifié"
 fi
