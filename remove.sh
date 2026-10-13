@@ -61,7 +61,7 @@ rm -f /etc/nginx/sites-enabled/local-repo-portal.conf /etc/nginx/sites-available
       /etc/nginx/sites-enabled/local-repo-wucache.conf /etc/nginx/sites-available/local-repo-wucache.conf \
       /etc/nginx/modules-enabled/99-local-repo-stream.conf /etc/nginx/snippets/local-repo-clients.conf \
       /etc/nginx/snippets/local-repo-admin.conf /etc/nginx/snippets/local-repo-proxy.conf \
-      /etc/nginx/snippets/local-repo-flathub-proxy.conf
+      /etc/nginx/snippets/local-repo-flathub-proxy.conf /etc/nginx/snippets/local-repo-rpm-proxy.conf
 if [ -f "$STATE/nginx-default-disabled" ]; then
     [ -e /etc/nginx/sites-available/default ] && ln -sf ../sites-available/default /etc/nginx/sites-enabled/default
     rm -f "$STATE/nginx-default-disabled"

@@ -128,10 +128,13 @@ def metrics():
            [({"unit": u}, int(service_active(u))) for u, _ in UNITS])
     metric("local_repo_cache_bytes", "Taille des caches sur disque.", "gauge",
            [({"cache": "apt"}, stats.get("acng", 0)), ({"cache": "windows_update"}, stats.get("wucache", 0)),
-            ({"cache": "flathub"}, stats.get("flatpakcache", 0))])
+            ({"cache": "flathub"}, stats.get("flatpakcache", 0)), ({"cache": "rpm"}, stats.get("rpmcache", 0))])
     metric("local_repo_wu_recent_bytes", "Octets Windows Update récents servis depuis le cache ou Internet.", "gauge",
            [({"source": "cache"}, wu["hit_bytes"]), ({"source": "internet"}, wu["miss_bytes"])])
     metric("local_repo_deb_packages", "Paquets du dépôt APT local.", "gauge", [({}, len(list_debs()))])
+    if config.RPM_ENABLED:
+        from .rpmrepo import list_rpms
+        metric("local_repo_rpm_packages", "Paquets des dépôts RPM locaux.", "gauge", [({}, len(list_rpms()))])
     rows = db().execute("SELECT status, COUNT(*) AS n FROM win_apps GROUP BY status").fetchall()
     metric("local_repo_windows_apps", "Logiciels du catalogue Windows par état.", "gauge",
            [({"status": r["status"]}, r["n"]) for r in rows] or [({"status": "ready"}, 0)])

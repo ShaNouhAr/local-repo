@@ -79,3 +79,11 @@ def flatpak_repo_file():
             "Comment=Dépôt Flatpak local de l'entreprise\n"
             f"GPGKey={key}\n")
     return Response(body, mimetype="application/vnd.flatpak.repo")
+
+
+@app.route("/rpm/setup.sh")
+def rpm_setup():
+    if not config.RPM_ENABLED:
+        abort(404)
+    script = render_template("rpm-setup.sh", base=client_base(), https_url=config.HTTPS_URL)
+    return Response(script, mimetype="text/x-shellscript")

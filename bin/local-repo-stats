@@ -8,7 +8,7 @@ OUT=/var/lib/local-repo/stats.json
 size() { s=$(du -sb "$1" 2>/dev/null | cut -f1); echo "${s:-0}"; }
 
 cat > "$OUT.tmp" <<JSON
-{"acng": $(size /var/cache/apt-cacher-ng), "wucache": $(size "$DATA/wucache"), "flatpakcache": $(size "$DATA/flatpakcache"), "apt": $(size "$DATA/apt"), "win": $(size "$DATA/win"), "flatpak": $(size "$DATA/flatpak"), "updated": "$(date '+%Y-%m-%d %H:%M')"}
+{"acng": $(size /var/cache/apt-cacher-ng), "wucache": $(size "$DATA/wucache"), "flatpakcache": $(size "$DATA/flatpakcache"), "rpmcache": $(size "$DATA/rpmcache"), "rpm": $(size "$DATA/rpm"), "apt": $(size "$DATA/apt"), "win": $(size "$DATA/win"), "flatpak": $(size "$DATA/flatpak"), "updated": "$(date '+%Y-%m-%d %H:%M')"}
 JSON
 chmod 644 "$OUT.tmp"
 mv "$OUT.tmp" "$OUT"

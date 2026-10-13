@@ -17,6 +17,7 @@ Environment=LR_HOST=@HOST@
 Environment=LR_ACNG_PORT=3142
 Environment=LR_BACKUP_DIR=@BACKUP_DIR@
 Environment=LR_FLATPAK=@FLATPAK@
+Environment=LR_RPM=@RPM@
 Environment=TMPDIR=@DATA@/.tmp
 @PROXY_ENV@
 WorkingDirectory=/opt/local-repo/portal

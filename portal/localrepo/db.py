@@ -66,6 +66,13 @@ MIGRATIONS = [
         PRIMARY KEY (distribution, suite)
     );
     """,
+    # 4 : dépôts RPM locaux par version majeure de la famille Red Hat (el8, el9, el10…).
+    """
+    CREATE TABLE rpm_repositories (
+        name TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL
+    );
+    """,
 ]
 
 

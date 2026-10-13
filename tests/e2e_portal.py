@@ -1,7 +1,7 @@
 """Pilote le portail pour le test de bout en bout : python3 e2e_portal.py URL MOT_DE_PASSE FICHIER [PAGE]
 
-PAGE : linux (paquet .deb, défaut) ou flatpak (paquet .flatpak).
-Argument suivant : dépôt distribution/suite (obligatoire pour Linux)."""
+PAGE : linux (paquet .deb, défaut), rpm (paquet .rpm) ou flatpak (paquet .flatpak).
+Argument suivant : dépôt (distribution/suite pour Linux, elN pour RPM)."""
 import http.cookiejar, re, ssl, sys, urllib.parse, urllib.request, uuid
 
 base, password, path = sys.argv[1:4]
@@ -27,7 +27,7 @@ html = get("/login")
 data = urllib.parse.urlencode({"csrf": token(html), "username": "admin", "password": password}).encode()
 with op.open(base + "/login", data) as r:
     assert r.geturl().rstrip("/") == base, f"connexion refusée ({r.geturl()})"
-html = get("/" + page + ("?" + urllib.parse.urlencode({"repository": repository}) if page == "linux" else ""))
+html = get("/" + page + ("?" + urllib.parse.urlencode({"repository": repository}) if page in ("linux", "rpm") else ""))
 b = uuid.uuid4().hex
 body = (f'--{b}\r\nContent-Disposition: form-data; name="csrf"\r\n\r\n{token(html)}\r\n'
         f'--{b}\r\nContent-Disposition: form-data; name="repository"\r\n\r\n{repository}\r\n'

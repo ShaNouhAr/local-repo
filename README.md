@@ -7,6 +7,8 @@ Serveur de dépôts et de caches pour un réseau d'entreprise, installé en une 
 
 - **Paquets Linux** : cache [apt-cacher-ng](https://www.unix-ag.uni-kl.de/~bloch/acng/) pour Debian / Ubuntu
   et dépôts APT signés pour vos propres `.deb`, séparés par distribution et version.
+- **Famille Red Hat** : cache des miroirs Rocky Linux, AlmaLinux et EPEL, et dépôts RPM signés par
+  version majeure (`el8`, `el9`, `el10`) pour RHEL, Rocky Linux et AlmaLinux.
 - **Windows Update** : cache des téléchargements de mises à jour (même principe que [lancache](https://lancache.net)).
 - **Logiciels Windows** : catalogue d'installeurs (`exe`, `msi`, `msu`, `ps1`) installés en silence par PowerShell.
 - **Flatpak** : cache Flathub et dépôt Flatpak local signé pour les applications de l'entreprise.
@@ -38,7 +40,7 @@ Options principales (toutes : `sudo ./install.sh --help`) :
 | `--admin-allow "CIDR …"` | réseaux autorisés pour l'interface (défaut : comme `--allow`) |
 | `--proxy http://hôte:port` | proxy d'entreprise pour sortir sur Internet |
 | `--no-http` | HTTPS seul (autorité déjà déployée sur les postes) |
-| `--no-wu`, `--no-flatpak` | sans cache Windows Update, sans Flatpak |
+| `--no-wu`, `--no-flatpak`, `--no-rpm` | sans cache Windows Update, sans Flatpak, sans famille Red Hat |
 | `--tls-cert F --tls-key F` | certificat d'entreprise au lieu de l'autorité locale |
 | `--backup-keep N` | sauvegardes quotidiennes gardées (défaut 3, 0 = aucune) |
 
@@ -61,6 +63,9 @@ curl -fsSL https://<ip>:8443/linux/setup.sh | sudo sh
 curl -fsSL http://<ip>:8088/linux/setup.sh | sudo sh -s -- --trust-ca
 # Cache seul, sans dépôt local
 curl -fsSL https://<ip>:8443/linux/setup.sh | sudo sh -s -- --cache-only
+
+# Rocky Linux, AlmaLinux, RHEL 8+ : dépôt local elN + dépôts officiels via le cache (--epel : EPEL aussi)
+curl -fsSL https://<ip>:8443/rpm/setup.sh | sudo sh
 
 # Flatpak : Flathub via le cache + dépôt local « local-repo »
 curl -fsSL https://<ip>:8443/flatpak/setup.sh | sudo sh
@@ -109,7 +114,7 @@ Supervision : `https://<ip>:8443/metrics` (Prometheus) et `/healthz`.
 | Configuration, autorité et certificats | `/etc/local-repo` | — |
 
 Tout vient des dépôts officiels Debian / Ubuntu (`nginx`, `apt-cacher-ng`, `python3-flask`, `gunicorn`,
-`gnupg`, `flatpak`, `ostree`) : les correctifs de sécurité arrivent avec `apt upgrade`.
+`gnupg`, `flatpak`, `ostree`, `createrepo-c`, `rpm`) : les correctifs de sécurité arrivent avec `apt upgrade`.
 
 ## Sécurité
 
@@ -119,14 +124,17 @@ confiné, dépôts signés. Détails et limites : [SECURITY.md](SECURITY.md).
 ## Développement
 
 ```bash
-sudo apt-get install python3-flask apt-utils gnupg
-python3 -m unittest discover -s tests          # portail, isolation APT et signatures réelles
+sudo apt-get install python3-flask apt-utils gnupg createrepo-c rpm
+python3 -m unittest discover -s tests          # portail, dépôts APT et RPM, signatures réelles
 tests/e2e.sh                                   # bout en bout, sur une machine JETABLE uniquement
 tests/vm-e2e.sh debian-13                       # VM jetable ; nécessite QEMU, genisoimage, SSH et curl
+tests/vm-rpm-e2e.sh rocky-9                     # serveur Debian 13 + poste Rocky 9, deux VM jetables
 ```
 
 Le workflow CI lance `shellcheck`, `pyflakes` puis une VM QEMU pour chaque entrée de
-[`tests/platforms.json`](tests/platforms.json) : Debian 12/13 et Ubuntu 22.04/24.04/26.04.
+[`tests/platforms.json`](tests/platforms.json) : Debian 12/13 et Ubuntu 22.04/24.04/26.04 ;
+puis, pour chaque poste de [`tests/rpm-platforms.json`](tests/rpm-platforms.json) (Rocky Linux et
+AlmaLinux 8, 9, 10), un serveur et ce poste : dépôt local, cache des dépôts officiels, EPEL et retrait.
 Il fonctionne à chaque PR/push, chaque semaine et à la demande, avec conservation des journaux.
 Les images officielles sont vérifiées par leur empreinte avant le démarrage ; Docker n'est pas utilisé.
 Les tests couvrent la mise à jour depuis 1.0.0 sur les systèmes déjà pris en charge, la détection du poste,

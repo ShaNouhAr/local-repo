@@ -7,6 +7,7 @@
   apt-repo list             liste les dépôts par distribution et version
   write-maps                régénère les listes de domaines Windows Update pour nginx
   flatpak-init              crée (si besoin) et signe le dépôt Flatpak local
+  rpm-init                  clé publique et dépôts RPM el8, el9, el10 (créés si besoin, resignés)
   user list                 liste les comptes
   user add NOM [admin|viewer]   crée un compte et affiche un mot de passe temporaire
   user passwd NOM           nouveau mot de passe temporaire (à changer à la connexion)
@@ -114,6 +115,23 @@ def main(argv):
     elif cmd == "write-maps":
         from .wupdate import write_wu_maps
         write_wu_maps()
+    elif cmd == "rpm-init":
+        import subprocess
+        from . import rpmrepo
+        os.makedirs(config.RPM_DIR, exist_ok=True)
+        key = subprocess.run(["gpg", "--batch", "--armor", "--export"], env=dict(os.environ, GNUPGHOME=config.GNUPGHOME),
+                             check=True, capture_output=True).stdout
+        tmp = os.path.join(config.RPM_DIR, ".local-repo.asc.tmp")
+        with open(tmp, "wb") as f:
+            f.write(key)
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, os.path.join(config.RPM_DIR, "local-repo.asc"))
+        existing = {r["name"] for r in rpmrepo.repositories()}
+        for name in config.RPM_DEFAULT_REPOSITORIES:
+            if name not in existing:
+                rpmrepo.create_repository(name)
+        for r in rpmrepo.repositories():
+            rpmrepo.rebuild(r["name"])
     elif cmd == "flatpak-init":
         import subprocess
         from . import flatpak

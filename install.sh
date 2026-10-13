@@ -23,6 +23,8 @@
 #   --no-wu / --wu           sans / avec le cache Windows Update (ports 80 et 443)
 #   --no-flatpak / --flatpak sans / avec Flatpak (cache Flathub et dépôt Flatpak local)
 #   --flatpak-cache-size T   taille max du cache Flathub (défaut : quart de l'espace libre, max 100g)
+#   --no-rpm / --rpm         sans / avec la famille Red Hat (cache Rocky/AlmaLinux/EPEL, dépôts RPM el8…)
+#   --rpm-cache-size T       taille max du cache RPM (défaut : quart de l'espace libre, max 100g)
 set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -57,6 +59,7 @@ fi
 PORTAL_PORT=8088 HTTPS_PORT=8443 HTTP_ENABLED=1 HOST="" DATA=/srv/local-repo WU_CACHE_SIZE=""
 RESOLVERS="1.1.1.1 9.9.9.9" WU_ENABLED=1 ALLOW="$PRIVATE_NETS" ADMIN_ALLOW="" UPSTREAM_PROXY=""
 MAX_UPLOAD=8g BACKUP_KEEP=3 BACKUP_DIR=/var/backups/local-repo FLATPAK_ENABLED=1 FLATPAK_CACHE_SIZE=""
+RPM_ENABLED=1 RPM_CACHE_SIZE=""
 # shellcheck disable=SC1091
 [ -f "$ETC/local-repo.conf" ] && . "$ETC/local-repo.conf"
 PASSWORD="" TLS_CERT="" TLS_KEY=""
@@ -84,9 +87,12 @@ while [ $# -gt 0 ]; do
         --no-flatpak) FLATPAK_ENABLED=0; shift ;;
         --flatpak) FLATPAK_ENABLED=1; shift ;;
         --flatpak-cache-size) need "$@"; FLATPAK_CACHE_SIZE="$2"; shift 2 ;;
+        --no-rpm) RPM_ENABLED=0; shift ;;
+        --rpm) RPM_ENABLED=1; shift ;;
+        --rpm-cache-size) need "$@"; RPM_CACHE_SIZE="$2"; shift 2 ;;
         --no-wu) WU_ENABLED=0; shift ;;
         --wu) WU_ENABLED=1; shift ;;
-        -h|--help) sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) die "option inconnue : $1 (voir --help)" ;;
     esac
 done
@@ -99,6 +105,7 @@ num --https-port "$HTTPS_PORT"; num --http-port "$PORTAL_PORT"; num --backup-kee
 [[ "$MAX_UPLOAD" =~ ^[0-9]+[kKmMgG]?$ ]] || die "--max-upload : taille invalide (ex. 8g, 500m)."
 [[ "$WU_CACHE_SIZE" =~ ^([0-9]+[kKmMgGtT]?)?$ ]] || die "--wu-cache-size : taille invalide (ex. 50g)."
 [[ "$FLATPAK_CACHE_SIZE" =~ ^([0-9]+[kKmMgGtT]?)?$ ]] || die "--flatpak-cache-size : taille invalide (ex. 20g)."
+[[ "$RPM_CACHE_SIZE" =~ ^([0-9]+[kKmMgGtT]?)?$ ]] || die "--rpm-cache-size : taille invalide (ex. 30g)."
 if [[ ! "$DATA" =~ ^/[A-Za-z0-9._/-]+$ || "$DATA" == "/" ]]; then die "--data : chemin absolu simple attendu."; fi
 [[ "$BACKUP_DIR" =~ ^/[A-Za-z0-9._/-]+$ ]] || die "--backup-dir : chemin absolu simple attendu."
 if [ -n "$UPSTREAM_PROXY" ]; then
@@ -153,6 +160,7 @@ fi
 
 # ---------------------------------------------------------------- paquets
 if [ "$FLATPAK_ENABLED" = 1 ]; then PACKAGES+=(flatpak ostree); fi
+if [ "$RPM_ENABLED" = 1 ]; then PACKAGES+=(createrepo-c rpm); fi
 say "Installation des paquets"
 mkdir -p "$STATE"
 touch "$STATE/installed-packages"
@@ -175,8 +183,8 @@ id localrepo >/dev/null 2>&1 || useradd --system --home-dir "$STATE" --shell /us
 install -d -m 755 -o localrepo -g localrepo "$DATA" "$DATA/apt" "$DATA/apt/pool" "$DATA/win"
 install -d -m 700 -o localrepo -g localrepo "$DATA/.tmp" "$STATE/gnupg"
 install -d -m 755 -o localrepo -g localrepo "$STATE" "$STATE/nginx"
-install -d -m 700 -o www-data -g www-data "$DATA/wucache" "$DATA/flatpakcache"
-install -d -m 755 -o localrepo -g localrepo "$DATA/flatpak"
+install -d -m 700 -o www-data -g www-data "$DATA/wucache" "$DATA/flatpakcache" "$DATA/rpmcache"
+install -d -m 755 -o localrepo -g localrepo "$DATA/flatpak" "$DATA/rpm"
 chown -R localrepo:localrepo "$DATA/apt" "$DATA/win" "$STATE"
 install -d -m 755 "$ETC"
 install -d -m 750 -o root -g localrepo "$BACKUP_DIR"
@@ -189,6 +197,10 @@ if [ -z "$WU_CACHE_SIZE" ]; then
     fi
 fi
 
+if [ -z "$RPM_CACHE_SIZE" ]; then
+    free_g=$(df -BG --output=avail "$DATA" | tail -1 | tr -dc '0-9')
+    RPM_CACHE_SIZE="$(( free_g / 4 > 100 ? 100 : (free_g / 4 < 2 ? 2 : free_g / 4) ))g"
+fi
 if [ -z "$FLATPAK_CACHE_SIZE" ]; then
     free_g=$(df -BG --output=avail "$DATA" | tail -1 | tr -dc '0-9')
     FLATPAK_CACHE_SIZE="$(( free_g / 4 > 100 ? 100 : (free_g / 4 < 2 ? 2 : free_g / 4) ))g"
@@ -208,6 +220,8 @@ WU_ENABLED=$WU_ENABLED
 WU_CACHE_SIZE=$WU_CACHE_SIZE
 FLATPAK_ENABLED=$FLATPAK_ENABLED
 FLATPAK_CACHE_SIZE=$FLATPAK_CACHE_SIZE
+RPM_ENABLED=$RPM_ENABLED
+RPM_CACHE_SIZE=$RPM_CACHE_SIZE
 RESOLVERS="$RESOLVERS"
 MAX_UPLOAD=$MAX_UPLOAD
 BACKUP_KEEP=$BACKUP_KEEP
@@ -282,6 +296,10 @@ if [ "$FLATPAK_ENABLED" = 1 ]; then
     cli flatpak-init
     runuser -u localrepo -- gpgconf --homedir "$STATE/gnupg" --kill gpg-agent 2>/dev/null || true
 fi
+if [ "$RPM_ENABLED" = 1 ]; then
+    cli rpm-init
+    runuser -u localrepo -- gpgconf --homedir "$STATE/gnupg" --kill gpg-agent 2>/dev/null || true
+fi
 
 # ---------------------------------------------------------------- certificats HTTPS
 say "Certificat HTTPS"
@@ -343,11 +361,15 @@ export LRT_PORTAL_PORT="$PORTAL_PORT" LRT_HTTPS_PORT="$HTTPS_PORT" LRT_APP_PORT=
        LRT_HOST="$HOST" LRT_HOSTNAME="$SHORT_HOSTNAME" LRT_ADMIN_URL="$ADMIN_URL" LRT_HTTP_URL="$HTTP_URL" \
        LRT_WU_CACHE_SIZE="$WU_CACHE_SIZE" LRT_RESOLVERS="$RESOLVERS" LRT_MAX_UPLOAD="$MAX_UPLOAD" \
        LRT_BACKUP_DIR="$BACKUP_DIR" LRT_PROXY_ENV="$PROXY_ENV" LRT_ALLOW_SPACE="$ALLOW_LIST" \
-       LRT_FLATPAK_CACHE_SIZE="$FLATPAK_CACHE_SIZE" LRT_FLATPAK="$FLATPAK_ENABLED" LRT_GUNICORN_FLAGS="$GUNICORN_FLAGS"
+       LRT_FLATPAK_CACHE_SIZE="$FLATPAK_CACHE_SIZE" LRT_FLATPAK="$FLATPAK_ENABLED" LRT_GUNICORN_FLAGS="$GUNICORN_FLAGS" \
+       LRT_RPM="$RPM_ENABLED" LRT_RPM_CACHE_SIZE="$RPM_CACHE_SIZE"
 # Emplacements Flatpak insérés dans les deux serveurs du portail (déjà rendus).
 LRT_FLATPAK_LOCATIONS=""
 if [ "$FLATPAK_ENABLED" = 1 ]; then LRT_FLATPAK_LOCATIONS=$(render "$PREFIX/conf/nginx-flatpak-locations.conf"); fi
 export LRT_FLATPAK_LOCATIONS
+LRT_RPM_LOCATIONS=""
+if [ "$RPM_ENABLED" = 1 ]; then LRT_RPM_LOCATIONS=$(render "$PREFIX/conf/nginx-rpm-locations.conf"); fi
+export LRT_RPM_LOCATIONS
 
 # ---------------------------------------------------------------- nginx
 say "Configuration de nginx"
@@ -356,8 +378,10 @@ install -d /etc/nginx/snippets
 { echo "# local-repo : réseaux autorisés pour l'interface (--admin-allow)."; acl "$ADMIN_LIST"; } > /etc/nginx/snippets/local-repo-admin.conf
 render "$PREFIX/conf/nginx-proxy-snippet.conf" > /etc/nginx/snippets/local-repo-proxy.conf
 render "$PREFIX/conf/nginx-flathub-proxy-snippet.conf" > /etc/nginx/snippets/local-repo-flathub-proxy.conf
+render "$PREFIX/conf/nginx-rpm-proxy-snippet.conf" > /etc/nginx/snippets/local-repo-rpm-proxy.conf
 {
     if [ "$FLATPAK_ENABLED" = 1 ]; then render "$PREFIX/conf/nginx-flatpak-cache.conf"; fi
+    if [ "$RPM_ENABLED" = 1 ]; then render "$PREFIX/conf/nginx-rpm-cache.conf"; fi
     render "$PREFIX/conf/nginx-portal.conf"
     if [ "$HTTP_ENABLED" = 1 ]; then render "$PREFIX/conf/nginx-portal-http.conf"; fi
 } > /etc/nginx/sites-available/local-repo-portal.conf
@@ -472,6 +496,9 @@ echo "    Réseaux autorisés  : postes $ALLOW | interface $ADMIN_ALLOW"
 if [ -n "$UPSTREAM_PROXY" ]; then echo "    Proxy sortant      : $UPSTREAM_PROXY (le cache Windows Update sort en direct)"; fi
 if [ "$WU_ENABLED" = 1 ]; then
     echo "    Cache Windows Upd. : $WU_CACHE_SIZE max, DNS à configurer depuis le portail"
+fi
+if [ "$RPM_ENABLED" = 1 ]; then
+    echo "    Famille Red Hat    : curl -fsSL $ADMIN_URL/rpm/setup.sh | sudo sh   (cache RPM $RPM_CACHE_SIZE max)"
 fi
 if [ "$FLATPAK_ENABLED" = 1 ]; then
     echo "    Flatpak            : curl -fsSL $ADMIN_URL/flatpak/setup.sh | sudo sh   (cache Flathub $FLATPAK_CACHE_SIZE max)"

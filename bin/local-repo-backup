@@ -27,6 +27,7 @@ case "${1:-}" in
         S="${STATE#/}" D="${DATA#/}"
         paths=(etc/local-repo "$S" "$D/apt" "$D/win")
         if [ -d "$DATA/flatpak" ]; then paths+=("$D/flatpak"); fi
+        if [ -d "$DATA/rpm" ]; then paths+=("$D/rpm"); fi
         rc=0
         tar -czf "$work/$name" --warning=no-file-changed \
             --exclude="$S/portal.db" --exclude="$S/portal.db-*" --exclude="$S/gnupg/S.*" \
@@ -54,6 +55,7 @@ case "${1:-}" in
         if id localrepo >/dev/null 2>&1; then
             chown -R localrepo:localrepo "$STATE" "$DATA/apt" "$DATA/win"
             if [ -d "$DATA/flatpak" ]; then chown -R localrepo:localrepo "$DATA/flatpak"; fi
+            if [ -d "$DATA/rpm" ]; then chown -R localrepo:localrepo "$DATA/rpm"; fi
         fi
         echo "Archive restaurée. Relancez maintenant l'installation pour régénérer services et configuration :"
         echo "    sudo ./install.sh      (depuis le dossier du projet)"

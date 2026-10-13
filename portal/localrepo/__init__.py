@@ -51,7 +51,7 @@ CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' 
        "connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 
 # Points d'entrée publics (postes clients, supervision) : ni session, ni jeton CSRF.
-PUBLIC_ENDPOINTS = {"linux_setup", "linux_repository_source", "windows_install_script", "flatpak_setup", "flatpak_repo_file",
+PUBLIC_ENDPOINTS = {"linux_setup", "linux_repository_source", "windows_install_script", "flatpak_setup", "flatpak_repo_file", "rpm_setup",
                     "healthz", "metrics", "static"}
 
 
@@ -95,6 +95,7 @@ def inject_globals():
         "can_edit": bool(user and user["role"] == "admin"),
         "roles": config.ROLES,
         "flatpak_enabled": config.FLATPAK_ENABLED,
+        "rpm_enabled": config.RPM_ENABLED,
     }
 
 
@@ -108,9 +109,9 @@ from . import db as _db  # noqa: E402
 app.teardown_appcontext(_db.close_db)
 
 # Les modules déclarent leurs routes sur `app` (structure « grande application » de Flask).
-from . import auth, dashboard, linux, wupdate, winapps, flatpak, clients, system  # noqa: E402
+from . import auth, dashboard, linux, wupdate, winapps, flatpak, rpmrepo, clients, system  # noqa: E402
 
-ROUTE_MODULES = (auth, dashboard, linux, wupdate, winapps, flatpak, clients, system)
+ROUTE_MODULES = (auth, dashboard, linux, wupdate, winapps, flatpak, rpmrepo, clients, system)
 
 
 def startup():

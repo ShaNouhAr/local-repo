@@ -3,7 +3,7 @@
 import os
 import re
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 DATA = os.environ.get("LR_DATA", "/srv/local-repo")
 STATE = os.environ.get("LR_STATE", "/var/lib/local-repo")
@@ -36,6 +36,18 @@ NGINX_MAP_DIR = os.path.join(STATE, "nginx")
 FLATPAK_ENABLED = os.environ.get("LR_FLATPAK", "1") == "1"
 FLATPAK_REPO = os.path.join(DATA, "flatpak", "repo")
 FLATHUB_URL = "https://dl.flathub.org/repo/"
+
+# Famille Red Hat (RHEL, Rocky Linux, AlmaLinux…) : dépôts RPM locaux par version majeure (el8, el9…)
+# et cache des miroirs officiels. RHEL lui-même exige un abonnement : ses dépôts ne passent pas par le cache.
+RPM_ENABLED = os.environ.get("LR_RPM", "1") == "1"
+RPM_DIR = os.path.join(DATA, "rpm")
+RPM_REPOSITORY_RE = re.compile(r"^el([1-9][0-9]?)$")
+RPM_DEFAULT_REPOSITORIES = ("el8", "el9", "el10")
+RPM_UPSTREAMS = {
+    "rocky": ("Rocky Linux", "https://dl.rockylinux.org/pub/rocky/"),
+    "almalinux": ("AlmaLinux", "https://repo.almalinux.org/almalinux/"),
+    "epel": ("EPEL", "https://dl.fedoraproject.org/pub/epel/"),
+}
 
 DEFAULT_WU_DOMAINS = ["windowsupdate.com", "dl.delivery.mp.microsoft.com"]
 

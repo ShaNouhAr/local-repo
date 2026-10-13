@@ -1,5 +1,6 @@
 """Tests du portail (bibliothèque standard + Flask) : python3 -m unittest discover -s tests"""
 
+import atexit
 import os
 import re
 import shutil
@@ -28,7 +29,9 @@ with connect() as conn:
     auth.create_user(conn, "admin", ADMIN_PW, "admin", must_change=False)
 
 
-def tearDownModule():
+@atexit.register
+def _cleanup():
+    """À la fin du processus : les autres modules de test (APT, RPM) partagent ce dossier et sa base."""
     if shutil.which("gpgconf") and os.path.isdir(config.GNUPGHOME):
         subprocess.run(["gpgconf", "--homedir", config.GNUPGHOME, "--kill", "gpg-agent"],
                        capture_output=True, check=False)

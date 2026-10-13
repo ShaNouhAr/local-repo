@@ -17,11 +17,12 @@
     <a class="brand" href="{{ url_for('index') }}"><b>local-repo</b><span>{{ host }}</span></a>
     <nav class="nav" aria-label="Navigation principale">
       <a href="{{ url_for('index') }}" class="nav-home {{ 'on' if ep == 'index' }}" aria-label="Vue d'ensemble" {% if ep == 'index' %}aria-current="page"{% endif %}>{{ nav_icon('overview') }}<span>Vue d'ensemble</span></a>
-      <details class="nav-group {{ 'on' if ep.startswith(('linux', 'flatpak')) }}">
+      <details class="nav-group {{ 'on' if ep.startswith(('linux', 'flatpak', 'rpm')) }}">
         <summary aria-expanded="false" aria-controls="nav-linux">{{ nav_icon('linux') }}<span>Linux</span>{{ nav_icon('chevron') }}</summary>
         <div class="nav-dropdown" id="nav-linux">
           <div class="nav-panel">
             <a href="{{ url_for('linux') }}" {% if ep.startswith('linux') %}aria-current="page"{% endif %}>{{ nav_icon('package') }}<span><strong>Paquets APT</strong><small>Cache et dépôt local</small></span></a>
+            {% if rpm_enabled %}<a href="{{ url_for('rpm') }}" {% if ep.startswith('rpm') %}aria-current="page"{% endif %}>{{ nav_icon('package') }}<span><strong>Paquets RPM</strong><small>RHEL, Rocky, AlmaLinux</small></span></a>{% endif %}
             {% if flatpak_enabled %}<a href="{{ url_for('flatpak') }}" {% if ep.startswith('flatpak') %}aria-current="page"{% endif %}>{{ nav_icon('layers') }}<span><strong>Flatpak</strong><small>Flathub et applications internes</small></span></a>{% endif %}
           </div>
         </div>

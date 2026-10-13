@@ -1,5 +1,19 @@
 # Journal des versions
 
+## 1.2.0 — 2026-10-13
+
+- **Famille Red Hat** : cache des miroirs Rocky Linux, AlmaLinux et EPEL (paquets et métadonnées à nom
+  unique gardés 6 mois, certificats des miroirs vérifiés) ; dépôts RPM locaux par version majeure
+  (`el8`, `el9`, `el10`, ajout d'une future version depuis le portail), métadonnées signées, refus des
+  paquets d'une autre version ou d'un contenu différent pour un même nom/version.
+- Script `rpm/setup.sh` : détection du poste, dépôt local, dépôts officiels et EPEL via le cache avec leurs
+  clés GPG, `--epel`, `--trust-ca`, `--no-cache`, `--no-local`, `--remove` (rétablissement exact des dépôts).
+- RHEL : dépôt local et EPEL via ce serveur ; dépôts Red Hat (abonnement) en accès direct.
+- Options `--no-rpm` et `--rpm-cache-size` ; sauvegarde, statistiques, `/metrics` et désinstallation
+  couvrent les dépôts RPM.
+- Tests réels (`rpmbuild`, `createrepo_c`, signatures) et validation de postes Rocky Linux / AlmaLinux 8, 9
+  et 10 dans des VM, ajoutée à la CI.
+
 ## 1.1.0 — 2026-10-13
 
 - Dépôts APT isolés par distribution et nom de version, création depuis le portail ou `local-repo-apt`.

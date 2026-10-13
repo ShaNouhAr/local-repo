@@ -109,5 +109,5 @@ if [ -n "${platform[6]}" ]; then
     LEGACY_SRC=/home/ci/local-repo-legacy
 fi
 # shellcheck disable=SC2029  # LEGACY_SRC est un chemin constant fixé ci-dessus, transmis volontairement à la VM.
-ssh "${SSH_OPTIONS[@]}" ci@127.0.0.1 "cd local-repo && sudo apt-get update -q && sudo apt-get install -y -q python3-flask apt-utils gnupg && python3 -W error::ResourceWarning -m unittest discover -s tests -v && LR_E2E_LEGACY_SRC=$LEGACY_SRC tests/e2e.sh" 2>&1 | tee "$LOG_DIR/tests.log"
+ssh "${SSH_OPTIONS[@]}" ci@127.0.0.1 "cd local-repo && sudo apt-get update -q && sudo apt-get install -y -q python3-flask apt-utils gnupg createrepo-c rpm && python3 -W error::ResourceWarning -m unittest discover -s tests -v && LR_E2E_LEGACY_SRC=$LEGACY_SRC tests/e2e.sh" 2>&1 | tee "$LOG_DIR/tests.log"
 echo "Validation VM réussie : $PLATFORM"
