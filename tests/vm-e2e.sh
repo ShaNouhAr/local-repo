@@ -76,7 +76,7 @@ EOF
 printf 'instance-id: local-repo-%s\nlocal-hostname: local-repo-ci\n' "$PLATFORM" > "$work/meta-data"
 (cd "$work" && genisoimage -quiet -output seed.iso -volid cidata -joliet -rock user-data meta-data)
 PORT=${LR_VM_SSH_PORT:-$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')}
-[[ "$PORT" =~ ^[0-9]+$ ]] && [ "$PORT" -gt 0 ] && [ "$PORT" -lt 65536 ] || { echo 'Port SSH invalide.' >&2; exit 1; }
+if [[ ! "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -le 0 ] || [ "$PORT" -ge 65536 ]; then echo 'Port SSH invalide.' >&2; exit 1; fi
 SSH_OPTIONS=(-p "$PORT" -i "$work/key" -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
 ACCEL=(-accel tcg)
 if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then ACCEL=(-accel kvm -cpu host); fi

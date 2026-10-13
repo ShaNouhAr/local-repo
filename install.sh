@@ -99,13 +99,13 @@ num --https-port "$HTTPS_PORT"; num --http-port "$PORTAL_PORT"; num --backup-kee
 [[ "$MAX_UPLOAD" =~ ^[0-9]+[kKmMgG]?$ ]] || die "--max-upload : taille invalide (ex. 8g, 500m)."
 [[ "$WU_CACHE_SIZE" =~ ^([0-9]+[kKmMgGtT]?)?$ ]] || die "--wu-cache-size : taille invalide (ex. 50g)."
 [[ "$FLATPAK_CACHE_SIZE" =~ ^([0-9]+[kKmMgGtT]?)?$ ]] || die "--flatpak-cache-size : taille invalide (ex. 20g)."
-[[ "$DATA" =~ ^/[A-Za-z0-9._/-]+$ ]] && [[ "$DATA" != "/" ]] || die "--data : chemin absolu simple attendu."
+if [[ ! "$DATA" =~ ^/[A-Za-z0-9._/-]+$ || "$DATA" == "/" ]]; then die "--data : chemin absolu simple attendu."; fi
 [[ "$BACKUP_DIR" =~ ^/[A-Za-z0-9._/-]+$ ]] || die "--backup-dir : chemin absolu simple attendu."
 if [ -n "$UPSTREAM_PROXY" ]; then
     [[ "$UPSTREAM_PROXY" =~ ^http://[^[:space:]\"\']+$ ]] || die "--proxy : adresse http://hôte:port attendue."
 fi
 if [ -n "$TLS_CERT$TLS_KEY" ]; then
-    [ -f "$TLS_CERT" ] && [ -f "$TLS_KEY" ] || die "--tls-cert et --tls-key doivent désigner deux fichiers existants."
+    if [ ! -f "$TLS_CERT" ] || [ ! -f "$TLS_KEY" ]; then die "--tls-cert et --tls-key doivent désigner deux fichiers existants."; fi
 fi
 for r in $RESOLVERS; do [[ "$r" =~ ^[0-9a-fA-F.:]+$ ]] || die "--resolvers : adresse IP attendue ($r)."; done
 # Réseaux : validés et normalisés par Python ; la boucle locale est toujours autorisée.

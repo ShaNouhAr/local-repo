@@ -17,7 +17,7 @@ SOURCE=/etc/apt/sources.list.d/local-repo.sources
 PROXY=/etc/apt/apt.conf.d/01local-repo-proxy
 CA=/usr/local/share/ca-certificates/local-repo.crt
 USE_PROXY=1 TRUST_CA=0 REMOVE=0 CACHE_ONLY=0 LEGACY=0 DIST="" SUITE=""
-need() { [ "$#" -ge 2 ] && [ -n "$2" ] || { echo "L'option $1 attend une valeur." >&2; exit 1; }; }
+need() { if [ "$#" -lt 2 ] || [ -z "$2" ]; then echo "L'option $1 attend une valeur." >&2; exit 1; fi; }
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --no-proxy) USE_PROXY=0; shift ;;

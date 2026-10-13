@@ -127,11 +127,10 @@ tests/vm-e2e.sh debian-13                       # VM jetable ; nécessite QEMU, 
 
 Le workflow CI lance `shellcheck`, `pyflakes` puis une VM QEMU pour chaque entrée de
 [`tests/platforms.json`](tests/platforms.json) : Debian 12/13 et Ubuntu 22.04/24.04/26.04.
-Il est prévu à chaque PR/push, chaque semaine et à la demande, avec conservation des journaux.
+Il fonctionne à chaque PR/push, chaque semaine et à la demande, avec conservation des journaux.
 Les images officielles sont vérifiées par leur empreinte avant le démarrage ; Docker n'est pas utilisé.
 Les tests couvrent la mise à jour depuis 1.0.0 sur les systèmes déjà pris en charge, la détection du poste,
-l'isolation des paquets, Flatpak, une restauration et la désinstallation. L'activation sur GitHub exige
-un jeton autorisé à publier des workflows (`workflow`).
+l'isolation des paquets, Flatpak, une restauration et la désinstallation. Le workflow est publié et actif sur GitHub.
 Historique : [CHANGELOG.md](CHANGELOG.md).
 
 ## Licence
