@@ -5,6 +5,46 @@
   var $ = function (sel, root) { return (root || document).querySelector(sel); };
   var $$ = function (sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
 
+  /* ---------------------------------------------------------------- navigation */
+
+  var navGroups = $$(".nav-group");
+  function openNav(group, open) {
+    if (open) navGroups.forEach(function (other) { if (other !== group) openNav(other, false); });
+    group.open = open;
+    $("summary", group).setAttribute("aria-expanded", String(open));
+  }
+  navGroups.forEach(function (group) {
+    var summary = $("summary", group);
+    summary.addEventListener("click", function (e) {
+      e.preventDefault();
+      openNav(group, !group.open);
+    });
+    group.addEventListener("pointerenter", function (e) {
+      if (e.pointerType === "mouse") openNav(group, true);
+    });
+    group.addEventListener("pointerleave", function (e) {
+      if (e.pointerType === "mouse" && !group.contains(document.activeElement)) openNav(group, false);
+    });
+    group.addEventListener("focusout", function () {
+      setTimeout(function () { if (!group.contains(document.activeElement)) openNav(group, false); }, 0);
+    });
+    group.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && group.open) {
+        e.preventDefault();
+        openNav(group, false);
+        summary.focus();
+      } else if (e.key === "ArrowDown" && e.target === summary) {
+        e.preventDefault();
+        openNav(group, true);
+        $(".nav-panel a", group).focus();
+      }
+    });
+    group.addEventListener("toggle", function () { summary.setAttribute("aria-expanded", String(group.open)); });
+  });
+  document.addEventListener("pointerdown", function (e) {
+    navGroups.forEach(function (group) { if (!group.contains(e.target)) openNav(group, false); });
+  });
+
   /* ---------------------------------------------------------------- formats */
 
   var UNITS = ["o", "Ko", "Mo", "Go", "To"];

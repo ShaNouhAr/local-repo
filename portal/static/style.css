@@ -75,11 +75,27 @@ code { padding: 0 3px; border-radius: 3px; background: var(--bg-3); }
 .brand b { font-family: var(--mono); font-weight: 500; font-size: 14px; }
 .brand b::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 8px; background: var(--text); vertical-align: 0; }
 .brand span { font-family: var(--mono); font-size: 12px; color: var(--text-3); }
-.nav { display: flex; height: 100%; gap: 22px; overflow-x: auto; scrollbar-width: none; }
-.nav::-webkit-scrollbar { display: none; }
-.nav a { display: flex; align-items: center; height: 100%; color: var(--text-2); text-decoration: none; white-space: nowrap; border-bottom: 2px solid transparent; margin-bottom: -1px; }
-.nav a:hover { color: var(--text); }
-.nav a.on { color: var(--text); border-bottom-color: var(--text); font-weight: 500; }
+.nav { display: flex; align-items: stretch; height: 100%; gap: 18px; }
+.nav > a, .nav-group > summary { display: flex; align-items: center; gap: 8px; height: 100%; color: var(--text-2); text-decoration: none; white-space: nowrap; border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.nav > a:hover, .nav-group > summary:hover, .nav-group[open] > summary { color: var(--text); }
+.nav > a.on, .nav-group.on > summary { color: var(--text); border-bottom-color: var(--text); font-weight: 500; }
+.nav-icon { width: 18px; height: 18px; flex-shrink: 0; }
+.nav-chevron { width: 14px; height: 14px; color: var(--text-3); transition: transform .16s; }
+.nav-group { position: relative; }
+.nav-group > summary { list-style: none; }
+.nav-group > summary::-webkit-details-marker { display: none; }
+.nav-group[open] .nav-chevron { transform: rotate(180deg); }
+.nav-dropdown { position: absolute; top: 100%; left: -12px; width: 280px; padding-top: 9px; z-index: 1; }
+.nav-panel { padding: 6px; background: var(--bg); border: 1px solid var(--line-2); border-radius: 8px; box-shadow: 0 12px 32px #00000014, 0 2px 6px #0000000a; }
+[data-theme="oled"] .nav-panel { box-shadow: 0 12px 32px #00000080; }
+.nav-group[open] .nav-panel { animation: nav-reveal .14s ease-out; }
+.nav-panel a { display: flex; align-items: center; gap: 12px; padding: 11px 12px; text-decoration: none; border-radius: 4px; color: var(--text-2); }
+.nav-panel a:hover, .nav-panel a:focus-visible, .nav-panel a[aria-current="page"] { background: var(--sel); color: var(--text); }
+.nav-panel a[aria-current="page"] { box-shadow: inset 2px 0 var(--text); }
+.nav-panel strong { display: block; color: var(--text); font-size: 13.5px; font-weight: 500; }
+.nav-panel small { display: block; margin-top: 2px; font-size: 12px; color: var(--text-2); }
+.nav-short { display: none; }
+@keyframes nav-reveal { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
 .top-r { margin-left: auto; display: flex; align-items: center; gap: 14px; }
 
 .theme { display: inline-flex; border: 1px solid var(--line-2); border-radius: var(--r-sm); overflow: hidden; }
@@ -285,16 +301,27 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
 /* ------------------------------------------------------------------ petits écrans */
 
 @media (max-width: 980px) {
+  .top-in { gap: 20px; }
+  .brand span { display: none; }
   .cols, .cols.w21, .cols.w12 { grid-template-columns: minmax(0, 1fr); }
   .metrics { grid-auto-flow: row; grid-template-columns: 1fr 1fr; }
   .metric + .metric { border-left: 0; }
   .metric { border-bottom: 1px solid var(--line); }
   .metric:nth-child(even) { border-left: 1px solid var(--line); }
 }
-@media (max-width: 720px) {
+@media (max-width: 900px) {
   .top-in { padding: 10px 16px 0; gap: 16px; height: auto; flex-wrap: wrap; }
-  .nav { order: 3; width: 100%; height: 40px; }
+  .nav { position: relative; order: 3; width: 100%; height: 44px; gap: 6px; justify-content: space-between; }
+  .nav > a, .nav-group > summary { gap: 6px; font-size: 13px; padding: 0 4px; }
+  .nav-home > span, .nav-long { display: none; }
+  .nav-short { display: inline; }
+  .nav-admin > summary > .nav-icon:not(.nav-chevron) { display: none; }
+  .nav-group { position: static; }
+  .nav-dropdown { left: 0; width: min(320px, 100%); }
+  .nav-admin .nav-dropdown { left: auto; right: 0; }
   .brand span { display: none; }
+}
+@media (max-width: 720px) {
   main { padding: 20px 16px 120px; }
   .grid2 { grid-template-columns: 1fr; }
   .kv { grid-template-columns: 1fr; }
