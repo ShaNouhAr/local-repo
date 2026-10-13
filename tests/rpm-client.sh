@@ -45,7 +45,7 @@ dnf -y -q remove lr-rpm-e2e
 # EPEL reste installé (epel-release) : ses dépôts ne comptent pas dans la comparaison.
 after=$(enabled | grep -vE '^epel($|-)' | sort || true)
 [ "$after" = "$before" ] || fail "dépôts différents après retrait : $(echo "$after" | tr '\n' ' ')"
-[ ! -e /etc/yum.repos.d/local-repo.repo ] && [ ! -e /etc/yum.repos.d/local-repo-cache.repo ] || fail "fichiers restants"
+if [ -e /etc/yum.repos.d/local-repo.repo ] || [ -e /etc/yum.repos.d/local-repo-cache.repo ]; then fail "fichiers restants"; fi
 [ ! -e /etc/pki/ca-trust/source/anchors/local-repo.crt ] || fail "autorité restante"
 dnf -y -q makecache >/dev/null || fail "dépôts d'origine inutilisables"
 echo
