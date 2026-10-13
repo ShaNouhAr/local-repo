@@ -19,7 +19,7 @@ local-repo est conçu pour un **réseau d'entreprise interne**. Il n'est pas pr�
 | Cache Windows Update | Ne relaie que les domaines de sa liste (HTTP et SNI) ; HTTPS relayé sans déchiffrement ; seuls les fichiers immuables sont mis en cache |
 | apt-cacher-ng | Clients filtrés (tcpwrappers), pages de maintenance protégées par mot de passe |
 | Portail (processus) | Utilisateur dédié sans shell, unité systemd confinée (système en lecture seule, aucune capacité, appels système filtrés, `systemd-analyze security` ≈ 1,5) ; nginx seul exposé |
-| Secrets | Aucun mot de passe en clair sur disque ; clés privées en 0600 ; sauvegardes en 0600 |
+| Secrets | Mots de passe du portail hachés ; identifiants de maintenance apt-cacher-ng dans des fichiers à accès restreint (0600 pour le secret, 0640 root/apt-cacher-ng pour sa configuration) ; clés privées et sauvegardes en 0600 |
 
 ## Limites connues
 

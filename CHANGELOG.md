@@ -12,7 +12,7 @@
   nettoyage du cache des postes lors d'un changement de dépôt ; prise en charge du canal de contrôle
   des nouvelles versions de Gunicorn et délais bornés pour vérifier le démarrage.
 - Tests d'isolation et de signatures, test de migration depuis 1.0.0 ; matrice de VM Debian 12/13 et
-  Ubuntu 22.04/24.04/26.04, images officielles vérifiées, contrôles hebdomadaires prévus dans la CI.
+  Ubuntu 22.04/24.04/26.04, images officielles vérifiées, contrôles hebdomadaires actifs dans la CI.
 - Navigation Linux / Windows avec icônes et menus au survol, au clavier et au toucher ; icônes du compte.
 
 ## 1.0.0 — 2026-10-13
