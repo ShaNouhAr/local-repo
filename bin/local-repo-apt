@@ -1,0 +1,15 @@
+#!/bin/bash
+# local-repo : dépôts APT (root).
+#   local-repo-apt list
+#   local-repo-apt add debian trixie 13
+#   local-repo-apt add ubuntu noble 24.04
+#   local-repo-apt rebuild
+set -euo pipefail
+[ "$(id -u)" -eq 0 ] || { echo 'Lancez cette commande en root (sudo).' >&2; exit 1; }
+# shellcheck disable=SC1091
+. /etc/local-repo/local-repo.conf
+cd /opt/local-repo/portal
+args=(apt-repo "${@:-list}")
+if [ "${1:-}" = rebuild ]; then args=(rebuild-apt); fi
+exec runuser -u localrepo -- env LR_DATA="$DATA" LR_STATE=/var/lib/local-repo LR_ETC=/etc/local-repo \
+    python3 -m localrepo.cli "${args[@]}"

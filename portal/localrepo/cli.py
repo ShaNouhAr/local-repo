@@ -2,7 +2,9 @@
 
   init                      migrations de la base, reprise de l'ancien mot de passe
   ensure-admin              crée le compte « admin » s'il n'existe aucun compte (mot de passe : $LR_PASSWORD)
-  rebuild-apt               régénère et signe l'index du dépôt APT
+  rebuild-apt               régénère et signe tous les dépôts APT
+  apt-repo add DISTRIBUTION SUITE [VERSION]   crée un dépôt pour Debian / Ubuntu
+  apt-repo list             liste les dépôts par distribution et version
   write-maps                régénère les listes de domaines Windows Update pour nginx
   flatpak-init              crée (si besoin) et signe le dépôt Flatpak local
   user list                 liste les comptes
@@ -93,8 +95,22 @@ def main(argv):
                 _audit(conn, "comptes.ajout", "admin (installation)")
                 print("created")
     elif cmd == "rebuild-apt":
-        from .linux import rebuild_apt
+        from .linux import rebuild_apt, repositories
         rebuild_apt()
+        for repo in repositories():
+            rebuild_apt(repo["key"])
+    elif cmd == "apt-repo":
+        from .linux import create_repository, repositories
+        if len(argv) == 2 and argv[1] == "list":
+            for repo in repositories():
+                print(f"{repo['key']:<32} {repo['label']}")
+        elif len(argv) in (4, 5) and argv[1] == "add":
+            key = create_repository(argv[2], argv[3], argv[4] if len(argv) == 5 else "")
+            with transaction() as conn:
+                _audit(conn, "linux.depot.ajout", key)
+            print(key)
+        else:
+            sys.exit(__doc__)
     elif cmd == "write-maps":
         from .wupdate import write_wu_maps
         write_wu_maps()

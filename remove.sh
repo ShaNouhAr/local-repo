@@ -50,7 +50,7 @@ rm -f /etc/systemd/system/local-repo-portal.service /etc/systemd/system/local-re
       /etc/systemd/system/local-repo-backup.timer
 rm -rf /etc/systemd/system/apt-cacher-ng.service.d/local-repo.conf
 rmdir /etc/systemd/system/apt-cacher-ng.service.d 2>/dev/null || true
-rm -f /etc/apt-cacher-ng/zz-local-repo.conf /usr/local/sbin/local-repo-user /usr/local/sbin/local-repo-backup
+rm -f /etc/apt-cacher-ng/zz-local-repo.conf /usr/local/sbin/local-repo-user /usr/local/sbin/local-repo-backup /usr/local/sbin/local-repo-apt
 for f in /etc/hosts.allow /etc/hosts.deny; do
     if [ -f "$f" ]; then sed -i '/# local-repo$/d' "$f"; fi
 done

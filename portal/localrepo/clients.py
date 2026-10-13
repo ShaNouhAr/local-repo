@@ -22,6 +22,21 @@ def linux_setup():
     return Response(script, mimetype="text/x-shellscript")
 
 
+@app.route("/linux/repositories/<distribution>/<suite>.sources")
+def linux_repository_source(distribution, suite):
+    from .linux import require_repository, repository_url
+    repository = f"{distribution}/{suite}"
+    try:
+        root = require_repository(repository)
+    except ValueError:
+        abort(404)
+    if not os.path.isfile(os.path.join(root, "InRelease")):
+        abort(503)
+    source = (f"Types: deb\nURIs: {client_base()}{repository_url(repository)}\nSuites: ./\n"
+              "Signed-By: /etc/apt/keyrings/local-repo.gpg\n")
+    return Response(source, mimetype="text/plain")
+
+
 @app.route("/win/i/<slugs>")
 def windows_install_script(slugs):
     """Script PowerShell : irm 'https://hôte:port/win/i/app1,app2' | iex"""

@@ -1,6 +1,6 @@
 #!/bin/bash
 # local-repo : installe le dépôt local (paquets Linux, Windows Update, logiciels Windows)
-# sur Debian 12+ / Ubuntu 22.04+, sans Docker. Relançable sans risque pour mettre à jour ou reconfigurer.
+# sur Debian / Ubuntu (versions validées : README), sans Docker. Relançable sans risque pour mettre à jour ou reconfigurer.
 #
 #   sudo ./install.sh [options]
 #
@@ -48,7 +48,7 @@ command -v systemctl >/dev/null || die "systemd requis."
 if ! command -v python3 >/dev/null; then
     mkdir -p "$STATE"
     echo python3 >> "$STATE/installed-packages"
-    { apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -y -q python3; } >/dev/null 2>&1 \
+    { apt-get update -q -o APT::Update::Error-Mode=any && DEBIAN_FRONTEND=noninteractive apt-get install -y -q python3; } >/dev/null 2>&1 \
         || die "impossible d'installer python3."
 fi
 
@@ -164,7 +164,7 @@ done
 echo "apt-cacher-ng apt-cacher-ng/tunnelenable boolean false" | debconf-set-selections
 export DEBIAN_FRONTEND=noninteractive
 : > "$LOG"
-if ! { apt-get update -q && apt-get install -y -q --no-install-recommends "${PACKAGES[@]}"; } >> "$LOG" 2>&1; then
+if ! { apt-get update -q -o APT::Update::Error-Mode=any && apt-get install -y -q --no-install-recommends "${PACKAGES[@]}"; } >> "$LOG" 2>&1; then
     tail -15 "$LOG" >&2
     die "installation des paquets impossible (journal complet : $LOG)."
 fi
@@ -226,6 +226,7 @@ rm -rf "$PREFIX"
 mv "$PREFIX.new" "$PREFIX"
 ln -sf "$PREFIX/bin/local-repo-user" /usr/local/sbin/local-repo-user
 ln -sf "$PREFIX/bin/local-repo-backup" /usr/local/sbin/local-repo-backup
+ln -sf "$PREFIX/bin/local-repo-apt" /usr/local/sbin/local-repo-apt
 
 cli() {
     (cd "$PREFIX/portal" && runuser -u localrepo -- env LR_DATA="$DATA" LR_STATE="$STATE" LR_ETC="$ETC" \
@@ -334,11 +335,15 @@ if [ -n "$UPSTREAM_PROXY" ]; then
         "$UPSTREAM_PROXY" "$UPSTREAM_PROXY" "$HOST")
 fi
 SHORT_HOSTNAME=$(hostname)
+GUNICORN_FLAGS=""
+# Les versions récentes ajoutent une socket de contrôle dans le dossier de travail (confiné en lecture seule).
+# Désactiver ce canal facultatif lorsqu'il existe ; les anciennes versions gardent leurs options habituelles.
+if gunicorn --help | grep -- '--no-control-socket' >/dev/null; then GUNICORN_FLAGS="--no-control-socket"; fi
 export LRT_PORTAL_PORT="$PORTAL_PORT" LRT_HTTPS_PORT="$HTTPS_PORT" LRT_APP_PORT="$APP_PORT" LRT_DATA="$DATA" \
        LRT_HOST="$HOST" LRT_HOSTNAME="$SHORT_HOSTNAME" LRT_ADMIN_URL="$ADMIN_URL" LRT_HTTP_URL="$HTTP_URL" \
        LRT_WU_CACHE_SIZE="$WU_CACHE_SIZE" LRT_RESOLVERS="$RESOLVERS" LRT_MAX_UPLOAD="$MAX_UPLOAD" \
        LRT_BACKUP_DIR="$BACKUP_DIR" LRT_PROXY_ENV="$PROXY_ENV" LRT_ALLOW_SPACE="$ALLOW_LIST" \
-       LRT_FLATPAK_CACHE_SIZE="$FLATPAK_CACHE_SIZE" LRT_FLATPAK="$FLATPAK_ENABLED"
+       LRT_FLATPAK_CACHE_SIZE="$FLATPAK_CACHE_SIZE" LRT_FLATPAK="$FLATPAK_ENABLED" LRT_GUNICORN_FLAGS="$GUNICORN_FLAGS"
 # Emplacements Flatpak insérés dans les deux serveurs du portail (déjà rendus).
 LRT_FLATPAK_LOCATIONS=""
 if [ "$FLATPAK_ENABLED" = 1 ]; then LRT_FLATPAK_LOCATIONS=$(render "$PREFIX/conf/nginx-flatpak-locations.conf"); fi
@@ -390,6 +395,7 @@ fi
 
 # ---------------------------------------------------------------- apt-cacher-ng
 say "Configuration d'apt-cacher-ng"
+ldd /usr/sbin/apt-cacher-ng | grep libwrap >/dev/null || die "apt-cacher-ng sans libwrap : impossible de garantir le filtrage des postes sur cette distribution."
 if [ ! -s "$ETC/acng-admin" ]; then
     (umask 077; echo "admin:$(python3 -c 'import secrets; print(secrets.token_urlsafe(18))')" > "$ETC/acng-admin")
 fi
@@ -443,10 +449,10 @@ else
 fi
 
 for _ in $(seq 1 30); do
-    curl -fsk "https://127.0.0.1:$HTTPS_PORT/healthz" >/dev/null 2>&1 && break
+    curl -fsk --connect-timeout 2 --max-time 5 "https://127.0.0.1:$HTTPS_PORT/healthz" >/dev/null 2>&1 && break
     sleep 0.5
 done
-curl -fsk "https://127.0.0.1:$HTTPS_PORT/healthz" >/dev/null || die "le portail ne répond pas (journalctl -u local-repo-portal)."
+curl -fsk --connect-timeout 2 --max-time 5 "https://127.0.0.1:$HTTPS_PORT/healthz" >/dev/null || die "le portail ne répond pas (journalctl -u local-repo-portal)."
 
 # ---------------------------------------------------------------- résumé
 echo

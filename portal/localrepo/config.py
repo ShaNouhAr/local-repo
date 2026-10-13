@@ -3,7 +3,7 @@
 import os
 import re
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 DATA = os.environ.get("LR_DATA", "/srv/local-repo")
 STATE = os.environ.get("LR_STATE", "/var/lib/local-repo")
@@ -24,6 +24,9 @@ BACKUP_DIR = os.environ.get("LR_BACKUP_DIR", "/var/backups/local-repo")
 
 APT_DIR = os.path.join(DATA, "apt")
 POOL_DIR = os.path.join(APT_DIR, "pool")
+APT_REPOSITORIES_DIR = os.path.join(APT_DIR, "repositories")
+APT_SUITE_RE = re.compile(r"^[a-z][a-z0-9-]{0,39}$")
+APT_DISTRIBUTIONS = {"debian": "Debian", "ubuntu": "Ubuntu"}
 WIN_DIR = os.path.join(DATA, "win")
 TMP_DIR = os.path.join(DATA, ".tmp")
 DB_PATH = os.path.join(STATE, "portal.db")

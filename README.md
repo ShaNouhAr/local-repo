@@ -6,7 +6,7 @@ Serveur de dépôts et de caches pour un réseau d'entreprise, installé en une 
 **sans Docker** :
 
 - **Paquets Linux** : cache [apt-cacher-ng](https://www.unix-ag.uni-kl.de/~bloch/acng/) pour Debian / Ubuntu
-  et dépôt APT local signé pour vos propres `.deb`.
+  et dépôts APT signés pour vos propres `.deb`, séparés par distribution et version.
 - **Windows Update** : cache des téléchargements de mises à jour (même principe que [lancache](https://lancache.net)).
 - **Logiciels Windows** : catalogue d'installeurs (`exe`, `msi`, `msu`, `ps1`) installés en silence par PowerShell.
 - **Flatpak** : cache Flathub et dépôt Flatpak local signé pour les applications de l'entreprise.
@@ -25,7 +25,7 @@ cd local-repo
 sudo ./install.sh
 ```
 
-Debian 12 / 13, Ubuntu 22.04 / 24.04. L'installation affiche l'adresse de l'interface
+Debian 12 / 13, Ubuntu 22.04 / 24.04 / 26.04 (validations serveur en amd64). L'installation affiche l'adresse de l'interface
 (`https://<ip>:8443`), l'empreinte de l'autorité de certification et le mot de passe initial du compte
 `admin` (à changer à la première connexion). Le script est relançable : il sert aussi à mettre à jour
 (`git pull && sudo ./install.sh`) et à reconfigurer.
@@ -47,6 +47,10 @@ Déploiement en entreprise (réseau, GPO, proxy, sauvegardes, supervision, dépa
 
 ## Brancher les postes
 
+Dans **Linux › Paquets APT**, créez d'abord les dépôts nécessaires : distribution, numéro de version
+facultatif et nom de code (par exemple `debian/trixie` ou `ubuntu/noble`). Une future version s'ajoute
+depuis cette page, sans modifier le code. Chaque dépôt a ses propres fichiers et index signés.
+
 Les postes font confiance à l'autorité locale (`ca.crt`, déployée par GPO ou depuis la page
 *Administration › Système*), puis :
 
@@ -55,6 +59,8 @@ Les postes font confiance à l'autorité locale (`ca.crt`, déployée par GPO ou
 curl -fsSL https://<ip>:8443/linux/setup.sh | sudo sh
 # … premier branchement, autorité pas encore importée (affiche son empreinte)
 curl -fsSL http://<ip>:8088/linux/setup.sh | sudo sh -s -- --trust-ca
+# Cache seul, sans dépôt local
+curl -fsSL https://<ip>:8443/linux/setup.sh | sudo sh -s -- --cache-only
 
 # Flatpak : Flathub via le cache + dépôt local « local-repo »
 curl -fsSL https://<ip>:8443/flatpak/setup.sh | sudo sh
@@ -70,6 +76,14 @@ et reconnaît les codes « redémarrage requis », « déjà installé » et « 
 
 Pour Windows Update, le DNS doit renvoyer l'IP du serveur pour les domaines de mise à jour : la page
 *Windows Update* fournit le script pour un DNS Active Directory.
+
+Le script Linux lit `/etc/os-release` et sélectionne le dépôt correspondant au poste. Si ce dépôt
+n'existe pas, il s'arrête avant de remplacer la configuration. Les dérivées peuvent choisir explicitement
+`--distribution ubuntu --suite noble`. Les sources APT sont au format deb822 (`local-repo.sources`).
+
+**Mise à jour depuis 1.0.0** : l'ancien dépôt `/apt/` et les postes déjà branchés restent fonctionnels.
+L'action *Copier vers un autre dépôt* conserve les originaux. Vérifiez la compatibilité de chaque paquet,
+puis relancez le script sur les postes. `--legacy` permet de conserver explicitement l'ancien dépôt partagé.
 
 ## Administration
 
@@ -105,11 +119,19 @@ confiné, dépôts signés. Détails et limites : [SECURITY.md](SECURITY.md).
 ## Développement
 
 ```bash
-python3 -m unittest discover -s tests          # tests du portail (python3-flask)
+sudo apt-get install python3-flask apt-utils gnupg
+python3 -m unittest discover -s tests          # portail, isolation APT et signatures réelles
 tests/e2e.sh                                   # bout en bout, sur une machine JETABLE uniquement
+tests/vm-e2e.sh debian-13                       # VM jetable ; nécessite QEMU, genisoimage, SSH et curl
 ```
 
-L'intégration continue lance `shellcheck`, `pyflakes`, les tests et le test de bout en bout sur Ubuntu 24.04.
+Le workflow CI lance `shellcheck`, `pyflakes` puis une VM QEMU pour chaque entrée de
+[`tests/platforms.json`](tests/platforms.json) : Debian 12/13 et Ubuntu 22.04/24.04/26.04.
+Il est prévu à chaque PR/push, chaque semaine et à la demande, avec conservation des journaux.
+Les images officielles sont vérifiées par leur empreinte avant le démarrage ; Docker n'est pas utilisé.
+Les tests couvrent la mise à jour depuis 1.0.0 sur les systèmes déjà pris en charge, la détection du poste,
+l'isolation des paquets, Flatpak, une restauration et la désinstallation. L'activation sur GitHub exige
+un jeton autorisé à publier des workflows (`workflow`).
 Historique : [CHANGELOG.md](CHANGELOG.md).
 
 ## Licence

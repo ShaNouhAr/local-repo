@@ -254,7 +254,7 @@
       var q = input.value.trim().toLowerCase();
       var shown = 0;
       $$(input.dataset.filter).forEach(function (row) {
-        var hit = !q || row.textContent.toLowerCase().indexOf(q) >= 0;
+        var hit = !q || (row.dataset.search || row.textContent).toLowerCase().indexOf(q) >= 0;
         row.classList.toggle("hidden", !hit);
         var note = row.nextElementSibling;
         if (note && note.classList.contains("note-row")) note.classList.toggle("hidden", !hit);

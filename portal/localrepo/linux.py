@@ -1,40 +1,76 @@
-"""Paquets Linux : cache apt-cacher-ng et dépôt APT local signé."""
+"""Cache APT et dépôts locaux signés, isolés par distribution et version."""
 
+import datetime
 import os
+import shutil
 import subprocess
 import tempfile
 import threading
 
-from flask import flash, render_template, request
+from flask import abort, flash, render_template, request
 from werkzeug.utils import secure_filename
 
 from . import app, config
 from .auth import admin_required, audit, login_required
-from .util import back, download, explain, read_stats, service_active
+from .db import transaction
+from .util import back, download, explain, read_stats, service_active, sha256_of
 
-_apt_lock = threading.Lock()
+_apt_lock = threading.RLock()
+LEGACY = "legacy"
 
 
-def list_debs():
-    """Paquets du dépôt local, lus dans l'index Packages (versions exactes, epoch compris)."""
+def repository_path(repository=LEGACY):
+    if repository == LEGACY:
+        return config.APT_DIR
+    parts = repository.split("/")
+    if len(parts) != 2 or parts[0] not in config.APT_DISTRIBUTIONS or not config.APT_SUITE_RE.fullmatch(parts[1]):
+        raise ValueError("Dépôt invalide : distribution et nom de version attendus.")
+    return os.path.join(config.APT_REPOSITORIES_DIR, *parts)
+
+
+def repositories():
+    with transaction() as conn:
+        rows = conn.execute("SELECT * FROM apt_repositories ORDER BY distribution, suite").fetchall()
+    return [dict(r, key=f"{r['distribution']}/{r['suite']}",
+                 label=f"{config.APT_DISTRIBUTIONS[r['distribution']]} {r['version']} ({r['suite']})".replace("  ", " "))
+            for r in rows]
+
+
+def require_repository(repository):
+    path = repository_path(repository)
+    if repository != LEGACY and not any(r["key"] == repository for r in repositories()):
+        raise ValueError("Ce dépôt n'existe pas. Créez-le avant d'y ajouter des paquets.")
+    return path
+
+
+def repository_url(repository=LEGACY):
+    repository_path(repository)
+    return "/apt/" if repository == LEGACY else f"/apt/repositories/{repository}/"
+
+
+def list_debs(repository=None):
+    """Sans sélection : tous les dépôts, pour les métriques ; sinon, uniquement celui demandé."""
+    keys = [LEGACY] + [r["key"] for r in repositories()] if repository is None else [repository]
     debs = []
-    try:
-        with open(os.path.join(config.APT_DIR, "Packages")) as f:
-            stanzas = f.read().split("\n\n")
-    except OSError:
-        return debs
-    for stanza in stanzas:
-        fields = dict(line.split(": ", 1) for line in stanza.splitlines() if ": " in line and not line.startswith(" "))
-        if "Filename" not in fields:
+    for key in keys:
+        root = repository_path(key)
+        try:
+            with open(os.path.join(root, "Packages")) as f:
+                stanzas = f.read().split("\n\n")
+        except OSError:
             continue
-        name = os.path.basename(fields["Filename"])
-        path = os.path.join(config.POOL_DIR, name)
-        if not os.path.isfile(path):
-            continue
-        debs.append({"file": name, "package": fields.get("Package", ""), "version": fields.get("Version", ""),
-                     "arch": fields.get("Architecture", ""), "size": os.path.getsize(path),
-                     "mtime": os.path.getmtime(path)})
-    return sorted(debs, key=lambda d: (d["package"], d["version"]))
+        for stanza in stanzas:
+            fields = dict(line.split(": ", 1) for line in stanza.splitlines() if ": " in line and not line.startswith(" "))
+            if "Filename" not in fields:
+                continue
+            name = os.path.basename(fields["Filename"])
+            path = os.path.join(root, "pool", name)
+            if not os.path.isfile(path):
+                continue
+            debs.append({"file": name, "package": fields.get("Package", ""), "version": fields.get("Version", ""),
+                         "arch": fields.get("Architecture", ""), "size": os.path.getsize(path),
+                         "mtime": os.path.getmtime(path), "repository": key, "url": repository_url(key) + "pool/" + name})
+    return sorted(debs, key=lambda d: (d["repository"], d["package"], d["version"]))
 
 
 def deb_fields(path):
@@ -48,57 +84,118 @@ def deb_fields(path):
     return fields
 
 
-def rebuild_apt():
-    """Régénère l'index du dépôt APT local (dépôt « plat ») et le signe."""
+def rebuild_apt(repository=LEGACY):
+    """Métadonnées produites à part ; les signatures sont publiées après les index."""
     with _apt_lock:
-        os.makedirs(config.POOL_DIR, exist_ok=True)
+        root = repository_path(repository)
+        os.makedirs(os.path.join(root, "pool"), exist_ok=True)
         env = dict(os.environ, GNUPGHOME=config.GNUPGHOME)
-        packages = subprocess.run(["apt-ftparchive", "packages", "pool"], cwd=config.APT_DIR,
-                                  capture_output=True, check=True).stdout
-        with open(os.path.join(config.APT_DIR, "Packages"), "wb") as f:
-            f.write(packages)
-        subprocess.run(["gzip", "-9nkf", "Packages"], cwd=config.APT_DIR, check=True)
-        for old in ("Release", "InRelease", "Release.gpg"):
-            try:
-                os.unlink(os.path.join(config.APT_DIR, old))
-            except FileNotFoundError:
-                pass
-        release = subprocess.run(
-            ["apt-ftparchive",
-             "-o", "APT::FTPArchive::Release::Origin=local-repo",
-             "-o", "APT::FTPArchive::Release::Label=local-repo",
-             "-o", "APT::FTPArchive::Release::Suite=stable",
-             "-o", "APT::FTPArchive::Release::Codename=local",
-             "release", "."], cwd=config.APT_DIR, capture_output=True, check=True).stdout
-        with open(os.path.join(config.APT_DIR, "Release"), "wb") as f:
-            f.write(release)
-        subprocess.run(["gpg", "--batch", "--yes", "--clearsign", "-o", "InRelease", "Release"],
-                       cwd=config.APT_DIR, env=env, check=True, capture_output=True)
-        subprocess.run(["gpg", "--batch", "--yes", "-abs", "-o", "Release.gpg", "Release"],
-                       cwd=config.APT_DIR, env=env, check=True, capture_output=True)
+        packages = subprocess.run(["apt-ftparchive", "packages", "pool"], cwd=root,
+                                  capture_output=True, check=True, timeout=120).stdout
+        with tempfile.TemporaryDirectory(prefix=".metadata-", dir=root) as stage:
+            with open(os.path.join(stage, "Packages"), "wb") as f:
+                f.write(packages)
+            subprocess.run(["gzip", "-9nk", "Packages"], cwd=stage, check=True, timeout=30)
+            suite = "local" if repository == LEGACY else repository.split("/")[1]
+            release = subprocess.run(
+                ["apt-ftparchive", "-o", "APT::FTPArchive::Release::Origin=local-repo",
+                 "-o", "APT::FTPArchive::Release::Label=" + ("local-repo" if repository == LEGACY else f"local-repo {repository}"),
+                 "-o", "APT::FTPArchive::Release::Suite=" + ("stable" if repository == LEGACY else suite),
+                 "-o", f"APT::FTPArchive::Release::Codename={suite}", "release", "."],
+                cwd=stage, capture_output=True, check=True, timeout=60).stdout
+            with open(os.path.join(stage, "Release"), "wb") as f:
+                f.write(release)
+            for args in (["--clearsign", "-o", "InRelease"], ["-abs", "-o", "Release.gpg"]):
+                subprocess.run(["gpg", "--batch", "--yes"] + args + ["Release"], cwd=stage,
+                               env=env, check=True, capture_output=True, timeout=60)
+            for name in ("Packages", "Packages.gz", "Release", "Release.gpg", "InRelease"):
+                os.chmod(os.path.join(stage, name), 0o644)
+                os.replace(os.path.join(stage, name), os.path.join(root, name))
 
 
-def add_deb(tmp_path):
+def create_repository(distribution, suite, version=""):
+    key = f"{distribution}/{suite}"
+    root = repository_path(key)
+    if len(version) > 32 or any(not (c.isalnum() or c in ". -") for c in version):
+        raise ValueError("Numéro de version invalide (32 caractères maximum).")
+    with _apt_lock:
+        if any(r["key"] == key for r in repositories()):
+            raise ValueError("Ce dépôt existe déjà.")
+        existed = os.path.exists(root)
+        try:
+            rebuild_apt(key)
+        except Exception:
+            if not existed:
+                shutil.rmtree(root, ignore_errors=True)
+            raise
+        with transaction() as conn:
+            conn.execute("INSERT INTO apt_repositories (distribution, suite, version, created_at) VALUES (?,?,?,?)",
+                         (distribution, suite, version, datetime.datetime.now().isoformat(timespec="seconds")))
+    return key
+
+
+def add_deb(tmp_path, repository):
+    root = require_repository(repository)
     fields = deb_fields(tmp_path)
-    # Convention Debian : l'epoch (« 1: ») n'apparaît pas dans le nom du fichier.
     version = fields["Version"].split(":", 1)[-1]
     name = secure_filename(f"{fields['Package']}_{version}_{fields['Architecture']}.deb")
-    os.chmod(tmp_path, 0o644)
-    os.replace(tmp_path, os.path.join(config.POOL_DIR, name))
-    rebuild_apt()
+    with _apt_lock:
+        target = os.path.join(root, "pool", name)
+        if os.path.isfile(target):
+            if sha256_of(target) != sha256_of(tmp_path):
+                raise ValueError("Ce paquet et cette version existent avec un contenu différent. Publiez une nouvelle version du paquet.")
+            os.unlink(tmp_path)
+            return name
+        os.chmod(tmp_path, 0o644)
+        os.replace(tmp_path, target)
+        try:
+            rebuild_apt(repository)
+        except Exception:
+            os.unlink(target)
+            raise
     return name
 
 
 @app.route("/linux")
 @login_required
 def linux():
-    return render_template("linux.html", debs=list_debs(), stats=read_stats(),
-                           acng=service_active("apt-cacher-ng"))
+    repos = repositories()
+    selected = request.args.get("repository", repos[0]["key"] if repos else LEGACY)
+    try:
+        require_repository(selected)
+    except ValueError:
+        abort(404)
+    return render_template("linux.html", repositories=repos, selected=selected, legacy=LEGACY,
+                           legacy_count=len(list_debs(LEGACY)),
+                           distributions=config.APT_DISTRIBUTIONS, debs=list_debs(selected),
+                           stats=read_stats(), acng=service_active("apt-cacher-ng"))
+
+
+@app.route("/linux/repositories", methods=["POST"])
+@admin_required
+def linux_repository_create():
+    try:
+        key = create_repository(request.form.get("distribution", ""), request.form.get("suite", "").strip(),
+                                request.form.get("version", "").strip())
+    except ValueError as e:
+        flash(str(e), "error")
+        return back("linux")
+    except subprocess.SubprocessError as e:
+        flash(explain(e), "error")
+        return back("linux")
+    audit("linux.depot.ajout", key)
+    flash(f"Dépôt créé : {key}", "ok")
+    return back("linux", repository=key)
 
 
 @app.route("/linux/upload", methods=["POST"])
 @admin_required
 def linux_upload():
+    repository = request.form.get("repository", "")
+    try:
+        require_repository(repository)
+    except ValueError as e:
+        abort(400, str(e))
     os.makedirs(config.TMP_DIR, exist_ok=True)
     added, errors = [], []
     url = request.form.get("url", "").strip()
@@ -106,7 +203,7 @@ def linux_upload():
         if url:
             tmp, _ = download(url, config.TMP_DIR)
             try:
-                added.append(add_deb(tmp))
+                added.append(add_deb(tmp, repository))
             finally:
                 if os.path.exists(tmp):
                     os.unlink(tmp)
@@ -117,32 +214,77 @@ def linux_upload():
             os.close(fd)
             try:
                 f.save(tmp)
-                added.append(add_deb(tmp))
+                added.append(add_deb(tmp, repository))
             except (ValueError, subprocess.SubprocessError) as e:
                 errors.append(f"{f.filename} : {e}")
             finally:
                 if os.path.exists(tmp):
                     os.unlink(tmp)
-    except Exception as e:  # noqa: BLE001 - toute erreur est remontée à l'utilisateur
+    except Exception as e:
         errors.append(explain(e))
     for name in added:
-        audit("linux.ajout", name)
+        audit("linux.ajout", f"{repository}: {name}")
         flash(f"Paquet ajouté : {name}", "ok")
     for err in errors:
         flash(err, "error")
     if not added and not errors:
         flash("Aucun fichier ni lien fourni.", "error")
-    return back("linux")
+    return back("linux", repository=repository)
 
 
 @app.route("/linux/delete", methods=["POST"])
 @admin_required
 def linux_delete():
+    repository = request.form.get("repository", "")
+    try:
+        root = require_repository(repository)
+    except ValueError as e:
+        abort(400, str(e))
     name = secure_filename(request.form.get("file", ""))
-    path = os.path.join(config.POOL_DIR, name)
-    if name.endswith(".deb") and os.path.isfile(path):
-        os.unlink(path)
-        rebuild_apt()
-        audit("linux.suppression", name)
-        flash(f"Paquet supprimé : {name}", "ok")
-    return back("linux")
+    with _apt_lock:
+        path = os.path.join(root, "pool", name)
+        if name.endswith(".deb") and os.path.isfile(path):
+            with tempfile.TemporaryDirectory(prefix=".removed-", dir=root) as stage:
+                saved = os.path.join(stage, name)
+                os.replace(path, saved)
+                try:
+                    rebuild_apt(repository)
+                except Exception:
+                    os.replace(saved, path)
+                    raise
+            audit("linux.suppression", f"{repository}: {name}")
+            flash("Paquet supprimé de ce dépôt.", "ok")
+    return back("linux", repository=repository)
+
+
+@app.route("/linux/copy", methods=["POST"])
+@admin_required
+def linux_copy():
+    source, destination = request.form.get("repository", ""), request.form.get("destination", "")
+    name = request.form.get("file", "")
+    try:
+        root = require_repository(source)
+    except ValueError as e:
+        abort(400, str(e))
+    try:
+        require_repository(destination)
+        if source == destination or name != secure_filename(name) or not name.endswith(".deb"):
+            raise ValueError("Source, destination ou fichier invalide.")
+        with _apt_lock:
+            path = os.path.join(root, "pool", name)
+            if not os.path.isfile(path):
+                abort(404)
+            os.makedirs(config.TMP_DIR, exist_ok=True)
+            with tempfile.TemporaryDirectory(dir=config.TMP_DIR) as stage:
+                tmp = os.path.join(stage, name)
+                shutil.copyfile(path, tmp)
+                add_deb(tmp, destination)
+    except ValueError as e:
+        flash(str(e), "error")
+        return back("linux", repository=source)
+    except subprocess.SubprocessError as e:
+        flash(explain(e), "error")
+        return back("linux", repository=source)
+    audit("linux.copie", f"{source} → {destination}: {name}")
+    flash("Paquet copié. Le dépôt d'origine est conservé.", "ok")
+    return back("linux", repository=destination)

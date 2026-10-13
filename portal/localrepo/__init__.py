@@ -51,7 +51,7 @@ CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' 
        "connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 
 # Points d'entrée publics (postes clients, supervision) : ni session, ni jeton CSRF.
-PUBLIC_ENDPOINTS = {"linux_setup", "windows_install_script", "flatpak_setup", "flatpak_repo_file",
+PUBLIC_ENDPOINTS = {"linux_setup", "linux_repository_source", "windows_install_script", "flatpak_setup", "flatpak_repo_file",
                     "healthz", "metrics", "static"}
 
 

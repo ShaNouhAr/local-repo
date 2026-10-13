@@ -1,5 +1,20 @@
 # Journal des versions
 
+## 1.1.0 — 2026-10-13
+
+- Dépôts APT isolés par distribution et nom de version, création depuis le portail ou `local-repo-apt`.
+- Détection automatique des postes Debian / Ubuntu, sources deb822 ; options `--cache-only`,
+  `--distribution`, `--suite`, `--legacy`. Une version absente ne remplace pas la configuration du poste.
+- Dépôt historique conservé, copie explicite de paquets entre dépôts ; publication sans remplacement
+  d'un paquet/version par un contenu différent ; métadonnées signées préparées avant publication.
+- Sauvegarde et restauration de tous les dépôts, migration du registre des versions.
+- Corrections de compatibilité : HTTPS APT en accès direct, connexions sortantes du cache conservées,
+  nettoyage du cache des postes lors d'un changement de dépôt ; prise en charge du canal de contrôle
+  des nouvelles versions de Gunicorn et délais bornés pour vérifier le démarrage.
+- Tests d'isolation et de signatures, test de migration depuis 1.0.0 ; matrice de VM Debian 12/13 et
+  Ubuntu 22.04/24.04/26.04, images officielles vérifiées, contrôles hebdomadaires prévus dans la CI.
+- Navigation Linux / Windows avec icônes et menus au survol, au clavier et au toucher ; icônes du compte.
+
 ## 1.0.0 — 2026-10-13
 
 Première version destinée à un usage en entreprise.

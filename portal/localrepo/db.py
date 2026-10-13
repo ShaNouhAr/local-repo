@@ -56,6 +56,16 @@ MIGRATIONS = [
     );
     CREATE INDEX login_failures_at ON login_failures(at);
     """,
+    # 3 : dépôts APT isolés par distribution et nom de version ; le dépôt historique reste intact.
+    """
+    CREATE TABLE apt_repositories (
+        distribution TEXT NOT NULL,
+        suite TEXT NOT NULL,
+        version TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (distribution, suite)
+    );
+    """,
 ]
 
 

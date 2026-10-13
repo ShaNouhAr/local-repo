@@ -1,64 +1,113 @@
 #!/bin/sh
-# local-repo : configure ce poste Debian / Ubuntu pour utiliser le dépôt local.
+# local-repo : poste Debian / Ubuntu, dépôt détecté depuis /etc/os-release.
 #   curl -fsSL {{ base }}/linux/setup.sh | sudo sh
-#   ... | sudo sh -s -- --trust-ca   importe l'autorité de certification local-repo et passe le dépôt en HTTPS
-#   ... | sudo sh -s -- --no-proxy   dépôt local seulement, sans le cache apt-cacher-ng
-#   ... | sudo sh -s -- --remove     annule la configuration (dépôt, cache, autorité)
-set -e
+#   ... | sudo sh -s -- --trust-ca         importe l'autorité et passe en HTTPS
+#   ... | sudo sh -s -- --no-proxy         dépôt seulement
+#   ... | sudo sh -s -- --cache-only       cache seulement, sans dépôt local
+#   ... | sudo sh -s -- --distribution debian --suite trixie   choix explicite (dérivées)
+#   ... | sudo sh -s -- --legacy           ancien dépôt, sans isolation par version
+#   ... | sudo sh -s -- --remove           annule la configuration
+set -eu
 [ "$(id -u)" -eq 0 ] || { echo "Lancez ce script en root (sudo)." >&2; exit 1; }
-
 BASE="{{ base }}"
 HTTPS_BASE="{{ https_url }}"
 KEY=/etc/apt/keyrings/local-repo.gpg
 LIST=/etc/apt/sources.list.d/local-repo.list
+SOURCE=/etc/apt/sources.list.d/local-repo.sources
 PROXY=/etc/apt/apt.conf.d/01local-repo-proxy
 CA=/usr/local/share/ca-certificates/local-repo.crt
-
-USE_PROXY=1 TRUST_CA=0 REMOVE=0
-for arg in "$@"; do
-    case "$arg" in
-        --no-proxy) USE_PROXY=0 ;;
-        --trust-ca) TRUST_CA=1 ;;
-        --remove) REMOVE=1 ;;
-        *) echo "Option inconnue : $arg" >&2; exit 1 ;;
+USE_PROXY=1 TRUST_CA=0 REMOVE=0 CACHE_ONLY=0 LEGACY=0 DIST="" SUITE=""
+need() { [ "$#" -ge 2 ] && [ -n "$2" ] || { echo "L'option $1 attend une valeur." >&2; exit 1; }; }
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --no-proxy) USE_PROXY=0; shift ;;
+        --trust-ca) TRUST_CA=1; shift ;;
+        --cache-only) CACHE_ONLY=1; shift ;;
+        --legacy) LEGACY=1; shift ;;
+        --distribution) need "$@"; DIST=$2; shift 2 ;;
+        --suite) need "$@"; SUITE=$2; shift 2 ;;
+        --remove) REMOVE=1; shift ;;
+        *) echo "Option inconnue : $1" >&2; exit 1 ;;
     esac
 done
-
 if [ "$REMOVE" = 1 ]; then
-    rm -f "$KEY" "$LIST" "$PROXY"
+    rm -f "$KEY" "$LIST" "$SOURCE" "$PROXY"
     if [ -f "$CA" ]; then rm -f "$CA"; update-ca-certificates --fresh >/dev/null 2>&1 || true; fi
     echo "Configuration local-repo retirée."
     exit 0
 fi
-
-if command -v curl >/dev/null 2>&1; then GET="curl -fsSL"; else GET="wget -qO-"; fi
-
+command -v apt-get >/dev/null 2>&1 || { echo "Ce poste doit utiliser APT." >&2; exit 1; }
+if [ "$LEGACY" = 1 ] && { [ "$CACHE_ONLY" = 1 ] || [ -n "$DIST$SUITE" ]; }; then
+    echo "--legacy ne se combine pas avec --cache-only, --distribution ou --suite." >&2; exit 1
+fi
+if [ "$CACHE_ONLY" = 0 ] && [ "$LEGACY" = 0 ]; then
+    if [ -z "$DIST$SUITE" ]; then
+        [ -r /etc/os-release ] || { echo "Distribution inconnue : précisez --distribution et --suite." >&2; exit 1; }
+        # shellcheck disable=SC1091
+        . /etc/os-release
+        DIST=${ID:-}
+        SUITE=${VERSION_CODENAME:-${UBUNTU_CODENAME:-}}
+    fi
+    case "$DIST" in debian|ubuntu) ;; *) echo "Distribution non reconnue : précisez --distribution debian|ubuntu et --suite NOM." >&2; exit 1 ;; esac
+    case "$SUITE" in ''|*[!a-z0-9-]*|[!a-z]* ) echo "Nom de version invalide ou absent." >&2; exit 1 ;; esac
+    [ "$(printf '%s' "$SUITE" | wc -c)" -le 40 ] || { echo "Nom de version trop long." >&2; exit 1; }
+fi
+if command -v curl >/dev/null 2>&1; then GET="curl -fsSL"; elif command -v wget >/dev/null 2>&1; then GET="wget -qO-"; else
+    echo "Installez curl ou wget avant de configurer ce poste." >&2; exit 1
+fi
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+# Vérifier le dépôt et télécharger les fichiers avant de remplacer une configuration existante.
+if [ "$CACHE_ONLY" = 0 ]; then
+    if [ "$LEGACY" = 1 ]; then
+        echo "Attention : dépôt historique partagé, sans isolation des versions."
+        printf 'Types: deb\nURIs: %s/apt/\nSuites: ./\nSigned-By: %s\n' "$BASE" "$KEY" > "$TMP/source"
+    else
+        if ! $GET "$BASE/linux/repositories/$DIST/$SUITE.sources" > "$TMP/source"; then
+            echo "Dépôt $DIST/$SUITE indisponible : créez-le dans Linux > Paquets APT, ou utilisez --cache-only." >&2
+            exit 1
+        fi
+        EXPECTED=$(printf 'Types: deb\nURIs: %s/apt/repositories/%s/%s/\nSuites: ./\nSigned-By: %s\n' "$BASE" "$DIST" "$SUITE" "$KEY")
+        [ "$(cat "$TMP/source")" = "$EXPECTED" ] || { echo "Configuration de dépôt inattendue." >&2; exit 1; }
+    fi
+    $GET "$BASE/apt/local-repo.gpg" > "$TMP/key"
+    [ -s "$TMP/key" ] || { echo "Clé du dépôt vide." >&2; exit 1; }
+fi
 if [ "$TRUST_CA" = 1 ]; then
+    $GET "$BASE/ca.crt" > "$TMP/ca"
+    command -v openssl >/dev/null 2>&1 && openssl x509 -in "$TMP/ca" -noout >/dev/null
     command -v update-ca-certificates >/dev/null 2>&1 || { apt-get update -q >/dev/null && apt-get install -y -q ca-certificates >/dev/null; }
     mkdir -p "$(dirname "$CA")"
-    $GET "$BASE/ca.crt" > "$CA"
-    chmod 644 "$CA"
+    install -m 644 "$TMP/ca" "$CA"
     update-ca-certificates >/dev/null
     if command -v openssl >/dev/null 2>&1; then
         echo "Autorité importée, empreinte SHA-256 : $(openssl x509 -in "$CA" -noout -fingerprint -sha256 | cut -d= -f2)"
         echo "Comparez-la à celle de la page Système du portail."
     fi
-    BASE="$HTTPS_BASE"
+    BASE=$HTTPS_BASE
 fi
-
-mkdir -p /etc/apt/keyrings
-$GET "$BASE/apt/local-repo.gpg" > "$KEY"
-chmod 644 "$KEY"
-echo "deb [signed-by=$KEY] $BASE/apt ./" > "$LIST"
-
+if [ "$CACHE_ONLY" = 0 ]; then
+    PATH_REPO=apt
+    if [ "$LEGACY" = 0 ]; then PATH_REPO="apt/repositories/$DIST/$SUITE"; fi
+    mkdir -p /etc/apt/keyrings
+    install -m 644 "$TMP/key" "$KEY"
+    printf 'Types: deb\nURIs: %s/%s/\nSuites: ./\nSigned-By: %s\n' "$BASE" "$PATH_REPO" "$KEY" > "$TMP/final-source"
+    # Le cache des .deb est partagé par nom/version/architecture, même entre dépôts.
+    # Éviter de réutiliser un ancien binaire après un changement de distribution ou de dépôt.
+    if ! grep -Fxq "URIs: $BASE/$PATH_REPO/" "$SOURCE" 2>/dev/null; then apt-get clean; fi
+    install -m 644 "$TMP/final-source" "$SOURCE"
+    rm -f "$LIST"
+else
+    rm -f "$SOURCE" "$LIST" "$KEY"
+fi
 if [ "$USE_PROXY" = 1 ]; then
     cat > "$PROXY" <<CONF
 Acquire::http::Proxy "http://{{ host }}:{{ acng_port }}";
+Acquire::https::Proxy "DIRECT";
 Acquire::http::Proxy::{{ host }} "DIRECT";
 CONF
 else
     rm -f "$PROXY"
 fi
-
-apt-get update
-echo "Poste configuré pour local-repo ($BASE)."
+apt-get update -o APT::Update::Error-Mode=any
+if [ "$CACHE_ONLY" = 1 ]; then echo "Cache APT configuré ($BASE)."; else echo "Poste configuré : dépôt $PATH_REPO ($BASE)."; fi

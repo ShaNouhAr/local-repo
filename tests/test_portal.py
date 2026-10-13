@@ -3,6 +3,7 @@
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -28,6 +29,9 @@ with connect() as conn:
 
 
 def tearDownModule():
+    if shutil.which("gpgconf") and os.path.isdir(config.GNUPGHOME):
+        subprocess.run(["gpgconf", "--homedir", config.GNUPGHOME, "--kill", "gpg-agent"],
+                       capture_output=True, check=False)
     shutil.rmtree(TMP, ignore_errors=True)
 
 
@@ -166,6 +170,8 @@ class TestClients(unittest.TestCase):
         self.assertIn('BASE="http://repo.test:8088"', s)
         self.assertIn('HTTPS_BASE="https://repo.test:8443"', s)
         self.assertIn("--trust-ca", s)
+        self.assertIn('Acquire::https::Proxy "DIRECT";', s)
+        self.assertIn('APT::Update::Error-Mode=any', s)
 
     def test_flatpak_endpoints(self):
         os.makedirs(config.APT_DIR, exist_ok=True)
