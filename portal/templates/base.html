@@ -1,48 +1,84 @@
 <!doctype html>
-<html lang="fr">
+<html lang="fr" data-theme="oled">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}local-repo{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  {% block head %}{% endblock %}
+  <meta name="csrf" content="{{ csrf }}">
+  <meta name="theme-color" content="#000000">
+  <title>{% block title %}local-repo{% endblock %} · local-repo</title>
+  <script>
+    (function () {
+      var p = "auto";
+      try { p = localStorage.getItem("lr-theme") || "auto"; } catch (e) {}
+      if (p === "auto") p = matchMedia("(prefers-color-scheme: dark)").matches ? "oled" : "light";
+      document.documentElement.dataset.theme = p;
+    })();
+  </script>
+  <link rel="preload" href="{{ url_for('static', filename='fonts/InterVariable.woff2') }}" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ asset_v }}">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%238b6bff'/%3E%3Cstop offset='1' stop-color='%2322d3ee'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='9' fill='url(%23g)'/%3E%3Cpath d='M16 7 7 11.5l9 4.5 9-4.5zM7 20.5l9 4.5 9-4.5M7 16l9 4.5 9-4.5' fill='none' stroke='white' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E">
 </head>
 <body>
-  {% if session.auth %}
-  <header>
-    <a class="brand" href="{{ url_for('index') }}">local-repo</a>
-    <nav>
-      {% set ep = request.endpoint or '' %}
-      <a href="{{ url_for('index') }}" {% if ep == 'index' %}class="active"{% endif %}>Accueil</a>
-      <a href="{{ url_for('linux') }}" {% if ep.startswith('linux') %}class="active"{% endif %}>Paquets Linux</a>
-      <a href="{{ url_for('windows_update') }}" {% if ep.startswith('windows_update') %}class="active"{% endif %}>Windows Update</a>
-      <a href="{{ url_for('windows_apps') }}" {% if ep.startswith('windows_apps') %}class="active"{% endif %}>Logiciels Windows</a>
+{% include "_icons.html" %}
+{% block body %}
+<div class="app">
+  <aside class="sidebar">
+    <a class="brand" href="{{ url_for('index') }}">
+      <span class="logo"><svg class="i"><use href="#i-logo"/></svg></span>
+      <span>local-repo<small>Dépôt local</small></span>
+    </a>
+    {% set ep = request.endpoint or '' %}
+    <nav class="nav">
+      <div class="nav-label">Général</div>
+      <a href="{{ url_for('index') }}" class="{{ 'active' if ep == 'index' }}"><svg class="i"><use href="#i-dashboard"/></svg><span>Vue d'ensemble</span></a>
+      <div class="nav-label">Dépôts</div>
+      <a href="{{ url_for('linux') }}" class="{{ 'active' if ep.startswith('linux') }}"><svg class="i"><use href="#i-package"/></svg><span>Paquets Linux</span><em class="count">{{ nav.debs }}</em></a>
+      <a href="{{ url_for('windows_update') }}" class="{{ 'active' if ep.startswith('windows_update') }}"><svg class="i"><use href="#i-update"/></svg><span>Windows Update</span></a>
+      <a href="{{ url_for('windows_apps') }}" class="{{ 'active' if ep.startswith('windows_apps') }}"><svg class="i"><use href="#i-window"/></svg><span>Logiciels Windows</span><em class="count">{{ nav.apps }}</em></a>
     </nav>
-    <form method="post" action="{{ url_for('logout') }}">
-      <input type="hidden" name="csrf" value="{{ csrf }}">
-      <button class="link">Déconnexion</button>
-    </form>
-  </header>
-  {% endif %}
-  <main>
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% for cat, msg in messages %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
-    {% endwith %}
-    {% block content %}{% endblock %}
+    <div class="side-foot">
+      <div class="host-card">
+        <div class="row"><span class="faint small">Serveur</span><span class="pill ok"><span class="dot"></span>En ligne</span></div>
+        <div class="ip" style="margin-top:6px">{{ host }}</div>
+      </div>
+      <div class="theme-switch" role="group" aria-label="Thème">
+        <span class="thumb"></span>
+        <button type="button" data-theme="auto" title="Automatique"><svg class="i i-sm"><use href="#i-auto"/></svg></button>
+        <button type="button" data-theme="light" title="Clair"><svg class="i i-sm"><use href="#i-sun"/></svg></button>
+        <button type="button" data-theme="oled" title="OLED"><svg class="i i-sm"><use href="#i-moon"/></svg></button>
+      </div>
+      <form method="post" action="{{ url_for('logout') }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="logout"><svg class="i"><use href="#i-logout"/></svg><span>Déconnexion</span></button>
+      </form>
+    </div>
+  </aside>
+
+  <main class="content">
+    <div class="container">
+      {% block content %}{% endblock %}
+    </div>
   </main>
-  <script>
-    // Copie dans le presse-papiers (fonctionne aussi en HTTP simple).
-    document.addEventListener('click', function (e) {
-      var btn = e.target.closest('[data-copy]');
-      if (!btn) return;
-      var el = document.getElementById(btn.dataset.copy);
-      var text = el.value !== undefined ? el.value : el.textContent;
-      var ta = document.createElement('textarea');
-      ta.value = text.trim(); document.body.appendChild(ta); ta.select();
-      document.execCommand('copy'); document.body.removeChild(ta);
-      var old = btn.textContent; btn.textContent = 'Copié'; setTimeout(function () { btn.textContent = old; }, 1200);
-    });
-  </script>
-  {% block scripts %}{% endblock %}
+</div>
+
+<dialog id="confirm">
+  <div class="dlg-head">
+    <span class="ico t-rose"><svg class="i"><use href="#i-alert"/></svg></span>
+    <h2></h2>
+  </div>
+  <div class="dlg-body"><p class="muted" style="margin:0"></p></div>
+  <div class="dlg-foot">
+    <button type="button" class="btn" data-cancel>Annuler</button>
+    <button type="button" class="btn danger" data-ok>Confirmer</button>
+  </div>
+</dialog>
+{% endblock %}
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for cat, msg in messages %}<span hidden data-flash="{{ msg }}" data-kind="{{ cat }}"></span>{% endfor %}
+{% endwith %}
+<div class="toasts"></div>
+<script src="{{ url_for('static', filename='app.js') }}?v={{ asset_v }}"></script>
+{% block scripts %}{% endblock %}
 </body>
 </html>

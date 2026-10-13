@@ -1,29 +1,128 @@
 {% extends "base.html" %}
+{% from "_term.html" import term %}
+{% block title %}Vue d'ensemble{% endblock %}
 {% block content %}
-<h1>Tableau de bord</h1>
-<div class="grid">
-  <a class="card tile" href="{{ url_for('linux') }}">
-    <h2>Paquets Linux <span class="dot {{ 'on' if acng else 'off' }}"></span></h2>
-    <p class="big">{{ stats.get('acng', 0)|human }}</p>
-    <p class="muted">en cache apt-cacher-ng · {{ debs }} paquet(s) local(aux)</p>
+<header class="page-head reveal">
+  <div>
+    <div class="eyebrow"><svg class="i i-sm"><use href="#i-activity"/></svg>Tableau de bord</div>
+    <h1>Vue d'ensemble</h1>
+    <p>État des caches et des dépôts servis par <span class="mono">{{ host }}</span>.</p>
+  </div>
+</header>
+
+<div class="grid g-3 reveal">
+  <a class="card stat" href="{{ url_for('linux') }}">
+    <svg class="i go"><use href="#i-arrow"/></svg>
+    <div class="top">
+      <span class="ico t-violet"><svg class="i"><use href="#i-package"/></svg></span>
+      <span class="label">Paquets Linux</span>
+    </div>
+    <div class="value" data-bind="acng_size" data-fmt="bytes" data-value="{{ d.acng_size }}">0</div>
+    <div class="sub">dans le cache apt-cacher-ng</div>
+    <div class="foot">
+      <span><b data-bind="debs" data-value="{{ d.debs }}">0</b> paquet(s) local(aux)</span>
+      <span class="pill {{ 'ok' if d.services.acng else 'err' }}" data-bind="services.acng" data-fmt="service"><span class="dot"></span><span class="label">{{ 'Actif' if d.services.acng else 'Arrêté' }}</span></span>
+    </div>
   </a>
-  <a class="card tile" href="{{ url_for('windows_update') }}">
-    <h2>Windows Update <span class="dot {{ 'on' if nginx else 'off' }}"></span></h2>
-    <p class="big">{{ stats.get('wucache', 0)|human }}</p>
-    <p class="muted">en cache · {{ wu.ratio }} % servi depuis le cache</p>
+
+  <a class="card stat" href="{{ url_for('windows_update') }}">
+    <svg class="i go"><use href="#i-arrow"/></svg>
+    <div class="top">
+      <span class="ico t-cyan"><svg class="i"><use href="#i-update"/></svg></span>
+      <span class="label">Windows Update</span>
+    </div>
+    <div class="value" data-bind="wucache_size" data-fmt="bytes" data-value="{{ d.wucache_size }}">0</div>
+    <div class="sub">de mises à jour en cache</div>
+    <div class="foot">
+      <span><b data-bind="wu.hit_bytes" data-fmt="bytes" data-value="{{ d.wu.hit_bytes }}">0</b> servis en local</span>
+      <span class="pill {{ 'ok' if d.services.nginx else 'err' }}" data-bind="services.nginx" data-fmt="service"><span class="dot"></span><span class="label">{{ 'Actif' if d.services.nginx else 'Arrêté' }}</span></span>
+    </div>
   </a>
-  <a class="card tile" href="{{ url_for('windows_apps') }}">
-    <h2>Logiciels Windows</h2>
-    <p class="big">{{ apps.n }}</p>
-    <p class="muted">logiciel(s) · {{ apps.s|human }}</p>
+
+  <a class="card stat" href="{{ url_for('windows_apps') }}">
+    <svg class="i go"><use href="#i-arrow"/></svg>
+    <div class="top">
+      <span class="ico t-green"><svg class="i"><use href="#i-window"/></svg></span>
+      <span class="label">Logiciels Windows</span>
+    </div>
+    <div class="value" data-bind="apps" data-value="{{ d.apps }}">0</div>
+    <div class="sub">logiciel(s) prêts à installer</div>
+    <div class="foot">
+      <span><b data-bind="apps_size" data-fmt="bytes" data-value="{{ d.apps_size }}">0</b> au catalogue</span>
+      <span class="pill accent"><span class="dot" style="background:var(--accent)"></span>PowerShell</span>
+    </div>
   </a>
 </div>
 
-{% set used = disk.total - disk.free %}
-<div class="card">
-  <h2>Espace disque</h2>
-  <div class="bar"><span style="width: {{ (100 * used / disk.total)|round|int }}%"></span></div>
-  <p class="muted">{{ disk.free|human }} libres sur {{ disk.total|human }}
-    {% if stats.updated %}· tailles mises à jour le {{ stats.updated }}{% endif %}</p>
+<div class="grid g-21 reveal">
+  <div class="stack">
+    <div class="grid g-2">
+  <div class="card">
+    <div class="card-head"><div><h2>Efficacité du cache</h2><p>Windows Update, trafic récent</p></div></div>
+    <div class="ring-row">
+      <div class="ring" data-bind="wu.ratio" data-fmt="ring" data-value="{{ d.wu.ratio }}">
+        <svg viewBox="0 0 120 120"><circle class="track" cx="60" cy="60" r="50" pathLength="100"/><circle class="val" cx="60" cy="60" r="50" pathLength="100"/></svg>
+        <div class="center"><div><b data-bind="wu.ratio" data-fmt="pct" data-value="{{ d.wu.ratio }}">0 %</b><span>du cache</span></div></div>
+      </div>
+      <div class="legend">
+        <div class="item"><span><i class="sw"></i>Servi depuis le cache</span><b data-bind="wu.hit_bytes" data-fmt="bytes" data-value="{{ d.wu.hit_bytes }}">0</b></div>
+        <div class="item"><span><i class="sw off"></i>Téléchargé sur Internet</span><b data-bind="wu.miss_bytes" data-fmt="bytes" data-value="{{ d.wu.miss_bytes }}">0</b></div>
+        <div class="item"><span><svg class="i i-sm"><use href="#i-zap"/></svg>Requêtes servies</span><b data-bind="wu.hits" data-value="{{ d.wu.hits }}">0</b></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div><h2>Stockage</h2><p>Disque de <span class="mono">{{ host }}</span></p></div></div>
+    <div class="ring-row">
+      <div class="ring" data-bind="disk.pct" data-fmt="ring" data-value="{{ d.disk.pct }}">
+        <svg viewBox="0 0 120 120"><circle class="track" cx="60" cy="60" r="50" pathLength="100"/><circle class="val" cx="60" cy="60" r="50" pathLength="100"/></svg>
+        <div class="center"><div><b data-bind="disk.pct" data-fmt="pct" data-value="{{ d.disk.pct }}">0 %</b><span>utilisé</span></div></div>
+      </div>
+      <div class="legend">
+        <div class="item"><span><i class="sw"></i>Utilisé</span><b data-bind="disk.used" data-fmt="bytes" data-value="{{ d.disk.used }}">0</b></div>
+        <div class="item"><span><i class="sw off"></i>Libre</span><b data-bind="disk.free" data-fmt="bytes" data-value="{{ d.disk.free }}">0</b></div>
+        <div class="item"><span><svg class="i i-sm"><use href="#i-disk"/></svg>Capacité</span><b data-bind="disk.total" data-fmt="bytes" data-value="{{ d.disk.total }}">0</b></div>
+      </div>
+    </div>
+  </div>
+    </div>
+  <div class="card">
+    <div class="card-head"><div><h2><svg class="i"><use href="#i-terminal"/></svg>Commandes rapides</h2><p>À coller sur un poste pour le brancher au dépôt.</p></div></div>
+    <div class="field" style="margin-bottom:16px">
+      <span>Poste Linux (Debian / Ubuntu)</span>
+      {{ term('cmd-linux', 'curl -fsSL ' ~ public_url ~ '/linux/setup.sh | sudo sh') }}
+    </div>
+    <div class="field">
+      <span>Poste Windows (PowerShell administrateur)</span>
+      {{ term('cmd-win', "irm '" ~ public_url ~ "/win/i/<logiciel>' | iex", 'PS>', true) }}
+    </div>
+  </div>
+
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div><h2>Activité récente</h2><p>Derniers ajouts au dépôt</p></div></div>
+    {% if activity %}
+    <ul class="feed">
+      {% for e in activity %}
+      <li>
+        <span class="ico {{ 't-violet' if e.kind == 'linux' else 't-green' }}"><svg class="i i-sm"><use href="#i-{{ 'package' if e.kind == 'linux' else 'window' }}"/></svg></span>
+        <div class="what"><b>{{ e.title }}</b><span>{{ e.detail }}</span></div>
+        <time>{{ e.when|date_fr }}</time>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty" style="padding:24px 10px">
+      <span class="ico"><svg class="i"><use href="#i-box"/></svg></span>
+      <p>Rien pour l'instant. Ajoutez un paquet ou un logiciel.</p>
+    </div>
+    {% endif %}
+  </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>lrPoll("{{ url_for('api_status') }}", 10000, lrBind);</script>
 {% endblock %}

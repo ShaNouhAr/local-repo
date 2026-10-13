@@ -1,42 +1,110 @@
 {% extends "base.html" %}
+{% block title %}Windows Update{% endblock %}
 {% block content %}
-<h1>Windows Update</h1>
+<header class="page-head reveal">
+  <div>
+    <div class="eyebrow"><svg class="i i-sm"><use href="#i-update"/></svg>Dépôts</div>
+    <h1>Windows Update</h1>
+    <p>Les mises à jour sont téléchargées une fois sur Internet, puis servies en local.</p>
+  </div>
+  <div class="actions">
+    <a class="btn primary" href="{{ url_for('windows_update_dns') }}"><svg class="i i-sm"><use href="#i-download"/></svg>Script DNS Active Directory</a>
+  </div>
+</header>
 
-<div class="grid">
-  <div class="card tile">
-    <h2>Cache <span class="dot {{ 'on' if nginx else 'off' }}"></span></h2>
-    <p class="big">{{ stats.get('wucache', 0)|human }}</p>
-    <p class="muted">sur disque</p>
+<div class="grid g-3 reveal">
+  <div class="card stat">
+    <div class="top"><span class="ico t-cyan"><svg class="i"><use href="#i-disk"/></svg></span><span class="label">En cache</span></div>
+    <div class="value" data-bind="cache_size" data-fmt="bytes" data-value="{{ stats.get('wucache', 0) }}">0</div>
+    <div class="foot"><span>sur le disque</span><span class="pill {{ 'ok' if nginx else 'err' }}"><span class="dot"></span>{{ 'Actif' if nginx else 'Arrêté' }}</span></div>
   </div>
-  <div class="card tile">
-    <h2>Servi depuis le cache</h2>
-    <p class="big">{{ wu.hit_bytes|human }}</p>
-    <p class="muted">{{ wu.ratio }} % du trafic récent ({{ wu.hits }} requêtes)</p>
+  <div class="card stat">
+    <div class="top"><span class="ico t-green"><svg class="i"><use href="#i-zap"/></svg></span><span class="label">Servi en local</span></div>
+    <div class="value" data-bind="hit_bytes" data-fmt="bytes" data-value="{{ wu.hit_bytes }}">0</div>
+    <div class="foot"><span><b data-bind="hits" data-value="{{ wu.hits }}">0</b> requêtes</span><span class="pill accent"><b data-bind="ratio" data-fmt="pct" data-value="{{ wu.ratio }}">0 %</b></span></div>
   </div>
-  <div class="card tile">
-    <h2>Téléchargé sur Internet</h2>
-    <p class="big">{{ wu.miss_bytes|human }}</p>
-    <p class="muted">{{ wu.misses }} requêtes</p>
+  <div class="card stat">
+    <div class="top"><span class="ico t-amber"><svg class="i"><use href="#i-globe"/></svg></span><span class="label">Depuis Internet</span></div>
+    <div class="value" data-bind="miss_bytes" data-fmt="bytes" data-value="{{ wu.miss_bytes }}">0</div>
+    <div class="foot"><span><b data-bind="misses" data-value="{{ wu.misses }}">0</b> requêtes</span><span class="faint">premier téléchargement</span></div>
   </div>
 </div>
 
-<div class="card">
-  <h2>Fonctionnement</h2>
-  <p>Le cache reçoit les téléchargements Windows Update à la place de Microsoft : le DNS du réseau doit
-    répondre <code>{{ host }}</code> pour les domaines ci-dessous. Le premier poste télécharge depuis
-    Internet, les suivants sont servis en local. Le trafic HTTPS de ces domaines est relayé tel quel.</p>
-  <p><a class="button" href="{{ url_for('windows_update_dns') }}">Script DNS Active Directory (.ps1)</a></p>
-  <p class="muted small">À lancer en administrateur sur le contrôleur de domaine. <code>-Remove</code> annule tout.
-    Les domaines sont redirigés avec tous leurs sous-domaines.</p>
+<div class="grid g-21 reveal" style="margin-top:18px">
+  <div class="card">
+    <div class="card-head"><div><h2>Fonctionnement</h2><p>Le DNS du réseau envoie les postes vers le cache au lieu de Microsoft.</p></div></div>
+    <div class="flow">
+      <div class="node"><span class="ico t-violet"><svg class="i"><use href="#i-laptop"/></svg></span><b>Poste Windows</b><span>demande une mise à jour</span></div>
+      <span class="link"></span>
+      <div class="node"><span class="ico t-amber"><svg class="i"><use href="#i-signpost"/></svg></span><b>DNS (AD)</b><span>répond {{ host }}</span></div>
+      <span class="link"></span>
+      <div class="node hl"><span class="ico t-cyan"><svg class="i"><use href="#i-server"/></svg></span><b>Cache local</b><span>sert le fichier s'il l'a</span></div>
+      <span class="link"></span>
+      <div class="node"><span class="ico t-green"><svg class="i"><use href="#i-globe"/></svg></span><b>Microsoft</b><span>seulement la 1re fois</span></div>
+    </div>
+    <p class="faint small" style="margin:16px 0 0">Le trafic HTTPS de ces domaines est relayé tel quel (port 443) ; seuls les téléchargements HTTP sont mis en cache, ce qui couvre l'essentiel du volume.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div><h2>Domaines redirigés</h2><p>Avec tous leurs sous-domaines.</p></div></div>
+    <form method="post" action="{{ url_for('windows_update_domains') }}" data-ajax>
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="chips"><input placeholder="Ajouter un domaine…" aria-label="Ajouter un domaine"></div>
+      <textarea name="domains" hidden>{{ domains|join('\n') }}</textarea>
+      <p class="faint small" style="margin:10px 0 16px">Entrée pour ajouter. Après modification, relancez le script DNS sur le contrôleur de domaine (<code>-Remove</code> pour annuler).</p>
+      <button class="btn primary"><span class="spin"></span><svg class="i i-sm"><use href="#i-check"/></svg>Enregistrer</button>
+    </form>
+  </div>
 </div>
 
-<div class="card">
-  <h2>Domaines redirigés</h2>
-  <form method="post" action="{{ url_for('windows_update_domains') }}" class="stack">
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <textarea name="domains" rows="5">{{ domains|join('\n') }}</textarea>
-    <button>Enregistrer</button>
-  </form>
-  <p class="muted small">Après modification, relancer le script DNS pour l'appliquer.</p>
+<div class="card flush reveal" style="margin-top:18px">
+  <div class="card-head" style="padding-bottom:16px">
+    <div><h2>Dernières requêtes</h2><p>Actualisé en direct</p></div>
+    <span class="pill ok"><span class="dot"></span>Live</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Heure</th><th>Poste</th><th>Fichier</th><th class="right">Taille</th><th class="right">Cache</th></tr></thead>
+      <tbody id="wu-log">
+      {% for r in wu.recent %}
+        <tr class="log-row" data-key="{{ r.time }}{{ r.client }}{{ r.file }}">
+          <td class="num muted nw">{{ r.time }}</td>
+          <td class="mono">{{ r.client }}</td>
+          <td><span class="file" title="{{ r.host }}">{{ r.file }}</span><span class="faint small">{{ r.host }}</span></td>
+          <td class="right num muted nw">{{ r.size|human if r.size else "—" }}</td>
+          <td class="right"><span class="pill {{ 'ok' if r.cache == 'HIT' else 'warn' if r.cache in ('MISS', 'EXPIRED') else '' }}">{{ r.cache }}</span></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <div id="wu-none" class="empty {{ 'hidden' if wu.recent }}" style="padding:30px">
+      <span class="ico t-cyan"><svg class="i"><use href="#i-activity"/></svg></span>
+      <p>Aucune requête pour l'instant. Elles apparaîtront ici dès qu'un poste passera par le cache.</p>
+    </div>
+  </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var body = document.getElementById("wu-log"), none = document.getElementById("wu-none");
+  function esc(s) { var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+  lrPoll("{{ url_for('api_wu') }}", 5000, function (d) {
+    lrBind(d);
+    var known = {};
+    Array.prototype.forEach.call(body.rows, function (r) { known[r.dataset.key] = 1; });
+    body.innerHTML = d.recent.map(function (r) {
+      var key = r.time + r.client + r.file;
+      var cls = r.cache === "HIT" ? "ok" : (r.cache === "MISS" || r.cache === "EXPIRED") ? "warn" : "";
+      return '<tr class="log-row' + (known[key] ? "" : " new") + '" data-key="' + esc(key) + '">' +
+        '<td class="num muted nw">' + esc(r.time) + '</td><td class="mono">' + esc(r.client) + '</td>' +
+        '<td><span class="file" title="' + esc(r.host) + '">' + esc(r.file) + '</span><span class="faint small">' + esc(r.host) + '</span></td>' +
+        '<td class="right num muted nw">' + (r.size ? lrBytes(r.size) : "—") + '</td>' +
+        '<td class="right"><span class="pill ' + cls + '">' + esc(r.cache) + '</span></td></tr>';
+    }).join("");
+    none.classList.toggle("hidden", d.recent.length > 0);
+  });
+})();
+</script>
 {% endblock %}

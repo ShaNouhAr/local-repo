@@ -1,114 +1,210 @@
 {% extends "base.html" %}
-{% block head %}{% if busy %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
+{% from "_term.html" import term %}
+{% block title %}Logiciels Windows{% endblock %}
 {% block content %}
-<h1>Logiciels Windows</h1>
+<header class="page-head reveal">
+  <div>
+    <div class="eyebrow"><svg class="i i-sm"><use href="#i-window"/></svg>Dépôts</div>
+    <h1>Logiciels Windows</h1>
+    <p>Sélectionnez des logiciels pour obtenir la commande d'installation silencieuse.</p>
+  </div>
+  <div class="actions">
+    <button type="button" class="btn primary" data-open="#add"><svg class="i i-sm"><use href="#i-plus"/></svg>Ajouter un logiciel</button>
+  </div>
+</header>
 
-<div class="card">
-  <h2>Installer sur un poste</h2>
-  <p class="muted">Cochez les logiciels puis collez la commande dans un PowerShell administrateur.</p>
-  <div class="cmd"><input id="wincmd" readonly value="Cochez au moins un logiciel"><button data-copy="wincmd">Copier</button></div>
+{% if apps %}
+<div class="toolbar reveal">
+  <div class="input-icon"><svg class="i i-sm"><use href="#i-search"/></svg><input type="search" placeholder="Rechercher un logiciel…" data-filter=".app-card" data-empty="#apps-none"></div>
+  <span class="faint small">{{ apps|length }} logiciel(s) · {{ apps|sum(attribute='size')|human }}</span>
 </div>
 
-<div class="card">
-  <h2>Catalogue <span class="muted">({{ apps|length }})</span></h2>
-  {% if apps %}
-  <table>
-    <thead><tr><th></th><th>Logiciel</th><th>Version</th><th>Type</th><th>Taille</th><th>État</th><th></th></tr></thead>
-    <tbody>
-    {% for a in apps %}
-      <tr>
-        <td><input type="checkbox" class="pick" value="{{ a.slug }}" {% if a.status != 'ready' %}disabled{% endif %}></td>
-        <td><strong>{{ a.name }}</strong><br><span class="muted small">{{ a.slug }}</span></td>
-        <td>{{ a.version or '—' }}</td>
-        <td>{{ a.kind }}</td>
-        <td>{{ a.size|human if a.size else '—' }}</td>
-        <td>
-          {% if a.status == 'ready' %}<span class="badge ok">prêt</span>
-          {% elif a.status == 'downloading' %}<span class="badge">téléchargement…</span>
-          {% elif a.status == 'error' %}<span class="badge err" title="{{ a.error }}">erreur</span>
-          {% else %}<span class="badge">en attente</span>{% endif %}
-          <br><span class="muted small">{{ a.updated_at }}</span>
-        </td>
-        <td class="actions">
-          <button class="link" onclick="document.getElementById('edit-{{ a.slug }}').showModal()">Modifier</button>
-          {% if a.source_url %}
-          <form method="post" action="{{ url_for('windows_apps_refresh', slug=a.slug) }}">
-            <input type="hidden" name="csrf" value="{{ csrf }}">
-            <button class="link" title="Retélécharger depuis l'URL source">Actualiser</button>
-          </form>
-          {% endif %}
-          <form method="post" action="{{ url_for('windows_apps_delete', slug=a.slug) }}" onsubmit='return confirm("Supprimer " + {{ a.name|tojson }} + " ?")'>
-            <input type="hidden" name="csrf" value="{{ csrf }}">
-            <button class="link danger">Supprimer</button>
-          </form>
-        </td>
-      </tr>
-      {% if a.status == 'error' %}<tr class="errrow"><td></td><td colspan="6">{{ a.error }}</td></tr>{% endif %}
-    {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="muted">Catalogue vide : ajoutez un premier logiciel ci-dessous.</p>
-  {% endif %}
+<div class="apps reveal">
+  {% for a in apps %}
+  {% set ready = a.status == 'ready' %}
+  <div class="app-card {{ '' if ready else 'disabled' }}" data-slug="{{ a.slug }}" data-status="{{ a.status }}">
+    <div class="head">
+      <span class="avatar" style="--h: {{ a.slug|hue }}">{{ a.name[:1]|upper }}</span>
+      <div class="name"><b>{{ a.name }}</b><span>{{ a.slug }}</span></div>
+      {% if ready %}<span class="check"><svg class="i"><use href="#i-check"/></svg></span>{% endif %}
+    </div>
+
+    {% if a.status == 'downloading' %}
+    <div class="dl" data-progress="{{ a.slug }}">
+      <div class="bar indeterminate"><span></span></div>
+      <div class="row"><span data-dl-size>Téléchargement…</span><span data-dl-pct></span></div>
+    </div>
+    {% elif a.status == 'error' %}
+    <div class="err-msg">{{ a.error }}</div>
+    {% endif %}
+
+    <div class="meta">
+      <span class="tag">{{ a.kind }}</span>
+      {% if a.version %}<span class="tag plain">v{{ a.version }}</span>{% endif %}
+      <span class="faint">{{ a.size|human if a.size else '—' }}</span>
+    </div>
+
+    <div class="foot">
+      {% if ready %}<span class="pill ok"><span class="dot"></span>Prêt</span>
+      {% elif a.status == 'downloading' %}<span class="pill warn"><span class="dot"></span>Téléchargement</span>
+      {% elif a.status == 'error' %}<span class="pill err"><span class="dot"></span>Erreur</span>
+      {% else %}<span class="pill"><span class="dot"></span>En attente</span>{% endif %}
+      <div class="actions">
+        {% if a.source_url %}
+        <form method="post" action="{{ url_for('windows_apps_refresh', slug=a.slug) }}" data-ajax>
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button class="btn icon sm ghost" title="Retélécharger depuis l'URL source" {{ 'disabled' if a.status == 'downloading' }}><span class="spin"></span><svg class="i i-sm"><use href="#i-refresh"/></svg></button>
+        </form>
+        {% endif %}
+        <button type="button" class="btn icon sm ghost" title="Modifier" data-open="#edit"
+          data-app='{{ {"slug": a.slug, "name": a.name, "version": a.version, "kind": a.kind, "args": a.args, "url": a.source_url, "filename": a.filename, "sha256": a.sha256}|tojson|forceescape }}'><svg class="i i-sm"><use href="#i-edit"/></svg></button>
+        <form method="post" action="{{ url_for('windows_apps_delete', slug=a.slug) }}" data-ajax data-confirm="Supprimer {{ a.name }} ?" data-confirm-text="Le logiciel et son installeur seront retirés du catalogue." data-confirm-ok="Supprimer">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button class="btn icon sm ghost danger" title="Supprimer"><svg class="i i-sm"><use href="#i-trash"/></svg></button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+<div id="apps-none" class="card empty hidden"><p>Aucun logiciel ne correspond à la recherche.</p></div>
+
+{% else %}
+<div class="card empty reveal">
+  <span class="ico t-green"><svg class="i"><use href="#i-window"/></svg></span>
+  <h3>Catalogue vide</h3>
+  <p>Ajoutez un installeur par lien ou par fichier : il sera stocké ici et installable en silence sur tous vos postes.</p>
+  <button type="button" class="btn primary" data-open="#add"><svg class="i i-sm"><use href="#i-plus"/></svg>Ajouter un logiciel</button>
+</div>
+{% endif %}
+
+<div class="selbar" data-base="{{ public_url }}/win/i/">
+  <span class="count"><b>0</b><span>logiciel</span></span>
+  {{ term('cmd-sel', '', 'PS>', true) }}
+  <button type="button" class="btn icon ghost" data-clear title="Tout désélectionner"><svg class="i"><use href="#i-x"/></svg></button>
 </div>
 
-<div class="card">
-  <h2>Ajouter un logiciel</h2>
-  <form method="post" action="{{ url_for('windows_apps_add') }}" enctype="multipart/form-data" class="form-grid">
+{# ------------------------------------------------------------ ajout #}
+<dialog id="add">
+  <form method="post" action="{{ url_for('windows_apps_add') }}" enctype="multipart/form-data" data-ajax>
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <label>Nom <input name="name" required placeholder="7-Zip"></label>
-    <label>Version <input name="version" placeholder="facultatif"></label>
-    <label class="wide">URL de téléchargement <input type="url" name="url" placeholder="https://www.7-zip.org/a/7z2501-x64.exe"></label>
-    <label class="wide">ou fichier <input type="file" name="file"></label>
-    <label>Type
-      <select name="kind">
-        <option value="">Automatique (extension)</option>
-        <option value="exe">exe</option><option value="msi">msi</option>
-        <option value="msu">msu (mise à jour)</option><option value="ps1">ps1 (script)</option>
-        <option value="file">fichier (copié seulement)</option>
-      </select>
-    </label>
-    <label>Arguments silencieux <input name="args" placeholder="/S, /quiet, /verysilent…"></label>
-    <p class="muted small wide">Par défaut : msi <code>{{ default_args.msi }}</code>, msu <code>{{ default_args.msu }}</code>.
-      Pour un .exe, l'argument dépend de l'éditeur (souvent <code>/S</code>, <code>/silent</code> ou <code>/quiet</code>).</p>
-    <button class="wide">Ajouter</button>
-  </form>
-</div>
-
-{% for a in apps %}
-<dialog id="edit-{{ a.slug }}">
-  <form method="post" action="{{ url_for('windows_apps_edit', slug=a.slug) }}" enctype="multipart/form-data" class="form-grid">
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <h2 class="wide">Modifier {{ a.name }}</h2>
-    <label>Nom <input name="name" value="{{ a.name }}" required></label>
-    <label>Version <input name="version" value="{{ a.version }}"></label>
-    <label class="wide">URL source <input type="url" name="url" value="{{ a.source_url }}"></label>
-    <label>Type
-      <select name="kind">
-        {% for k in ['exe', 'msi', 'msu', 'ps1', 'file'] %}<option {% if a.kind == k %}selected{% endif %}>{{ k }}</option>{% endfor %}
-      </select>
-    </label>
-    <label>Arguments <input name="args" value="{{ a.args }}"></label>
-    <label class="wide">Remplacer le fichier <input type="file" name="file"></label>
-    {% if a.sha256 %}<p class="muted small wide">{{ a.filename }} · SHA256 {{ a.sha256 }}</p>{% endif %}
-    <div class="wide row">
-      <button>Enregistrer</button>
-      <button type="button" class="secondary" onclick="this.closest('dialog').close()">Annuler</button>
+    <div class="dlg-head">
+      <span class="ico t-green"><svg class="i"><use href="#i-plus"/></svg></span>
+      <h2>Ajouter un logiciel</h2>
+      <button type="button" class="btn icon ghost" data-close><svg class="i"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="dlg-body">
+      <div class="form-grid">
+        <label class="field"><span>Nom</span><input type="text" name="name" required placeholder="7-Zip"></label>
+        <label class="field"><span>Version</span><input type="text" name="version" placeholder="facultatif"></label>
+        <div class="wide">
+          <div class="seg" role="tablist" style="margin-bottom:14px">
+            <button type="button" data-tab="url" aria-selected="true">Par lien</button>
+            <button type="button" data-tab="file" aria-selected="false">Par fichier</button>
+          </div>
+          <div class="tab-panel on" data-panel="url">
+            <label class="field"><span>Lien de téléchargement</span>
+              <div class="input-icon"><svg class="i i-sm"><use href="#i-link"/></svg><input type="url" name="url" placeholder="https://www.7-zip.org/a/7z2600-x64.exe"></div>
+              <span class="hint">Le serveur télécharge le fichier. « Actualiser » le retéléchargera plus tard.</span>
+            </label>
+          </div>
+          <div class="tab-panel" data-panel="file">
+            <label class="drop" style="min-height:120px">
+              <input type="file" name="file">
+              <span class="ico"><svg class="i i-lg"><use href="#i-upload"/></svg></span>
+              <b>Déposez l'installeur</b>
+              <span class="faint">exe, msi, msu, ps1…</span>
+              <span class="files"></span>
+            </label>
+          </div>
+        </div>
+        <label class="field"><span>Type</span>
+          <select name="kind">
+            <option value="">Automatique</option>
+            <option value="exe">exe</option><option value="msi">msi</option>
+            <option value="msu">msu · mise à jour</option><option value="ps1">ps1 · script</option>
+            <option value="file">fichier · copié</option>
+          </select>
+        </label>
+        <label class="field"><span>Arguments silencieux</span><input type="text" name="args" placeholder="/S, /quiet, /verysilent…"></label>
+        <p class="hint wide faint small" style="margin:-4px 0 0">Par défaut : msi <code>{{ default_args.msi }}</code>, msu <code>{{ default_args.msu }}</code>. Pour un .exe, ça dépend de l'éditeur (souvent <code>/S</code>).</p>
+      </div>
+      <div class="upload-progress">
+        <div class="bar"><span></span></div>
+        <div class="row"><span data-size></span><span data-pct></span></div>
+      </div>
+    </div>
+    <div class="dlg-foot">
+      <button type="button" class="btn" data-close>Annuler</button>
+      <button class="btn primary"><span class="spin"></span><svg class="i i-sm"><use href="#i-plus"/></svg>Ajouter</button>
     </div>
   </form>
 </dialog>
-{% endfor %}
+
+{# ------------------------------------------------------------ modification #}
+<dialog id="edit" data-fill>
+  <form method="post" action="" data-base="{{ url_for('windows_apps_edit', slug='__slug__') }}" enctype="multipart/form-data" data-ajax>
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="dlg-head">
+      <span class="ico"><svg class="i"><use href="#i-edit"/></svg></span>
+      <h2>Modifier <span data-title></span></h2>
+      <button type="button" class="btn icon ghost" data-close><svg class="i"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="dlg-body">
+      <div class="form-grid">
+        <label class="field"><span>Nom</span><input type="text" name="name" required></label>
+        <label class="field"><span>Version</span><input type="text" name="version"></label>
+        <label class="field wide"><span>Lien source</span><div class="input-icon"><svg class="i i-sm"><use href="#i-link"/></svg><input type="url" name="url"></div></label>
+        <label class="field"><span>Type</span>
+          <select name="kind">{% for k in ['exe', 'msi', 'msu', 'ps1', 'file'] %}<option>{{ k }}</option>{% endfor %}</select>
+        </label>
+        <label class="field"><span>Arguments</span><input type="text" name="args"></label>
+        <label class="drop wide" style="min-height:100px">
+          <input type="file" name="file">
+          <b>Remplacer le fichier</b>
+          <span class="faint" data-file></span>
+          <span class="files"></span>
+        </label>
+      </div>
+      <div class="upload-progress">
+        <div class="bar"><span></span></div>
+        <div class="row"><span data-size></span><span data-pct></span></div>
+      </div>
+    </div>
+    <div class="dlg-foot">
+      <button type="button" class="btn" data-close>Annuler</button>
+      <button class="btn primary"><span class="spin"></span><svg class="i i-sm"><use href="#i-check"/></svg>Enregistrer</button>
+    </div>
+  </form>
+</dialog>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  (function () {
-    var out = document.getElementById('wincmd');
-    function update() {
-      var picked = Array.prototype.map.call(document.querySelectorAll('.pick:checked'), function (c) { return c.value; });
-      out.value = picked.length ? "irm '{{ public_url }}/win/i/" + picked.join(',') + "' | iex" : 'Cochez au moins un logiciel';
-    }
-    document.querySelectorAll('.pick').forEach(function (c) { c.addEventListener('change', update); });
-  })();
+(function () {
+  var cards = document.querySelectorAll('.app-card[data-status="downloading"]');
+  if (!cards.length) return;
+  var tick = lrPoll("{{ url_for('api_apps') }}", 1500, function (d) {
+    var changed = false;
+    d.apps.forEach(function (a) {
+      var card = document.querySelector('.app-card[data-slug="' + a.slug + '"]');
+      if (!card) return;
+      if (card.dataset.status !== a.status) { changed = true; return; }
+      var box = card.querySelector("[data-progress]");
+      if (!box || !a.progress.done) return;
+      var bar = box.querySelector(".bar");
+      var size = lrBytes(a.progress.done) + (a.progress.total ? " / " + lrBytes(a.progress.total) : "");
+      box.querySelector("[data-dl-size]").textContent = size;
+      if (a.progress.total) {
+        var p = Math.round(100 * a.progress.done / a.progress.total);
+        bar.classList.remove("indeterminate");
+        bar.firstElementChild.style.width = p + "%";
+        box.querySelector("[data-dl-pct]").textContent = p + " %";
+      }
+    });
+    if (changed) window.location.reload();
+  });
+  tick();
+})();
 </script>
 {% endblock %}

@@ -1,0 +1,7 @@
+{% macro term(id, cmd, prompt='$', ps=false) -%}
+<div class="term">
+  <span class="prompt {{ 'ps' if ps }}">{{ prompt }}</span>
+  <code id="{{ id }}">{{ cmd }}</code>
+  <button type="button" class="copy"><svg class="i i-sm i-copy"><use href="#i-copy"/></svg><svg class="i i-sm i-check"><use href="#i-check"/></svg><span class="lbl">Copier</span></button>
+</div>
+{%- endmacro %}

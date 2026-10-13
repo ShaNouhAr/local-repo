@@ -119,11 +119,43 @@ def human(n):
     n = float(n or 0)
     for unit in ("o", "Ko", "Mo", "Go", "To"):
         if n < 1024 or unit == "To":
-            return f"{n:.0f} {unit}" if unit == "o" else f"{n:.1f} {unit}"
+            if unit == "o":
+                return f"{n:.0f} {unit}"
+            return (f"{n:.2f}" if n < 10 else f"{n:.1f}").replace(".", ",") + f" {unit}"
         n /= 1024
 
 
+def date_fr(value):
+    """« 2026-10-12 20:57 » -> « 12/10 20:57 »."""
+    m = re.match(r"\d{4}-(\d{2})-(\d{2}) (\d{2}:\d{2})", value or "")
+    return f"{m.group(2)}/{m.group(1)} {m.group(3)}" if m else (value or "")
+
+
+def explain(exc):
+    """Message d'erreur lisible pour un téléchargement raté."""
+    import urllib.error
+    if isinstance(exc, urllib.error.HTTPError):
+        return f"Le serveur a répondu HTTP {exc.code} ({exc.reason})."
+    if isinstance(exc, urllib.error.URLError):
+        reason = str(exc.reason)
+        if "Name or service not known" in reason or "Temporary failure in name resolution" in reason:
+            return "Adresse introuvable : vérifiez le lien."
+        if "timed out" in reason:
+            return "Le serveur n'a pas répondu à temps."
+        if "CERTIFICATE" in reason.upper():
+            return "Certificat HTTPS invalide sur le site source."
+        return f"Connexion impossible : {reason}"
+    if isinstance(exc, TimeoutError):
+        return "Le serveur n'a pas répondu à temps."
+    return str(exc)[:300] or exc.__class__.__name__
+
+
 app.jinja_env.filters["human"] = human
+app.jinja_env.filters["date_fr"] = date_fr
+app.jinja_env.filters["hue"] = lambda text: int(hashlib.md5(text.encode()).hexdigest()[:4], 16) % 360
+
+STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+ASSET_V = str(int(max(os.path.getmtime(os.path.join(STATIC_DIR, f)) for f in ("style.css", "app.js"))))
 
 
 def slugify(text):
@@ -162,7 +194,10 @@ def read_stats():
         return {}
 
 
-def download(url, dest_dir):
+PROGRESS = {}  # slug -> [octets reçus, taille totale]
+
+
+def download(url, dest_dir, progress_key=None):
     """Télécharge url dans dest_dir. Retourne (chemin, nom de fichier)."""
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, timeout=60) as resp:
@@ -176,12 +211,29 @@ def download(url, dest_dir):
         name = secure_filename(name) or "download.bin"
         fd, tmp = tempfile.mkstemp(dir=dest_dir, prefix=".dl-")
         try:
+            total = int(resp.headers.get("Content-Length") or 0)
+            done = 0
             with os.fdopen(fd, "wb") as out:
-                shutil.copyfileobj(resp, out, 1024 * 1024)
+                while True:
+                    chunk = resp.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    done += len(chunk)
+                    if progress_key:
+                        PROGRESS[progress_key] = [done, total]
         except BaseException:
             os.unlink(tmp)
             raise
     return tmp, name
+
+
+def back(endpoint, **values):
+    """Retour après un formulaire : redirection, ou JSON si la page a envoyé le formulaire elle-même."""
+    url = url_for(endpoint, **values)
+    if request.headers.get("X-Requested-With") == "fetch":
+        return {"redirect": url}
+    return redirect(url)
 
 
 # --------------------------------------------------------------------------- authentification
@@ -207,8 +259,12 @@ def csrf_protect():
 
 @app.context_processor
 def inject_globals():
+    nav = {}
+    if session.get("auth"):
+        nav = {"debs": len(list_debs()),
+               "apps": db().execute("SELECT COUNT(*) FROM win_apps").fetchone()[0]}
     return {"csrf": session.get("csrf", ""), "public_url": PUBLIC_URL, "host": HOST,
-            "acng_port": ACNG_PORT}
+            "acng_port": ACNG_PORT, "nav": nav, "asset_v": ASSET_V}
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -238,22 +294,53 @@ def healthz():
 
 # --------------------------------------------------------------------------- tableau de bord
 
+def dashboard_data():
+    stats = read_stats()
+    apps = db().execute("SELECT COUNT(*) AS n, COALESCE(SUM(size),0) AS s FROM win_apps WHERE status='ready'").fetchone()
+    debs = list_debs()
+    disk = shutil.disk_usage(DATA)
+    wu = wu_stats()
+    return {
+        "services": {"acng": service_active("apt-cacher-ng"), "nginx": service_active("nginx"),
+                     "portal": True},
+        "acng_size": stats.get("acng", 0),
+        "wucache_size": stats.get("wucache", 0),
+        "debs": len(debs),
+        "debs_size": sum(d["size"] for d in debs),
+        "apps": apps["n"],
+        "apps_size": apps["s"],
+        "wu": {k: wu[k] for k in ("hits", "misses", "hit_bytes", "miss_bytes", "ratio")},
+        "disk": {"total": disk.total, "used": disk.total - disk.free, "free": disk.free,
+                 "pct": round(100 * (disk.total - disk.free) / disk.total)},
+        "stats_updated": stats.get("updated", ""),
+    }
+
+
+def recent_activity(limit=6):
+    events = []
+    for d in list_debs():
+        events.append({"when": datetime.datetime.fromtimestamp(d["mtime"]).strftime("%Y-%m-%d %H:%M"),
+                       "kind": "linux", "title": d["package"], "detail": f"{d['version']} · {d['arch']}"})
+    for r in db().execute("SELECT name, version, kind, status, updated_at FROM win_apps"):
+        events.append({"when": r["updated_at"], "kind": "windows", "title": r["name"],
+                       "detail": " · ".join(x for x in (r["version"], r["kind"], STATUS_LABELS.get(r["status"], "")) if x)})
+    events.sort(key=lambda e: e["when"], reverse=True)
+    return events[:limit]
+
+
+STATUS_LABELS = {"ready": "prêt", "downloading": "téléchargement", "error": "erreur", "pending": "en attente"}
+
+
 @app.route("/")
 @login_required
 def index():
-    stats = read_stats()
-    apps = db().execute("SELECT COUNT(*) AS n, COALESCE(SUM(size),0) AS s FROM win_apps WHERE status='ready'").fetchone()
-    disk = shutil.disk_usage(DATA)
-    return render_template(
-        "index.html",
-        stats=stats,
-        acng=service_active("apt-cacher-ng"),
-        nginx=service_active("nginx"),
-        debs=len(list_debs()),
-        apps=apps,
-        wu=wu_stats(),
-        disk=disk,
-    )
+    return render_template("index.html", d=dashboard_data(), activity=recent_activity())
+
+
+@app.route("/api/status")
+@login_required
+def api_status():
+    return dashboard_data()
 
 
 # --------------------------------------------------------------------------- paquets Linux
@@ -273,6 +360,7 @@ def list_debs():
             "version": parts[1] if len(parts) > 1 else "",
             "arch": parts[2] if len(parts) > 2 else "",
             "size": os.path.getsize(path),
+            "mtime": os.path.getmtime(path),
         })
     return debs
 
@@ -363,14 +451,14 @@ def linux_upload():
                 if os.path.exists(tmp):
                     os.unlink(tmp)
     except Exception as e:  # noqa: BLE001 - on remonte toute erreur à l'utilisateur
-        errors.append(str(e))
+        errors.append(explain(e))
     for name in added:
         flash(f"Paquet ajouté : {name}", "ok")
     for err in errors:
         flash(err, "error")
     if not added and not errors:
         flash("Aucun fichier ni URL fourni.", "error")
-    return redirect(url_for("linux"))
+    return back("linux")
 
 
 @app.route("/linux/delete", methods=["POST"])
@@ -382,7 +470,7 @@ def linux_delete():
         os.unlink(path)
         rebuild_apt()
         flash(f"Paquet supprimé : {name}", "ok")
-    return redirect(url_for("linux"))
+    return back("linux")
 
 
 @app.route("/linux/setup.sh")
@@ -402,9 +490,12 @@ def read_wu_domains():
         return DEFAULT_WU_DOMAINS
 
 
-def wu_stats(max_bytes=20 * 1024 * 1024):
-    """Lit la fin du journal du cache Windows Update et compte HIT/MISS."""
-    res = {"hit_bytes": 0, "miss_bytes": 0, "hits": 0, "misses": 0, "ok": False}
+LOG_RE = re.compile(r'^(\S+) \[([^\]]+)\] "(\S+) (\S+)[^"]*" (\d+) (\d+) (\S+) "([^"]*)"$')
+
+
+def wu_stats(max_bytes=20 * 1024 * 1024, recent=0):
+    """Lit la fin du journal du cache Windows Update : compteurs HIT/MISS et dernières requêtes."""
+    res = {"hit_bytes": 0, "miss_bytes": 0, "hits": 0, "misses": 0, "ok": False, "recent": []}
     try:
         with open(WU_LOG, "rb") as f:
             f.seek(0, os.SEEK_END)
@@ -412,33 +503,45 @@ def wu_stats(max_bytes=20 * 1024 * 1024):
             lines = f.read().decode("utf-8", "replace").splitlines()
         res["ok"] = True
     except OSError:
-        return res
+        lines = []
+    entries = []
     for line in lines:
         # format : ip [date] "requête" statut octets cache "hôte"
-        parts = line.rsplit(" ", 4)
-        if len(parts) < 5:
+        m = LOG_RE.match(line)
+        if not m:
             continue
-        try:
-            size = int(parts[2])
-        except ValueError:
-            continue
-        cache = parts[3]
+        ip, date, _method, path, status, size, cache, host = m.groups()
+        size = int(size)
         if cache == "HIT":
             res["hits"] += 1
             res["hit_bytes"] += size
         elif cache in ("MISS", "EXPIRED", "UPDATING", "STALE"):
             res["misses"] += 1
             res["miss_bytes"] += size
+        if recent:
+            entries.append((ip, date, path, status, size, cache, host))
     total = res["hit_bytes"] + res["miss_bytes"]
     res["ratio"] = round(100 * res["hit_bytes"] / total) if total else 0
+    for ip, date, path, status, size, cache, host in reversed(entries[-recent:] if recent else []):
+        name = urllib.parse.unquote(path.split("?")[0].rsplit("/", 1)[-1]) or "/"
+        res["recent"].append({"client": ip, "time": date.split(":", 1)[-1].split(" ")[0], "host": host,
+                              "file": name, "status": status, "size": size, "cache": cache})
     return res
 
 
 @app.route("/windows-update")
 @login_required
 def windows_update():
-    return render_template("windows_update.html", domains=read_wu_domains(), wu=wu_stats(),
+    return render_template("windows_update.html", domains=read_wu_domains(), wu=wu_stats(recent=12),
                            stats=read_stats(), nginx=service_active("nginx"))
+
+
+@app.route("/api/wu")
+@login_required
+def api_wu():
+    wu = wu_stats(recent=12)
+    wu["cache_size"] = read_stats().get("wucache", 0)
+    return wu
 
 
 @app.route("/windows-update/domains", methods=["POST"])
@@ -456,7 +559,7 @@ def windows_update_domains():
         with open(WU_DOMAINS_PATH, "w") as f:
             f.write("\n".join(dict.fromkeys(domains)) + "\n")
         flash("Liste des domaines enregistrée.", "ok")
-    return redirect(url_for("windows_update"))
+    return back("windows_update")
 
 
 @app.route("/windows-update/dns.ps1")
@@ -495,14 +598,15 @@ def fetch_app(row_id, slug, url):
     tmp = None
     try:
         os.makedirs(app_dir(slug), exist_ok=True)
-        tmp, filename = download(url, app_dir(slug))
+        tmp, filename = download(url, app_dir(slug), progress_key=slug)
         store_file(row_id, slug, tmp, filename)
         tmp = None
     except Exception as e:  # noqa: BLE001
         with sqlite3.connect(DB_PATH, timeout=30) as conn:
             conn.execute("UPDATE win_apps SET status='error', error=?, updated_at=? WHERE id=?",
-                         (str(e)[:500], now(), row_id))
+                         (explain(e), now(), row_id))
     finally:
+        PROGRESS.pop(slug, None)
         if tmp and os.path.exists(tmp):
             os.unlink(tmp)
 
@@ -521,6 +625,18 @@ def windows_apps():
     return render_template("windows_apps.html", apps=rows, busy=busy, default_args=DEFAULT_ARGS)
 
 
+@app.route("/api/apps")
+@login_required
+def api_apps():
+    out = []
+    for r in db().execute("SELECT * FROM win_apps ORDER BY name COLLATE NOCASE"):
+        item = {k: r[k] for k in ("slug", "name", "version", "kind", "size", "status", "error", "updated_at")}
+        done, total = PROGRESS.get(r["slug"], (0, 0))
+        item["progress"] = {"done": done, "total": total}
+        out.append(item)
+    return {"apps": out}
+
+
 @app.route("/windows-apps/add", methods=["POST"])
 @login_required
 def windows_apps_add():
@@ -531,16 +647,16 @@ def windows_apps_add():
     has_upload = bool(upload and upload.filename)
     if not name or not SLUG_RE.match(slug):
         flash("Nom invalide.", "error")
-        return redirect(url_for("windows_apps"))
+        return back("windows_apps")
     if not url and not has_upload:
         flash("Indiquez une URL ou envoyez un fichier.", "error")
-        return redirect(url_for("windows_apps"))
+        return back("windows_apps")
     if url and not url.startswith(("http://", "https://")):
         flash("L'URL doit commencer par http:// ou https://.", "error")
-        return redirect(url_for("windows_apps"))
+        return back("windows_apps")
     if db().execute("SELECT 1 FROM win_apps WHERE slug=?", (slug,)).fetchone():
         flash(f"L'identifiant « {slug} » existe déjà.", "error")
-        return redirect(url_for("windows_apps"))
+        return back("windows_apps")
 
     filename = secure_filename(upload.filename) if has_upload else os.path.basename(urllib.parse.urlparse(url).path)
     kind = request.form.get("kind") or kind_for(filename)
@@ -568,7 +684,7 @@ def windows_apps_add():
     else:
         start_fetch(row)
         flash(f"Téléchargement de {name} lancé.", "ok")
-    return redirect(url_for("windows_apps"))
+    return back("windows_apps")
 
 
 def get_app(slug):
@@ -588,7 +704,7 @@ def windows_apps_edit(slug):
     url = request.form.get("url", "").strip()
     if url and not url.startswith(("http://", "https://")):
         flash("L'URL doit commencer par http:// ou https://.", "error")
-        return redirect(url_for("windows_apps"))
+        return back("windows_apps")
     db().execute("UPDATE win_apps SET name=?, version=?, kind=?, args=?, source_url=?, updated_at=? WHERE id=?",
                  (request.form.get("name", row["name"]).strip() or row["name"],
                   request.form.get("version", "").strip(), kind,
@@ -606,7 +722,7 @@ def windows_apps_edit(slug):
             if os.path.exists(tmp):
                 os.unlink(tmp)
     flash(f"{row['name']} mis à jour.", "ok")
-    return redirect(url_for("windows_apps"))
+    return back("windows_apps")
 
 
 @app.route("/windows-apps/<slug>/refresh", methods=["POST"])
@@ -618,7 +734,7 @@ def windows_apps_refresh(slug):
     elif row["status"] != "downloading":
         start_fetch(row)
         flash(f"Nouveau téléchargement de {row['name']} lancé.", "ok")
-    return redirect(url_for("windows_apps"))
+    return back("windows_apps")
 
 
 @app.route("/windows-apps/<slug>/delete", methods=["POST"])
@@ -629,7 +745,7 @@ def windows_apps_delete(slug):
     db().execute("DELETE FROM win_apps WHERE id=?", (row["id"],))
     db().commit()
     flash(f"{row['name']} supprimé.", "ok")
-    return redirect(url_for("windows_apps"))
+    return back("windows_apps")
 
 
 @app.route("/win/i/<slugs>")

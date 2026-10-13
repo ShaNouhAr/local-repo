@@ -5,7 +5,15 @@ Dépôt local pour un réseau domestique ou de PME, installé en une commande su
 - **Paquets Linux** : cache [apt-cacher-ng](https://www.unix-ag.uni-kl.de/~bloch/acng/) pour Debian/Ubuntu, plus un dépôt APT local signé pour vos propres `.deb`.
 - **Mises à jour Windows** : cache nginx des téléchargements Windows Update (même principe que [lancache](https://lancache.net)).
 - **Logiciels Windows** : catalogue d'installeurs (`exe`, `msi`, `msu`, `ps1`) installables en silence par une commande PowerShell.
-- **Portail web** : une page centrale sobre pour tout ajouter, suivre et copier les commandes.
+- **Portail web** : une page centrale moderne pour tout ajouter, suivre en direct et copier les commandes,
+  avec thème **OLED** (noir pur) ou **clair**.
+
+| Thème OLED | Thème clair |
+|---|---|
+| ![Vue d'ensemble, thème OLED](docs/dashboard-oled.png) | ![Vue d'ensemble, thème clair](docs/dashboard-light.png) |
+| ![Catalogue de logiciels Windows](docs/apps.png) | ![Paquets Linux](docs/linux.png) |
+
+![Cache Windows Update](docs/windows-update.png)
 
 ## Installation
 
@@ -124,6 +132,14 @@ Journaux : `journalctl -u local-repo-portal`, `/var/log/nginx/local-repo-*.log`.
 - Le dépôt APT local est signé par une clé générée à l'installation.
 - Le portail tourne sous un utilisateur dédié (`localrepo`) avec un service systemd restreint.
 
+## Portail
+
+- Thème automatique (suit le système), clair ou OLED : sélecteur en bas de la barre latérale, mémorisé par navigateur.
+- Chiffres, anneaux et journal Windows Update actualisés en direct ; progression des téléchargements et des envois.
+- Glisser-déposer des `.deb` et des installeurs, recherche instantanée, sélection multiple des logiciels.
+- Aucune ressource externe : tout est servi par le serveur (fonctionne sans Internet côté postes).
+
 ## Licence
 
-MIT
+MIT. La police [Inter](https://rsms.me/inter/) est distribuée sous licence SIL OFL 1.1
+(`portal/static/fonts/Inter-LICENSE.txt`).

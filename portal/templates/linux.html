@@ -1,58 +1,113 @@
 {% extends "base.html" %}
+{% from "_term.html" import term %}
+{% block title %}Paquets Linux{% endblock %}
 {% block content %}
-<h1>Paquets Linux</h1>
+<header class="page-head reveal">
+  <div>
+    <div class="eyebrow"><svg class="i i-sm"><use href="#i-package"/></svg>Dépôts</div>
+    <h1>Paquets Linux</h1>
+    <p>Cache apt-cacher-ng pour Debian / Ubuntu et dépôt APT local signé.</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="http://{{ host }}:{{ acng_port }}/acng-report.html" target="_blank" rel="noopener"><svg class="i i-sm"><use href="#i-external"/></svg>Rapport apt-cacher-ng</a>
+  </div>
+</header>
 
-<div class="card">
-  <h2>Configurer un poste Debian / Ubuntu</h2>
-  <p class="muted">Ajoute le dépôt local et fait passer apt par le cache apt-cacher-ng.</p>
-  <div class="cmd"><input id="setup" readonly value="curl -fsSL {{ public_url }}/linux/setup.sh | sudo sh"><button data-copy="setup">Copier</button></div>
-  <p class="muted small">Dépôt local seulement : ajouter <code>-s -- --no-proxy</code> après <code>sh</code>. Annuler : <code>-s -- --remove</code>.</p>
+<div class="grid g-3 reveal">
+  <div class="card stat">
+    <div class="top"><span class="ico t-violet"><svg class="i"><use href="#i-server"/></svg></span><span class="label">Cache apt-cacher-ng</span></div>
+    <div class="value" data-bind="acng" data-fmt="bytes" data-value="{{ stats.get('acng', 0) }}">0</div>
+    <div class="foot">
+      <span class="mono">:{{ acng_port }}</span>
+      <span class="pill {{ 'ok' if acng else 'err' }}"><span class="dot"></span>{{ 'Actif' if acng else 'Arrêté' }}</span>
+    </div>
+  </div>
+  <div class="card stat">
+    <div class="top"><span class="ico t-cyan"><svg class="i"><use href="#i-box"/></svg></span><span class="label">Dépôt local</span></div>
+    <div class="value" data-bind="n" data-value="{{ debs|length }}">0</div>
+    <div class="foot"><span>paquet(s) · <b data-bind="size" data-fmt="bytes" data-value="{{ debs|sum(attribute='size') }}">0</b></span><span class="pill"><span class="dot"></span>flat repo</span></div>
+  </div>
+  <div class="card stat">
+    <div class="top"><span class="ico t-green"><svg class="i"><use href="#i-shield"/></svg></span><span class="label">Signature</span></div>
+    <div class="value" style="font-size:22px;padding:5px 0 4px">GPG RSA 4096</div>
+    <div class="foot"><a href="{{ public_url }}/apt/local-repo.gpg"><svg class="i i-sm" style="vertical-align:-3px"><use href="#i-download"/></svg> Clé publique</a><span class="pill ok"><span class="dot"></span>Signé</span></div>
+  </div>
 </div>
 
-<div class="grid two">
-  <div class="card">
-    <h2>Cache apt-cacher-ng <span class="dot {{ 'on' if acng else 'off' }}"></span></h2>
-    <p class="big">{{ stats.get('acng', 0)|human }}</p>
-    <p class="muted">Proxy <code>http://{{ host }}:{{ acng_port }}</code> ·
-      <a href="http://{{ host }}:{{ acng_port }}/acng-report.html" target="_blank">rapport détaillé</a></p>
+<div class="card reveal" style="margin-top:18px">
+  <div class="card-head">
+    <div><h2><svg class="i"><use href="#i-terminal"/></svg>Brancher un poste</h2><p>À lancer sur la machine Debian / Ubuntu à configurer.</p></div>
+    <div class="seg" role="tablist" data-target="#cmd-setup">
+      <button type="button" data-tab="full" aria-selected="true" data-cmd="curl -fsSL {{ public_url }}/linux/setup.sh | sudo sh">Cache + dépôt</button>
+      <button type="button" data-tab="repo" aria-selected="false" data-cmd="curl -fsSL {{ public_url }}/linux/setup.sh | sudo sh -s -- --no-proxy">Dépôt seul</button>
+      <button type="button" data-tab="remove" aria-selected="false" data-cmd="curl -fsSL {{ public_url }}/linux/setup.sh | sudo sh -s -- --remove">Retirer</button>
+    </div>
   </div>
+  {{ term('cmd-setup', 'curl -fsSL ' ~ public_url ~ '/linux/setup.sh | sudo sh') }}
+  <p class="faint small" style="margin:12px 0 0">Les dépôts HTTPS (Docker, etc.) restent en accès direct ; les dépôts HTTP passent par le cache.</p>
+</div>
+
+<div class="grid g-12 reveal">
   <div class="card">
-    <h2>Ajouter des paquets .deb</h2>
-    <form method="post" action="{{ url_for('linux_upload') }}" enctype="multipart/form-data" class="stack">
+    <div class="card-head"><div><h2>Ajouter des paquets</h2><p>Fichiers .deb ou lien direct.</p></div></div>
+    <form method="post" action="{{ url_for('linux_upload') }}" enctype="multipart/form-data" data-ajax>
       <input type="hidden" name="csrf" value="{{ csrf }}">
-      <input type="file" name="files" accept=".deb" multiple>
-      <input type="url" name="url" placeholder="ou URL d'un fichier .deb">
-      <button>Ajouter</button>
+      <label class="drop">
+        <input type="file" name="files" accept=".deb" multiple>
+        <span class="ico"><svg class="i i-lg"><use href="#i-upload"/></svg></span>
+        <b>Déposez vos .deb ici</b>
+        <span class="faint">ou cliquez pour parcourir</span>
+        <span class="files"></span>
+      </label>
+      <div class="or">ou</div>
+      <div class="input-icon"><svg class="i i-sm"><use href="#i-link"/></svg><input type="url" name="url" placeholder="https://…/paquet_1.0_amd64.deb"></div>
+      <div class="upload-progress">
+        <div class="bar"><span></span></div>
+        <div class="row"><span data-size></span><span data-pct></span></div>
+      </div>
+      <button class="btn primary" style="width:100%;margin-top:14px"><span class="spin"></span><svg class="i i-sm"><use href="#i-plus"/></svg>Ajouter au dépôt</button>
     </form>
   </div>
-</div>
 
-<div class="card">
-  <h2>Dépôt local <span class="muted">({{ debs|length }})</span></h2>
-  {% if debs %}
-  <table>
-    <thead><tr><th>Paquet</th><th>Version</th><th>Arch.</th><th>Taille</th><th></th></tr></thead>
-    <tbody>
-    {% for d in debs %}
-      <tr>
-        <td><strong>{{ d.package }}</strong></td>
-        <td>{{ d.version|replace('%3a', ':') }}</td>
-        <td>{{ d.arch }}</td>
-        <td>{{ d.size|human }}</td>
-        <td class="actions">
-          <a href="{{ public_url }}/apt/pool/{{ d.file }}">Télécharger</a>
-          <form method="post" action="{{ url_for('linux_delete') }}" onsubmit='return confirm("Supprimer " + {{ d.package|tojson }} + " ?")'>
-            <input type="hidden" name="csrf" value="{{ csrf }}">
-            <input type="hidden" name="file" value="{{ d.file }}">
-            <button class="link danger">Supprimer</button>
-          </form>
-        </td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="muted">Aucun paquet pour l'instant. Une fois ajoutés, ils s'installent avec <code>sudo apt install &lt;paquet&gt;</code> sur les postes configurés.</p>
-  {% endif %}
+  <div class="card flush">
+    <div class="card-head" style="padding-bottom:16px">
+      <div><h2>Dépôt local</h2><p>Installables avec <code>sudo apt install &lt;paquet&gt;</code></p></div>
+      {% if debs %}<div class="input-icon" style="width:220px"><svg class="i i-sm"><use href="#i-search"/></svg><input type="search" placeholder="Filtrer…" data-filter="#deb-table tbody tr" data-empty="#deb-none"></div>{% endif %}
+    </div>
+    {% if debs %}
+    <div class="table-wrap">
+      <table id="deb-table">
+        <thead><tr><th>Paquet</th><th>Version</th><th>Arch.</th><th class="right">Taille</th><th></th></tr></thead>
+        <tbody>
+        {% for d in debs %}
+          <tr>
+            <td><div class="pkg"><span class="ico t-violet"><svg class="i i-sm"><use href="#i-package"/></svg></span><b>{{ d.package }}</b></div></td>
+            <td class="mono">{{ d.version|replace('%3a', ':') }}</td>
+            <td><span class="tag">{{ d.arch }}</span></td>
+            <td class="right num muted">{{ d.size|human }}</td>
+            <td class="right">
+              <div class="actions">
+                <a class="btn icon sm ghost" href="{{ public_url }}/apt/pool/{{ d.file }}" title="Télécharger"><svg class="i i-sm"><use href="#i-download"/></svg></a>
+                <form method="post" action="{{ url_for('linux_delete') }}" data-ajax data-confirm="Supprimer {{ d.package }} ?" data-confirm-text="Le paquet sera retiré du dépôt local. Les postes qui l'ont déjà installé le gardent." data-confirm-ok="Supprimer">
+                  <input type="hidden" name="csrf" value="{{ csrf }}">
+                  <input type="hidden" name="file" value="{{ d.file }}">
+                  <button class="btn icon sm ghost danger" title="Supprimer"><svg class="i i-sm"><use href="#i-trash"/></svg></button>
+                </form>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <div id="deb-none" class="empty hidden" style="padding:30px"><p>Aucun paquet ne correspond.</p></div>
+    </div>
+    {% else %}
+    <div class="empty">
+      <span class="ico t-violet"><svg class="i"><use href="#i-box"/></svg></span>
+      <h3>Dépôt vide</h3>
+      <p>Déposez un premier .deb : il sera indexé et signé automatiquement.</p>
+    </div>
+    {% endif %}
+  </div>
 </div>
 {% endblock %}

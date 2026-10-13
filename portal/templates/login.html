@@ -1,13 +1,33 @@
 {% extends "base.html" %}
-{% block content %}
-<div class="login">
-  <h1>local-repo</h1>
-  <form method="post" class="card">
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <label>Mot de passe
-      <input type="password" name="password" autofocus required>
-    </label>
-    <button>Connexion</button>
-  </form>
+{% block title %}Connexion{% endblock %}
+{% block body %}
+<div class="login-page">
+  <div class="login-box reveal">
+    <div class="brand">
+      <span class="logo"><svg class="i"><use href="#i-logo"/></svg></span>
+      <span>local-repo</span>
+    </div>
+    <div class="card">
+      <h1>Connexion</h1>
+      <p>Portail d'administration du dépôt local.</p>
+      <form method="post">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label class="field">
+          <span>Mot de passe</span>
+          <div class="input-icon">
+            <svg class="i i-sm"><use href="#i-lock"/></svg>
+            <input type="password" name="password" autofocus required autocomplete="current-password">
+          </div>
+        </label>
+        <button class="btn primary"><span class="spin"></span><span>Se connecter</span><svg class="i i-sm"><use href="#i-arrow"/></svg></button>
+      </form>
+    </div>
+    <div class="theme-switch" role="group" aria-label="Thème">
+      <span class="thumb"></span>
+      <button type="button" data-theme="auto" title="Automatique"><svg class="i i-sm"><use href="#i-auto"/></svg></button>
+      <button type="button" data-theme="light" title="Clair"><svg class="i i-sm"><use href="#i-sun"/></svg></button>
+      <button type="button" data-theme="oled" title="OLED"><svg class="i i-sm"><use href="#i-moon"/></svg></button>
+    </div>
+  </div>
 </div>
 {% endblock %}
