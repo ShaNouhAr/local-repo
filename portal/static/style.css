@@ -338,8 +338,11 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
 .h-count { font-weight: 400; color: var(--text-3); }
 .hint-tight { margin-top: -6px; }
 .userbox { display: flex; align-items: center; gap: 14px; white-space: nowrap; font-size: 13.5px; }
-.userbox a { color: var(--text-2); text-decoration: none; }
+.userbox a { display: inline-flex; align-items: center; gap: 7px; color: var(--text-2); text-decoration: none; }
 .userbox a:hover, .userbox a.on { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+.userbox form { display: flex; }
+.userbox .logout { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: var(--r-sm); }
+.userbox .logout:hover { background: var(--sel); text-decoration: none; }
 .issued { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .issued code { font-size: 15px; padding: 4px 8px; }
 .inline-form { display: inline-flex; gap: 6px; align-items: center; }
