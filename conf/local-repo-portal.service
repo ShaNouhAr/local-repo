@@ -10,6 +10,8 @@ SupplementaryGroups=adm
 Environment=LR_DATA=@DATA@
 Environment=LR_STATE=/var/lib/local-repo
 Environment=LR_PUBLIC_URL=@PUBLIC_URL@
+Environment=LR_ADMIN_URL=@ADMIN_URL@
+Environment=LR_TLS_DIR=/etc/local-repo/tls
 Environment=LR_HOST=@HOST@
 Environment=LR_ACNG_PORT=3142
 Environment=TMPDIR=@DATA@/.tmp

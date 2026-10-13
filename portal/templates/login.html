@@ -1,32 +1,24 @@
 {% extends "base.html" %}
 {% block title %}Connexion{% endblock %}
 {% block body %}
-<div class="login-page">
-  <div class="login-box reveal">
-    <div class="brand">
-      <span class="logo"><svg class="i"><use href="#i-logo"/></svg></span>
-      <span>local-repo</span>
-    </div>
-    <div class="card">
-      <h1>Connexion</h1>
-      <p>Portail d'administration du dépôt local.</p>
-      <form method="post">
+<div class="login">
+  <div class="login-box">
+    <div class="brand"><b>local-repo</b><span>{{ host }}</span></div>
+    <form method="post" class="panel">
+      <div class="panel-h"><h2>Connexion</h2></div>
+      <div class="panel-b">
         <input type="hidden" name="csrf" value="{{ csrf }}">
-        <label class="field">
-          <span>Mot de passe</span>
-          <div class="input-icon">
-            <svg class="i i-sm"><use href="#i-lock"/></svg>
-            <input type="password" name="password" autofocus required autocomplete="current-password">
-          </div>
+        <label class="f"><span>Mot de passe</span>
+          <input type="password" name="password" autofocus required autocomplete="current-password">
         </label>
-        <button class="btn primary"><span class="spin"></span><span>Se connecter</span><svg class="i i-sm"><use href="#i-arrow"/></svg></button>
-      </form>
-    </div>
-    <div class="theme-switch" role="group" aria-label="Thème">
-      <span class="thumb"></span>
-      <button type="button" data-theme="auto" title="Automatique"><svg class="i i-sm"><use href="#i-auto"/></svg></button>
-      <button type="button" data-theme="light" title="Clair"><svg class="i i-sm"><use href="#i-sun"/></svg></button>
-      <button type="button" data-theme="oled" title="OLED"><svg class="i i-sm"><use href="#i-moon"/></svg></button>
+        <button class="btn primary"><span class="spin"></span>Se connecter</button>
+      </div>
+    </form>
+    <div class="foot">
+      <span>Interface d'administration</span>
+      <div class="theme" role="group" aria-label="Thème">
+        <button type="button" data-theme="auto">Auto</button><button type="button" data-theme="light">Clair</button><button type="button" data-theme="oled">OLED</button>
+      </div>
     </div>
   </div>
 </div>

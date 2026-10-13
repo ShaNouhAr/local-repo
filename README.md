@@ -5,15 +5,15 @@ Dépôt local pour un réseau domestique ou de PME, installé en une commande su
 - **Paquets Linux** : cache [apt-cacher-ng](https://www.unix-ag.uni-kl.de/~bloch/acng/) pour Debian/Ubuntu, plus un dépôt APT local signé pour vos propres `.deb`.
 - **Mises à jour Windows** : cache nginx des téléchargements Windows Update (même principe que [lancache](https://lancache.net)).
 - **Logiciels Windows** : catalogue d'installeurs (`exe`, `msi`, `msu`, `ps1`) installables en silence par une commande PowerShell.
-- **Portail web** : une page centrale moderne pour tout ajouter, suivre en direct et copier les commandes,
-  avec thème **OLED** (noir pur) ou **clair**.
+- **Portail web** en HTTPS (certificat auto-signé par une autorité locale) pour tout ajouter, suivre et copier
+  les commandes, en thème **clair** ou **OLED** (noir pur).
 
 | Thème OLED | Thème clair |
 |---|---|
 | ![Vue d'ensemble, thème OLED](docs/dashboard-oled.png) | ![Vue d'ensemble, thème clair](docs/dashboard-light.png) |
-| ![Catalogue de logiciels Windows](docs/apps.png) | ![Paquets Linux](docs/linux.png) |
+| ![Cache Windows Update](docs/windows-update.png) | ![Catalogue de logiciels Windows](docs/apps.png) |
 
-![Cache Windows Update](docs/windows-update.png)
+![Page Système : certificat HTTPS et services](docs/system.png)
 
 ## Installation
 
@@ -23,14 +23,16 @@ cd local-repo
 sudo ./install.sh
 ```
 
-À la fin, le script affiche l'adresse du portail (`http://<ip>:8088`) et le mot de passe généré
+À la fin, le script affiche l'adresse du portail (`https://<ip>:8443`), l'empreinte de l'autorité de certification et le mot de passe généré
 (aussi gardé dans `/etc/local-repo/admin-password`).
 
 Options utiles :
 
 | Option | Effet |
 |---|---|
-| `--port 8088` | port du portail |
+| `--port 8088` | port HTTP des postes clients (dépôt, installeurs, scripts) |
+| `--https-port 8443` | port HTTPS de l'interface |
+| `--tls-cert F --tls-key F` | utiliser son propre certificat au lieu de l'autorité locale |
 | `--host 192.168.1.10` | adresse annoncée aux clients (détectée sinon) |
 | `--data /srv/local-repo` | dossier des données et des caches |
 | `--wu-cache-size 100g` | taille max du cache Windows Update (défaut : moitié de l'espace libre, 200g max) |
@@ -39,6 +41,33 @@ Options utiles :
 
 Le script est relançable : il sert aussi à mettre à jour (`git pull && sudo ./install.sh`) ou à changer une option.
 Les réglages sont gardés dans `/etc/local-repo/local-repo.conf`.
+
+### HTTPS
+
+L'interface est servie en HTTPS sur le port 8443. L'installation crée une autorité de certification locale
+(`/etc/local-repo/tls/ca.crt`, valable 10 ans) qui signe le certificat du serveur (825 jours, renouvelé
+automatiquement par `install.sh` s'il expire bientôt ou si l'IP change). Le navigateur affiche une alerte
+tant que l'autorité n'est pas importée ; la page **Système** du portail donne son empreinte et les commandes :
+
+```powershell
+# Windows (PowerShell administrateur)
+Invoke-WebRequest -UseBasicParsing http://<ip>:8088/ca.crt -OutFile $env:TEMP\local-repo-ca.crt
+Import-Certificate -FilePath $env:TEMP\local-repo-ca.crt -CertStoreLocation Cert:\LocalMachine\Root
+```
+
+```bash
+# Debian / Ubuntu
+curl -fsSL http://<ip>:8088/ca.crt | sudo tee /usr/local/share/ca-certificates/local-repo.crt >/dev/null && sudo update-ca-certificates
+```
+
+Sur un domaine Active Directory, l'autorité peut aussi être déployée par GPO.
+
+Avec `--tls-cert` / `--tls-key`, votre certificat est utilisé tel quel et conservé aux relances ; pour revenir
+à l'autorité locale, supprimez `/etc/local-repo/tls/custom` puis relancez `install.sh`.
+
+Le port HTTP 8088 reste ouvert pour les postes clients (`apt`, `irm`) qui ne font pas forcément confiance
+à l'autorité : il ne sert que le dépôt APT (signé GPG), les installeurs (vérifiés par SHA256 avant
+installation), les scripts clients et `ca.crt`. Toute autre adresse redirige vers HTTPS.
 
 ### Désinstallation
 
@@ -125,7 +154,9 @@ la liste dans le portail est appliquée à nginx automatiquement (service `local
 | Élément | Où | Port |
 |---|---|---|
 | Portail (Flask + gunicorn, service `local-repo-portal`) | `/opt/local-repo` | 8089 (local) |
-| nginx : portail, `/apt/`, `/win/files/` | `/etc/nginx/sites-available/local-repo-portal.conf` | 8088 |
+| nginx : interface HTTPS | `/etc/nginx/sites-available/local-repo-portal.conf` | 8443 |
+| nginx : postes clients (`/apt/`, `/win/files/`, scripts, `ca.crt`) | même fichier | 8088 |
+| Certificats (autorité locale, serveur) | `/etc/local-repo/tls` | — |
 | nginx : cache Windows Update | `/etc/nginx/sites-available/local-repo-wucache.conf` | 80 |
 | nginx : relais HTTPS (SNI) | `/etc/nginx/modules-enabled/99-local-repo-stream.conf` | 443 |
 | apt-cacher-ng | `/var/cache/apt-cacher-ng` | 3142 |
@@ -142,19 +173,21 @@ sortie d'apt de la dernière installation dans `/var/log/local-repo-install.log`
 
 - Pensé pour un **réseau local de confiance** : n'exposez pas ces ports sur Internet.
   Le cache Windows Update (80/443) ne relaie que les domaines de sa liste.
-- Le portail d'administration est protégé par mot de passe (session + jeton CSRF).
+- L'interface d'administration est en HTTPS, protégée par mot de passe (cookie de session `Secure`,
+  jeton CSRF, en-têtes anti-clickjacking).
   Les téléchargements (`/apt/`, `/win/files/`, scripts d'installation) sont publics sur le réseau.
 - Le dépôt APT local est signé par une clé générée à l'installation.
 - Le portail tourne sous un utilisateur dédié (`localrepo`) avec un service systemd restreint.
 
 ## Portail
 
-- Thème automatique (suit le système), clair ou OLED : sélecteur en bas de la barre latérale, mémorisé par navigateur.
-- Chiffres, anneaux et journal Windows Update actualisés en direct ; progression des téléchargements et des envois.
-- Glisser-déposer des `.deb` et des installeurs, recherche instantanée, sélection multiple des logiciels.
-- Aucune ressource externe : tout est servi par le serveur (fonctionne sans Internet côté postes).
+- Thème automatique (suit le système), clair ou OLED : sélecteur dans la barre du haut, mémorisé par navigateur.
+- Indicateurs et journal Windows Update actualisés en direct ; progression des téléchargements et des envois.
+- Envoi de fichiers par glisser-déposer, filtres, sélection multiple des logiciels avec commande prête à copier.
+- Page **Système** : certificat HTTPS, état des unités systemd, versions, emplacements.
+- Aucune ressource externe : polices et scripts sont servis par le serveur.
 
 ## Licence
 
-MIT. La police [Inter](https://rsms.me/inter/) est distribuée sous licence SIL OFL 1.1
-(`portal/static/fonts/Inter-LICENSE.txt`).
+MIT. Les polices [IBM Plex](https://github.com/IBM/plex) sont distribuées sous licence SIL OFL 1.1
+(`portal/static/fonts/IBMPlex-LICENSE.txt`).

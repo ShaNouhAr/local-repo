@@ -1,87 +1,69 @@
 {% extends "base.html" %}
+{% from "_macros.html" import service %}
 {% block title %}Windows Update{% endblock %}
 {% block content %}
-<header class="page-head reveal">
+<div class="head">
   <div>
-    <div class="eyebrow"><svg class="i i-sm"><use href="#i-update"/></svg>Dépôts</div>
     <h1>Windows Update</h1>
-    <p>Les mises à jour sont téléchargées une fois sur Internet, puis servies en local.</p>
+    <p>Les mises à jour sont téléchargées une fois chez Microsoft, puis servies en local aux autres postes.</p>
   </div>
   <div class="actions">
-    <a class="btn primary" href="{{ url_for('windows_update_dns') }}"><svg class="i i-sm"><use href="#i-download"/></svg>Script DNS Active Directory</a>
-  </div>
-</header>
-
-<div class="grid g-3 reveal">
-  <div class="card stat">
-    <div class="top"><span class="ico t-cyan"><svg class="i"><use href="#i-disk"/></svg></span><span class="label">En cache</span></div>
-    <div class="value" data-bind="cache_size" data-fmt="bytes" data-value="{{ stats.get('wucache', 0) }}">0</div>
-    <div class="foot"><span>sur le disque</span><span class="pill {{ 'ok' if nginx else 'err' }}"><span class="dot"></span>{{ 'Actif' if nginx else 'Arrêté' }}</span></div>
-  </div>
-  <div class="card stat">
-    <div class="top"><span class="ico t-green"><svg class="i"><use href="#i-zap"/></svg></span><span class="label">Servi en local</span></div>
-    <div class="value" data-bind="hit_bytes" data-fmt="bytes" data-value="{{ wu.hit_bytes }}">0</div>
-    <div class="foot"><span><b data-bind="hits" data-value="{{ wu.hits }}">0</b> requêtes</span><span class="pill accent"><b data-bind="ratio" data-fmt="pct" data-value="{{ wu.ratio }}">0 %</b></span></div>
-  </div>
-  <div class="card stat">
-    <div class="top"><span class="ico t-amber"><svg class="i"><use href="#i-globe"/></svg></span><span class="label">Depuis Internet</span></div>
-    <div class="value" data-bind="miss_bytes" data-fmt="bytes" data-value="{{ wu.miss_bytes }}">0</div>
-    <div class="foot"><span><b data-bind="misses" data-value="{{ wu.misses }}">0</b> requêtes</span><span class="faint">premier téléchargement</span></div>
+    <a class="btn" href="{{ url_for('windows_update_dns') }}">Script DNS Active Directory</a>
   </div>
 </div>
 
-<div class="grid g-21 reveal" style="margin-top:18px">
-  <div class="card">
-    <div class="card-head"><div><h2>Fonctionnement</h2><p>Le DNS du réseau envoie les postes vers le cache au lieu de Microsoft.</p></div></div>
-    <div class="flow">
-      <div class="node"><span class="ico t-violet"><svg class="i"><use href="#i-laptop"/></svg></span><b>Poste Windows</b><span>demande une mise à jour</span></div>
-      <span class="link"></span>
-      <div class="node"><span class="ico t-amber"><svg class="i"><use href="#i-signpost"/></svg></span><b>DNS (AD)</b><span>répond {{ host }}</span></div>
-      <span class="link"></span>
-      <div class="node hl"><span class="ico t-cyan"><svg class="i"><use href="#i-server"/></svg></span><b>Cache local</b><span>sert le fichier s'il l'a</span></div>
-      <span class="link"></span>
-      <div class="node"><span class="ico t-green"><svg class="i"><use href="#i-globe"/></svg></span><b>Microsoft</b><span>seulement la 1re fois</span></div>
-    </div>
-    <p class="faint small" style="margin:16px 0 0">Le trafic HTTPS de ces domaines est relayé tel quel (port 443) ; seuls les téléchargements HTTP sont mis en cache, ce qui couvre l'essentiel du volume.</p>
+<div class="stack">
+  <div class="metrics">
+    <div class="metric"><div class="k">En cache</div><div class="v" data-bind="cache_size" data-fmt="bytes">{{ stats.get('wucache', 0)|human }}</div><div class="s">{{ service(nginx) }}</div></div>
+    <div class="metric"><div class="k">Servi en local</div><div class="v" data-bind="hit_bytes" data-fmt="bytes">{{ wu.hit_bytes|human }}</div><div class="s"><span data-bind="hits">{{ wu.hits }}</span> requêtes</div></div>
+    <div class="metric"><div class="k">Depuis Internet</div><div class="v" data-bind="miss_bytes" data-fmt="bytes">{{ wu.miss_bytes|human }}</div><div class="s"><span data-bind="misses">{{ wu.misses }}</span> requêtes</div></div>
+    <div class="metric"><div class="k">Part servie en local</div><div class="v" data-bind="ratio" data-fmt="pct">{{ wu.ratio }} %</div><div class="s">trafic récent</div></div>
   </div>
 
-  <div class="card">
-    <div class="card-head"><div><h2>Domaines redirigés</h2><p>Avec tous leurs sous-domaines.</p></div></div>
-    <form method="post" action="{{ url_for('windows_update_domains') }}" data-ajax>
-      <input type="hidden" name="csrf" value="{{ csrf }}">
-      <div class="chips"><input placeholder="Ajouter un domaine…" aria-label="Ajouter un domaine"></div>
-      <textarea name="domains" hidden>{{ domains|join('\n') }}</textarea>
-      <p class="faint small" style="margin:10px 0 16px">Entrée pour ajouter. Après modification, relancez le script DNS sur le contrôleur de domaine (<code>-Remove</code> pour annuler).</p>
-      <button class="btn primary"><span class="spin"></span><svg class="i i-sm"><use href="#i-check"/></svg>Enregistrer</button>
-    </form>
-  </div>
-</div>
+  <div class="cols w21">
+    <section class="panel">
+      <div class="panel-h"><h2>Fonctionnement</h2></div>
+      <div class="panel-b">
+        <ol class="steps">
+          <li><span>Le DNS du réseau répond <span class="mono">{{ host }}</span> pour les domaines de la liste (script ci-dessus pour un DNS Active Directory).</span></li>
+          <li><span>Les postes Windows envoient donc leurs téléchargements à ce serveur au lieu de Microsoft.</span></li>
+          <li><span>Le premier téléchargement d'un fichier part chez Microsoft et reste en cache ; les suivants sont servis en local.</span></li>
+          <li><span>Le HTTPS de ces domaines est relayé sans être déchiffré ni mis en cache. Seuls les fichiers immuables sont gardés.</span></li>
+        </ol>
+      </div>
+    </section>
 
-<div class="card flush reveal" style="margin-top:18px">
-  <div class="card-head" style="padding-bottom:16px">
-    <div><h2>Dernières requêtes</h2><p>Actualisé en direct</p></div>
-    <span class="pill ok"><span class="dot"></span>Live</span>
+    <section class="panel">
+      <div class="panel-h"><h2>Domaines redirigés</h2><div class="aside">sous-domaines compris</div></div>
+      <form class="panel-b" method="post" action="{{ url_for('windows_update_domains') }}" data-ajax>
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <textarea name="domains" rows="4" spellcheck="false" aria-label="Un domaine par ligne">{{ domains|join('\n') }}</textarea>
+        <p class="hint">Un domaine par ligne. Appliqué au cache dès l'enregistrement ; relancer ensuite le script DNS (<code>-Remove</code> annule).</p>
+        <button class="btn primary"><span class="spin"></span>Enregistrer</button>
+      </form>
+    </section>
   </div>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Heure</th><th>Poste</th><th>Fichier</th><th class="right">Taille</th><th class="right">Cache</th></tr></thead>
-      <tbody id="wu-log">
-      {% for r in wu.recent %}
-        <tr class="log-row" data-key="{{ r.time }}{{ r.client }}{{ r.file }}">
-          <td class="num muted nw">{{ r.time }}</td>
-          <td class="mono">{{ r.client }}</td>
-          <td><span class="file" title="{{ r.host }}">{{ r.file }}</span><span class="faint small">{{ r.host }}</span></td>
-          <td class="right num muted nw">{{ r.size|human if r.size else "—" }}</td>
-          <td class="right"><span class="pill {{ 'ok' if r.cache == 'HIT' else 'warn' if r.cache in ('MISS', 'EXPIRED') else '' }}">{{ r.cache }}</span></td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    <div id="wu-none" class="empty {{ 'hidden' if wu.recent }}" style="padding:30px">
-      <span class="ico t-cyan"><svg class="i"><use href="#i-activity"/></svg></span>
-      <p>Aucune requête pour l'instant. Elles apparaîtront ici dès qu'un poste passera par le cache.</p>
+
+  <section class="panel">
+    <div class="panel-h"><h2>Dernières requêtes</h2><div class="aside">actualisé toutes les 5 s</div></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Heure</th><th>Poste</th><th>Fichier</th><th class="num">Taille</th><th>Cache</th></tr></thead>
+        <tbody id="wu-log">
+        {% for r in wu.recent %}
+          <tr data-key="{{ r.time }}{{ r.client }}{{ r.file }}">
+            <td class="mono muted nowrap">{{ r.time }}</td>
+            <td class="mono nowrap">{{ r.client }}</td>
+            <td><span class="mono">{{ r.file[:70] }}{{ '…' if r.file|length > 70 }}</span><span class="sub">{{ r.host }}</span></td>
+            <td class="num nowrap">{{ r.size|human if r.size else '—' }}</td>
+            <td class="mono {{ 'muted' if r.cache != 'HIT' }}">{{ r.cache|lower }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <div id="wu-none" class="empty {{ 'hidden' if wu.recent }}">Aucune requête pour l'instant.</div>
     </div>
-  </div>
+  </section>
 </div>
 {% endblock %}
 
@@ -96,12 +78,12 @@
     Array.prototype.forEach.call(body.rows, function (r) { known[r.dataset.key] = 1; });
     body.innerHTML = d.recent.map(function (r) {
       var key = r.time + r.client + r.file;
-      var cls = r.cache === "HIT" ? "ok" : (r.cache === "MISS" || r.cache === "EXPIRED") ? "warn" : "";
-      return '<tr class="log-row' + (known[key] ? "" : " new") + '" data-key="' + esc(key) + '">' +
-        '<td class="num muted nw">' + esc(r.time) + '</td><td class="mono">' + esc(r.client) + '</td>' +
-        '<td><span class="file" title="' + esc(r.host) + '">' + esc(r.file) + '</span><span class="faint small">' + esc(r.host) + '</span></td>' +
-        '<td class="right num muted nw">' + (r.size ? lrBytes(r.size) : "—") + '</td>' +
-        '<td class="right"><span class="pill ' + cls + '">' + esc(r.cache) + '</span></td></tr>';
+      var file = r.file.length > 70 ? r.file.slice(0, 70) + "…" : r.file;
+      return '<tr' + (known[key] ? "" : ' class="new"') + ' data-key="' + esc(key) + '">' +
+        '<td class="mono muted nowrap">' + esc(r.time) + '</td><td class="mono nowrap">' + esc(r.client) + '</td>' +
+        '<td><span class="mono">' + esc(file) + '</span><span class="sub">' + esc(r.host) + '</span></td>' +
+        '<td class="num nowrap">' + (r.size ? lrBytes(r.size) : "—") + '</td>' +
+        '<td class="mono' + (r.cache === "HIT" ? "" : " muted") + '">' + esc(r.cache.toLowerCase()) + '</td></tr>';
     }).join("");
     none.classList.toggle("hidden", d.recent.length > 0);
   });

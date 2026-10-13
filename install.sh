@@ -4,7 +4,9 @@
 #
 #   sudo ./install.sh [options]
 #
-#   --port N            port du portail web (défaut : 8088)
+#   --port N            port HTTP des postes clients : dépôt, installeurs, scripts (défaut : 8088)
+#   --https-port N      port HTTPS de l'interface d'administration (défaut : 8443)
+#   --tls-cert F --tls-key F   utiliser son propre certificat au lieu de l'autorité locale
 #   --host IP           adresse annoncée aux clients (défaut : IP de la route par défaut)
 #   --data DIR          dossier des données et des caches (défaut : /srv/local-repo)
 #   --wu-cache-size T   taille max du cache Windows Update, ex. 50g (défaut : moitié de l'espace libre, max 200g)
@@ -20,7 +22,7 @@ PREFIX=/opt/local-repo
 ETC=/etc/local-repo
 STATE=/var/lib/local-repo
 APP_PORT=8089
-PACKAGES=(nginx libnginx-mod-stream apt-cacher-ng apt-utils gnupg python3-flask gunicorn curl)
+PACKAGES=(nginx libnginx-mod-stream apt-cacher-ng apt-utils gnupg python3-flask gunicorn curl openssl)
 
 say()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
@@ -33,13 +35,16 @@ command -v apt-get >/dev/null || die "Debian ou Ubuntu requis (apt-get introuvab
 command -v systemctl >/dev/null || die "systemd requis."
 
 # Valeurs déjà installées (relance) puis options de la ligne de commande.
-PORTAL_PORT=8088 HOST="" DATA=/srv/local-repo WU_CACHE_SIZE="" RESOLVERS="1.1.1.1 9.9.9.9" WU_ENABLED=1
+PORTAL_PORT=8088 HTTPS_PORT=8443 HOST="" DATA=/srv/local-repo WU_CACHE_SIZE="" RESOLVERS="1.1.1.1 9.9.9.9" WU_ENABLED=1
 # shellcheck disable=SC1091
 [ -f "$ETC/local-repo.conf" ] && . "$ETC/local-repo.conf"
-PASSWORD=""
+PASSWORD="" TLS_CERT="" TLS_KEY=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --port) PORTAL_PORT="$2"; shift 2 ;;
+        --https-port) HTTPS_PORT="$2"; shift 2 ;;
+        --tls-cert) TLS_CERT="$2"; shift 2 ;;
+        --tls-key) TLS_KEY="$2"; shift 2 ;;
         --host) HOST="$2"; shift 2 ;;
         --data) DATA="$2"; shift 2 ;;
         --wu-cache-size) WU_CACHE_SIZE="$2"; shift 2 ;;
@@ -47,17 +52,23 @@ while [ $# -gt 0 ]; do
         --password) PASSWORD="$2"; shift 2 ;;
         --no-wu) WU_ENABLED=0; shift ;;
         --wu) WU_ENABLED=1; shift ;;
-        -h|--help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) die "option inconnue : $1 (voir --help)" ;;
     esac
 done
 
 [[ "$PORTAL_PORT" =~ ^[0-9]+$ ]] || die "--port doit être un nombre."
+[[ "$HTTPS_PORT" =~ ^[0-9]+$ ]] || die "--https-port doit être un nombre."
+[ "$PORTAL_PORT" != "$HTTPS_PORT" ] || die "--port et --https-port doivent être différents."
+if [ -n "$TLS_CERT$TLS_KEY" ]; then
+    [ -f "$TLS_CERT" ] && [ -f "$TLS_KEY" ] || die "--tls-cert et --tls-key doivent désigner deux fichiers existants."
+fi
 if [ -z "$HOST" ]; then
     HOST=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
 fi
 [ -n "$HOST" ] || die "impossible de détecter l'IP du serveur, utilisez --host."
 PUBLIC_URL="http://$HOST:$PORTAL_PORT"
+ADMIN_URL="https://$HOST:$HTTPS_PORT"
 
 # ---------------------------------------------------------------- vérification des ports
 port_owner() { ss -Hltnp "sport = :$1" 2>/dev/null | grep -o 'users:(("[^"]*"' | head -1 | cut -d'"' -f2 || true; }
@@ -70,6 +81,7 @@ check_port() {
 }
 say "Vérification des ports"
 check_port "$PORTAL_PORT" nginx
+check_port "$HTTPS_PORT" nginx
 check_port 3142 apt-cacher-ng
 check_port "$APP_PORT" gunicorn
 if [ "$WU_ENABLED" = 1 ]; then
@@ -115,6 +127,7 @@ fi
 cat > "$ETC/local-repo.conf" <<EOF
 # Généré par install.sh : modifiez puis relancez sudo ./install.sh pour appliquer.
 PORTAL_PORT=$PORTAL_PORT
+HTTPS_PORT=$HTTPS_PORT
 HOST=$HOST
 DATA=$DATA
 WU_CACHE_SIZE=$WU_CACHE_SIZE
@@ -176,10 +189,44 @@ runuser -u localrepo -- env LR_DATA="$DATA" LR_STATE="$STATE" python3 "$PREFIX/p
 runuser -u localrepo -- gpgconf --homedir "$STATE/gnupg" --kill gpg-agent 2>/dev/null || true
 runuser -u localrepo -- env LR_STATE="$STATE" python3 "$PREFIX/portal/app.py" write-maps
 
+# ---------------------------------------------------------------- certificats HTTPS
+say "Certificat HTTPS"
+TLS=$ETC/tls
+install -d -m 755 "$TLS"
+if [ -n "$TLS_CERT" ]; then
+    install -m 644 "$TLS_CERT" "$TLS/server.crt"
+    install -m 600 "$TLS_KEY" "$TLS/server.key"
+    touch "$TLS/custom"
+elif [ ! -f "$TLS/custom" ]; then
+    # Autorité locale (10 ans) : à importer une fois sur les postes pour supprimer l'alerte du navigateur.
+    if [ ! -f "$TLS/ca.key" ]; then
+        openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 \
+            -subj "/O=local-repo/CN=local-repo CA ($(hostname))" \
+            -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" \
+            -keyout "$TLS/ca.key" -out "$TLS/ca.crt" 2>>"$LOG"
+        chmod 600 "$TLS/ca.key"; chmod 644 "$TLS/ca.crt"
+        rm -f "$TLS/server.crt"
+    fi
+    SAN="IP:$HOST,IP:127.0.0.1,DNS:$(hostname),DNS:localhost"
+    FQDN=$(hostname -f 2>/dev/null || true)
+    if [ -n "$FQDN" ] && [ "$FQDN" != "$(hostname)" ] && [ "$FQDN" != localhost ]; then SAN="$SAN,DNS:$FQDN"; fi
+    # Certificat serveur (825 jours, limite acceptée par Apple) : refait si absent, bientôt expiré ou si l'IP a changé.
+    if [ ! -f "$TLS/server.crt" ] || ! openssl x509 -in "$TLS/server.crt" -noout -checkend 2592000 >/dev/null 2>&1 \
+       || ! openssl x509 -in "$TLS/server.crt" -noout -ext subjectAltName 2>/dev/null | grep -q "IP Address:$HOST\b"; then
+        openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+            -subj "/O=local-repo/CN=$(hostname)" -keyout "$TLS/server.key" -out "$TLS/server.csr" 2>>"$LOG"
+        openssl x509 -req -in "$TLS/server.csr" -CA "$TLS/ca.crt" -CAkey "$TLS/ca.key" \
+            -set_serial "0x$(openssl rand -hex 16)" -days 825 -out "$TLS/server.crt" \
+            -extfile <(printf 'subjectAltName=%s\nbasicConstraints=CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\n' "$SAN") 2>>"$LOG"
+        rm -f "$TLS/server.csr"
+        chmod 600 "$TLS/server.key"; chmod 644 "$TLS/server.crt"
+    fi
+fi
+
 # ---------------------------------------------------------------- nginx
 say "Configuration de nginx"
 render() {
-    sed -e "s|@PORTAL_PORT@|$PORTAL_PORT|g" -e "s|@APP_PORT@|$APP_PORT|g" -e "s|@DATA@|$DATA|g" \
+    sed -e "s|@PORTAL_PORT@|$PORTAL_PORT|g" -e "s|@HTTPS_PORT@|$HTTPS_PORT|g" -e "s|@ADMIN_URL@|$ADMIN_URL|g" -e "s|@APP_PORT@|$APP_PORT|g" -e "s|@DATA@|$DATA|g" \
         -e "s|@HOST@|$HOST|g" -e "s|@HOSTNAME@|$(hostname)|g" -e "s|@PUBLIC_URL@|$PUBLIC_URL|g" \
         -e "s|@WU_CACHE_SIZE@|$WU_CACHE_SIZE|g" -e "s|@RESOLVERS@|$RESOLVERS|g" "$1"
 }
@@ -238,12 +285,16 @@ for _ in $(seq 1 20); do
     curl -fs "http://127.0.0.1:$PORTAL_PORT/healthz" >/dev/null 2>&1 && break
     sleep 0.5
 done
-curl -fs "http://127.0.0.1:$PORTAL_PORT/healthz" >/dev/null || die "le portail ne répond pas (journalctl -u local-repo-portal)."
+curl -fsk "https://127.0.0.1:$HTTPS_PORT/healthz" >/dev/null || die "le portail ne répond pas (journalctl -u local-repo-portal)."
 
 # ---------------------------------------------------------------- résumé
 echo
 say "local-repo est installé"
-echo "    Portail            : $PUBLIC_URL"
+echo "    Portail            : $ADMIN_URL"
+if [ ! -f "$TLS/custom" ]; then
+    echo "    Certificat         : autorité locale, à importer sur les postes : $PUBLIC_URL/ca.crt"
+    echo "                         empreinte $(openssl x509 -in "$TLS/ca.crt" -noout -fingerprint -sha256 | cut -d= -f2)"
+fi
 if [ -f "$ETC/admin-password" ]; then
     echo "    Mot de passe       : $(cat "$ETC/admin-password")   (copie dans $ETC/admin-password)"
 elif [ -n "$PASSWORD" ]; then

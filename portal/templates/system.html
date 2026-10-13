@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% from "_macros.html" import cmd, service %}
+{% block title %}Système{% endblock %}
+{% block content %}
+<div class="head">
+  <div>
+    <h1>Système</h1>
+    <p>Certificat HTTPS, services et emplacements sur <span class="mono">{{ host }}</span>.</p>
+  </div>
+</div>
+
+<div class="stack">
+  <div class="cols">
+    <section class="panel">
+      <div class="panel-h"><h2>Certificat HTTPS</h2>
+        <div class="aside">
+          {% if cert and cert.end.days is not none %}
+            {% if cert.end.days < 30 %}<span class="st err">expire dans {{ cert.end.days }} j</span>
+            {% else %}<span class="st ok">valide</span>{% endif %}
+          {% endif %}
+        </div>
+      </div>
+      {% if cert %}
+      <dl class="kv">
+        <dt>Adresse</dt><dd class="mono"><a href="{{ admin_url }}">{{ admin_url }}</a></dd>
+        <dt>Noms couverts</dt><dd class="mono">{{ cert.san|join(', ') }}</dd>
+        <dt>Émis par</dt><dd>{{ cert.issuer }}</dd>
+        <dt>Validité</dt><dd>du {{ cert.start.text }} au {{ cert.end.text }}</dd>
+        <dt>Empreinte SHA-256</dt><dd class="mono small break">{{ cert.sha256 }}</dd>
+      </dl>
+      {% else %}
+      <div class="panel-b"><p class="note err">Certificat introuvable dans <span class="mono">/etc/local-repo/tls</span> : relancez install.sh.</p></div>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <div class="panel-h"><h2>Autorité de certification locale</h2><div class="aside"><a href="{{ public_url }}/ca.crt">ca.crt</a></div></div>
+      {% if ca %}
+      <div class="panel-b">
+        <p class="muted">Le certificat du portail est signé par cette autorité, créée à l'installation. L'importer une fois sur un poste supprime l'alerte du navigateur, y compris après renouvellement du certificat.</p>
+        <div>
+          <span class="cmd-label">Windows, PowerShell administrateur</span>
+          {{ cmd('ca-win', "Invoke-WebRequest -UseBasicParsing " ~ public_url ~ "/ca.crt -OutFile $env:TEMP\\local-repo-ca.crt; Import-Certificate -FilePath $env:TEMP\\local-repo-ca.crt -CertStoreLocation Cert:\\LocalMachine\\Root", 'PS>') }}
+        </div>
+        <div>
+          <span class="cmd-label">Debian / Ubuntu</span>
+          {{ cmd('ca-linux', 'curl -fsSL ' ~ public_url ~ '/ca.crt | sudo tee /usr/local/share/ca-certificates/local-repo.crt >/dev/null && sudo update-ca-certificates') }}
+        </div>
+        <p class="hint">Vérifier l'empreinte avant d'importer : <span class="mono break">{{ ca.sha256 }}</span>. Firefox sous Linux utilise son propre magasin (Paramètres › Certificats › Importer). Sur un domaine, l'autorité peut aussi être déployée par GPO.</p>
+      </div>
+      {% else %}
+      <div class="panel-b"><p class="muted">Certificat fourni avec <code>--tls-cert</code> : pas d'autorité locale.</p></div>
+      {% endif %}
+    </section>
+  </div>
+
+  <div class="cols">
+    <section class="panel">
+      <div class="panel-h"><h2>Services</h2></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Unité systemd</th><th class="hide-sm">Rôle</th><th>État</th></tr></thead>
+          <tbody>
+          {% for unit, label, desc, active in services %}
+            <tr><td class="mono nowrap">{{ unit }}</td><td class="muted hide-sm">{{ desc }}</td><td>{{ service(active) }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-h"><h2>Stockage et versions</h2></div>
+      <dl class="kv">
+        <dt>Disque</dt><dd><span class="num">{{ disk.free|human }}</span> libres sur <span class="num">{{ disk.total|human }}</span></dd>
+        {% for label, path in paths.items() %}<dt>{{ label }}</dt><dd class="mono">{{ path }}</dd>{% endfor %}
+        {% for name, version in versions.items() %}<dt>{{ name }}</dt><dd class="mono">{{ version or '—' }}</dd>{% endfor %}
+        <dt>Tailles mises à jour</dt><dd class="mono">{{ stats.updated or '—' }}</dd>
+      </dl>
+    </section>
+  </div>
+</div>
+{% endblock %}

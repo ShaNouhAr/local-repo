@@ -25,7 +25,9 @@ from werkzeug.utils import secure_filename
 
 DATA = os.environ.get("LR_DATA", "/srv/local-repo")
 STATE = os.environ.get("LR_STATE", "/var/lib/local-repo")
-PUBLIC_URL = os.environ.get("LR_PUBLIC_URL", "http://localhost:8088").rstrip("/")
+PUBLIC_URL = os.environ.get("LR_PUBLIC_URL", "http://localhost:8088").rstrip("/")   # postes clients (HTTP)
+ADMIN_URL = os.environ.get("LR_ADMIN_URL", "https://localhost:8443").rstrip("/")     # interface (HTTPS)
+TLS_DIR = os.environ.get("LR_TLS_DIR", "/etc/local-repo/tls")
 HOST = os.environ.get("LR_HOST", "localhost")
 ACNG_PORT = os.environ.get("LR_ACNG_PORT", "3142")
 WU_LOG = os.environ.get("LR_WU_LOG", "/var/log/nginx/local-repo-wu.log")
@@ -68,6 +70,7 @@ SECRETS = load_secrets()
 app = Flask(__name__)
 app.secret_key = SECRETS.get("secret_key") or secrets.token_hex(32)
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
+                  SESSION_COOKIE_SECURE=os.environ.get("LR_SECURE_COOKIE", "1") == "1",
                   PERMANENT_SESSION_LIFETIME=datetime.timedelta(days=7))
 
 apt_lock = threading.Lock()
@@ -163,7 +166,6 @@ def explain(exc):
 
 app.jinja_env.filters["human"] = human
 app.jinja_env.filters["date_fr"] = date_fr
-app.jinja_env.filters["hue"] = lambda text: int(hashlib.md5(text.encode()).hexdigest()[:4], 16) % 360
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 ASSET_V = str(int(max(os.path.getmtime(os.path.join(STATIC_DIR, f)) for f in ("style.css", "app.js"))))
@@ -277,14 +279,18 @@ def csrf_protect():
             abort(400, "Jeton CSRF invalide, rechargez la page.")
 
 
+@app.after_request
+def security_headers(resp):
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("Referrer-Policy", "same-origin")
+    return resp
+
+
 @app.context_processor
 def inject_globals():
-    nav = {}
-    if session.get("auth"):
-        nav = {"debs": len(list_debs()),
-               "apps": db().execute("SELECT COUNT(*) FROM win_apps").fetchone()[0]}
-    return {"csrf": session.get("csrf", ""), "public_url": PUBLIC_URL, "host": HOST,
-            "acng_port": ACNG_PORT, "nav": nav, "asset_v": ASSET_V}
+    return {"csrf": session.get("csrf", ""), "public_url": PUBLIC_URL, "admin_url": ADMIN_URL, "host": HOST,
+            "acng_port": ACNG_PORT, "asset_v": ASSET_V}
 
 
 def safe_next(target):
@@ -371,6 +377,75 @@ def index():
 @login_required
 def api_status():
     return dashboard_data()
+
+
+# --------------------------------------------------------------------------- système
+
+def cert_info(path):
+    """Résumé d'un certificat X.509 (via openssl)."""
+    try:
+        out = subprocess.run(["openssl", "x509", "-in", path, "-noout", "-subject", "-issuer", "-startdate",
+                              "-enddate", "-fingerprint", "-sha256", "-ext", "subjectAltName"],
+                             capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    info = {"san": []}
+    for line in out.stdout.splitlines():
+        line = line.strip()
+        if line.startswith("subject="):
+            info["subject"] = line.split("=", 1)[1].strip()
+        elif line.startswith("issuer="):
+            info["issuer"] = line.split("=", 1)[1].strip()
+        elif line.startswith("notBefore="):
+            info["start"] = _cert_date(line.split("=", 1)[1])
+        elif line.startswith("notAfter="):
+            info["end"] = _cert_date(line.split("=", 1)[1])
+        elif "Fingerprint=" in line:
+            info["sha256"] = line.split("=", 1)[1]
+        elif line.startswith(("DNS:", "IP Address:")):
+            info["san"] = [x.strip().replace("IP Address:", "IP:") for x in line.split(",")]
+    return info
+
+
+def _cert_date(text):
+    try:
+        d = datetime.datetime.strptime(text.strip(), "%b %d %H:%M:%S %Y %Z")
+    except ValueError:
+        return {"text": text.strip(), "days": None}
+    return {"text": d.strftime("%d/%m/%Y"), "days": (d - datetime.datetime.utcnow()).days}
+
+
+def package_version(name):
+    try:
+        out = subprocess.run(["dpkg-query", "-W", "-f=${Version}", name], capture_output=True, text=True, timeout=5)
+        return out.stdout.strip() if out.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+@app.route("/systeme")
+@login_required
+def system():
+    services = [
+        ("local-repo-portal", "Portail", "Interface et scripts clients"),
+        ("nginx", "nginx", "HTTPS, fichiers, cache Windows Update"),
+        ("apt-cacher-ng", "apt-cacher-ng", "Cache des paquets Linux"),
+        ("local-repo-stats.timer", "Statistiques", "Taille des caches, toutes les 15 min"),
+        ("local-repo-nginx.path", "Domaines WU", "Recharge nginx quand la liste change"),
+    ]
+    return render_template(
+        "system.html",
+        services=[(unit, label, desc, service_active(unit)) for unit, label, desc in services],
+        cert=cert_info(os.path.join(TLS_DIR, "server.crt")),
+        ca=cert_info(os.path.join(TLS_DIR, "ca.crt")),
+        versions={"nginx": package_version("nginx"), "apt-cacher-ng": package_version("apt-cacher-ng"),
+                  "Python": sys.version.split()[0], "Flask": package_version("python3-flask")},
+        disk=shutil.disk_usage(DATA),
+        stats=read_stats(),
+        paths={"Données": DATA, "État et base": STATE, "Configuration": "/etc/local-repo", "Certificats": TLS_DIR},
+    )
 
 
 # --------------------------------------------------------------------------- paquets Linux
