@@ -96,6 +96,7 @@ def inject_globals():
         "roles": config.ROLES,
         "flatpak_enabled": config.FLATPAK_ENABLED,
         "rpm_enabled": config.RPM_ENABLED,
+        "container": config.CONTAINER,
     }
 
 

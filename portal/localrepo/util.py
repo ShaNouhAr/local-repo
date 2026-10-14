@@ -78,7 +78,30 @@ def sha256_of(path):
     return h.hexdigest()
 
 
+# Conteneur : processus lancés par supervisord, reconnus à leur ligne de commande.
+CONTAINER_PROCESSES = {"nginx": "nginx: master", "apt-cacher-ng": "/usr/sbin/apt-cacher-ng",
+                       "local-repo-cron": "local-repo-cron"}
+
+
+def process_running(marker):
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                cmdline = f.read().replace(b"\0", b" ").decode(errors="replace")
+        except OSError:
+            continue
+        if marker in cmdline:
+            return True
+    return False
+
+
 def service_active(name):
+    if config.CONTAINER:
+        if name == "local-repo-portal":
+            return True
+        return name in CONTAINER_PROCESSES and process_running(CONTAINER_PROCESSES[name])
     try:
         out = subprocess.run(["systemctl", "is-active", name], capture_output=True, text=True, timeout=5)
         return out.stdout.strip() == "active"

@@ -29,7 +29,7 @@
         <dt>Empreinte SHA-256</dt><dd class="mono small break">{{ cert.sha256 }}</dd>
       </dl>
       {% else %}
-      <div class="panel-b"><p class="note err">Certificat introuvable dans <span class="mono">/etc/local-repo/tls</span> : relancez install.sh.</p></div>
+      <div class="panel-b"><p class="note err">Certificat introuvable dans <span class="mono">/etc/local-repo/tls</span> : {% if container %}redémarrez le conteneur{% else %}relancez install.sh{% endif %}.</p></div>
       {% endif %}
     </section>
 

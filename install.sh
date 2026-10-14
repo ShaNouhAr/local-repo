@@ -1,6 +1,7 @@
 #!/bin/bash
 # local-repo : installe le dépôt local (paquets Linux, Windows Update, logiciels Windows)
-# sur Debian / Ubuntu (versions validées : README), sans Docker. Relançable sans risque pour mettre à jour ou reconfigurer.
+# sur Debian / Ubuntu (versions validées : README). Relançable sans risque pour mettre à jour ou reconfigurer.
+# L'image Docker l'utilise aussi, avec --container (voir docker-compose.yml).
 #
 #   sudo ./install.sh [options]
 #
@@ -44,7 +45,15 @@ LOG=/var/log/local-repo-install.log
 
 [ "$(id -u)" -eq 0 ] || die "lancez ce script en root (sudo ./install.sh)."
 command -v apt-get >/dev/null || die "Debian ou Ubuntu requis (apt-get introuvable)."
-command -v systemctl >/dev/null || die "systemd requis."
+# --container : exécution au démarrage de l'image Docker (paquets déjà installés, pas de systemd ;
+# les processus sont lancés par supervisord, voir docker/). Repéré avant le reste des options.
+CONTAINER=0
+for arg in "$@"; do if [ "$arg" = "--container" ]; then CONTAINER=1; fi; done
+if [ "$CONTAINER" = 1 ]; then
+    [ "${LR_RUNTIME:-}" = container ] || die "--container est réservé à l'image Docker (docker compose up -d)."
+else
+    command -v systemctl >/dev/null || die "systemd requis."
+fi
 
 # Python sert à valider la configuration : installé d'abord s'il manque (système minimal).
 if ! command -v python3 >/dev/null; then
@@ -90,9 +99,10 @@ while [ $# -gt 0 ]; do
         --no-rpm) RPM_ENABLED=0; shift ;;
         --rpm) RPM_ENABLED=1; shift ;;
         --rpm-cache-size) need "$@"; RPM_CACHE_SIZE="$2"; shift 2 ;;
+        --container) shift ;;
         --no-wu) WU_ENABLED=0; shift ;;
         --wu) WU_ENABLED=1; shift ;;
-        -h|--help) sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,/^set -euo/{/^#/p;}' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) die "option inconnue : $1 (voir --help)" ;;
     esac
 done
@@ -143,6 +153,13 @@ if [ "$HTTP_ENABLED" = 1 ]; then HTTP_URL="http://$HOST:$PORTAL_PORT"; fi
 port_owner() { ss -Hltnp "sport = :$1" 2>/dev/null | grep -o 'users:(("[^"]*"' | head -1 | cut -d'"' -f2 || true; }
 check_port() {
     local owner
+    if [ "$CONTAINER" = 1 ]; then
+        # Réseau de l'hôte, rien n'est encore lancé dans le conteneur : tout port ouvert est pris par l'hôte.
+        if ss -Hltn "sport = :$1" 2>/dev/null | grep -q .; then
+            die "le port $1 est déjà utilisé sur l'hôte (installation native de local-repo, autre service ?)."
+        fi
+        return 0
+    fi
     owner=$(port_owner "$1")
     if [ -n "$owner" ] && [ "$owner" != "$2" ]; then
         die "le port $1 est déjà utilisé par « $owner »."
@@ -161,8 +178,9 @@ fi
 # ---------------------------------------------------------------- paquets
 if [ "$FLATPAK_ENABLED" = 1 ]; then PACKAGES+=(flatpak ostree); fi
 if [ "$RPM_ENABLED" = 1 ]; then PACKAGES+=(createrepo-c rpm); fi
-say "Installation des paquets"
 mkdir -p "$STATE"
+if [ "$CONTAINER" = 0 ]; then
+say "Installation des paquets"
 touch "$STATE/installed-packages"
 for p in "${PACKAGES[@]}"; do
     if ! dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q "install ok installed"; then
@@ -175,6 +193,7 @@ export DEBIAN_FRONTEND=noninteractive
 if ! { apt-get update -q -o APT::Update::Error-Mode=any && apt-get install -y -q --no-install-recommends "${PACKAGES[@]}"; } >> "$LOG" 2>&1; then
     tail -15 "$LOG" >&2
     die "installation des paquets impossible (journal complet : $LOG)."
+fi
 fi
 
 # ---------------------------------------------------------------- utilisateur et dossiers
@@ -388,7 +407,7 @@ render "$PREFIX/conf/nginx-rpm-proxy-snippet.conf" > /etc/nginx/snippets/local-r
 ln -sf ../sites-available/local-repo-portal.conf /etc/nginx/sites-enabled/local-repo-portal.conf
 # Site nginx par défaut (port 80) : désactivé si nginx a été installé par local-repo,
 # ou si le cache Windows Update a besoin du port 80 ; sinon on le laisse (ou le remet) en place.
-if [ "$WU_ENABLED" = 1 ] || grep -qx nginx "$STATE/installed-packages"; then
+if [ "$WU_ENABLED" = 1 ] || [ "$CONTAINER" = 1 ] || grep -qx nginx "$STATE/installed-packages"; then
     if [ -L /etc/nginx/sites-enabled/default ]; then
         rm /etc/nginx/sites-enabled/default
         touch "$STATE/nginx-default-disabled"
@@ -445,11 +464,26 @@ echo "apt-cacher-ng: $WRAP_NETS # local-repo" >> /etc/hosts.allow
 echo "apt-cacher-ng: ALL # local-repo" >> /etc/hosts.deny
 chown root:apt-cacher-ng /etc/apt-cacher-ng/zz-local-repo.conf
 chmod 640 /etc/apt-cacher-ng/zz-local-repo.conf
-install -d /etc/systemd/system/apt-cacher-ng.service.d
-render "$PREFIX/conf/apt-cacher-ng-override.conf" > /etc/systemd/system/apt-cacher-ng.service.d/local-repo.conf
+if [ "$CONTAINER" = 0 ]; then
+    install -d /etc/systemd/system/apt-cacher-ng.service.d
+    render "$PREFIX/conf/apt-cacher-ng-override.conf" > /etc/systemd/system/apt-cacher-ng.service.d/local-repo.conf
+fi
 
 # ---------------------------------------------------------------- services
 say "Services"
+if [ "$CONTAINER" = 1 ]; then
+    # Conteneur : supervisord (lancé par docker/entrypoint.sh) remplace systemd.
+    install -d -o apt-cacher-ng -g apt-cacher-ng /run/apt-cacher-ng /var/log/apt-cacher-ng
+    chown apt-cacher-ng:apt-cacher-ng /var/cache/apt-cacher-ng
+    SUP_PROXY_ENV=""
+    if [ -n "$UPSTREAM_PROXY" ]; then
+        sup_proxy=${UPSTREAM_PROXY//%/%%}   # « % » est spécial pour supervisord (identifiants encodés)
+        SUP_PROXY_ENV=",http_proxy=\"$sup_proxy\",https_proxy=\"$sup_proxy\",no_proxy=\"localhost,127.0.0.1,$HOST\""
+    fi
+    LRT_SUP_PROXY_ENV="$SUP_PROXY_ENV" LRT_SUP_PASSWORD=$(openssl rand -hex 24) \
+        render "$SRC/docker/supervisord.conf" > /etc/supervisor/local-repo.conf
+    chmod 600 /etc/supervisor/local-repo.conf
+else
 render "$PREFIX/conf/local-repo-portal.service" > /etc/systemd/system/local-repo-portal.service
 cp "$PREFIX/conf/local-repo-stats.service" "$PREFIX/conf/local-repo-stats.timer" \
    "$PREFIX/conf/local-repo-nginx.service" "$PREFIX/conf/local-repo-nginx.path" \
@@ -477,6 +511,7 @@ for _ in $(seq 1 30); do
     sleep 0.5
 done
 curl -fsk --connect-timeout 2 --max-time 5 "https://127.0.0.1:$HTTPS_PORT/healthz" >/dev/null || die "le portail ne répond pas (journalctl -u local-repo-portal)."
+fi
 
 # ---------------------------------------------------------------- résumé
 echo
@@ -485,7 +520,11 @@ echo "    Interface          : $ADMIN_URL"
 if [ -n "$ISSUED" ]; then
     echo "    Compte initial     : admin / $ISSUED   (à changer à la première connexion ; affiché une seule fois)"
 fi
-echo "    Accès perdu        : sudo local-repo-user passwd admin"
+if [ "$CONTAINER" = 1 ]; then
+    echo "    Accès perdu        : docker compose exec local-repo local-repo-user passwd admin"
+else
+    echo "    Accès perdu        : sudo local-repo-user passwd admin"
+fi
 if [ ! -f "$TLS/custom" ]; then
     echo "    Autorité HTTPS     : $ETC/tls/ca.crt (à déployer sur les postes, par GPO par exemple)"
     echo "                         empreinte $(openssl x509 -in "$TLS/ca.crt" -noout -fingerprint -sha256 | cut -d= -f2)"
@@ -506,4 +545,8 @@ fi
 if [ "$BACKUP_KEEP" -gt 0 ]; then
     echo "    Sauvegardes        : quotidiennes dans $BACKUP_DIR ($BACKUP_KEEP conservées)"
 fi
-echo "    Désinstaller       : sudo $PREFIX/remove.sh"
+if [ "$CONTAINER" = 1 ]; then
+    echo "    Arrêter            : docker compose down   (les données restent dans les volumes)"
+else
+    echo "    Désinstaller       : sudo $PREFIX/remove.sh"
+fi

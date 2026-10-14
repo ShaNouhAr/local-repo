@@ -126,7 +126,7 @@
       {% elif repositories %}
       <div class="empty">Dépôt vide.</div>
       {% else %}
-      <div class="empty">Aucun dépôt : relancez install.sh pour créer el8, el9 et el10.</div>
+      <div class="empty">Aucun dépôt : {% if container %}redémarrez le conteneur{% else %}relancez install.sh{% endif %} pour créer el8, el9 et el10.</div>
       {% endif %}
     </section>
   </div>

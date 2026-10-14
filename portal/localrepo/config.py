@@ -1,15 +1,17 @@
-"""Configuration lue dans l'environnement (fixé par l'unité systemd générée par install.sh)."""
+"""Configuration lue dans l'environnement (unité systemd ou supervisord, générés par install.sh)."""
 
 import os
 import re
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 
 DATA = os.environ.get("LR_DATA", "/srv/local-repo")
 STATE = os.environ.get("LR_STATE", "/var/lib/local-repo")
 ETC = os.environ.get("LR_ETC", "/etc/local-repo")
 HOST = os.environ.get("LR_HOST", "localhost")
 ACNG_PORT = os.environ.get("LR_ACNG_PORT", "3142")
+# Image Docker : supervisord à la place de systemd (voir docker/).
+CONTAINER = os.environ.get("LR_RUNTIME") == "container"
 
 # Adresse HTTPS (interface, et postes qui font confiance à l'autorité locale).
 HTTPS_URL = os.environ.get("LR_ADMIN_URL", "https://localhost:8443").rstrip("/")

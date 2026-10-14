@@ -2,8 +2,8 @@
 
 [![CI](https://github.com/ShaNouhAr/local-repo/actions/workflows/ci.yml/badge.svg)](https://github.com/ShaNouhAr/local-repo/actions/workflows/ci.yml)
 
-Serveur de dépôts et de caches pour un réseau d'entreprise, installé en une commande sur Debian ou Ubuntu,
-**sans Docker** :
+Serveur de dépôts et de caches pour un réseau d'entreprise, installé en une commande sur Debian ou Ubuntu
+(installation native, recommandée) ou déployé avec **Docker Compose** :
 
 - **Paquets Linux** : cache [apt-cacher-ng](https://www.unix-ag.uni-kl.de/~bloch/acng/) pour Debian / Ubuntu
   et dépôts APT signés pour vos propres `.deb`, séparés par distribution et version.
@@ -20,6 +20,8 @@ Serveur de dépôts et de caches pour un réseau d'entreprise, installé en une 
 | ![Catalogue de logiciels Windows](docs/apps.png) | ![Flatpak](docs/flatpak.png) |
 
 ## Installation
+
+### Native (recommandée)
 
 ```bash
 git clone https://github.com/ShaNouhAr/local-repo.git
@@ -44,7 +46,28 @@ Options principales (toutes : `sudo ./install.sh --help`) :
 | `--tls-cert F --tls-key F` | certificat d'entreprise au lieu de l'autorité locale |
 | `--backup-keep N` | sauvegardes quotidiennes gardées (défaut 3, 0 = aucune) |
 
-Déploiement en entreprise (réseau, GPO, proxy, sauvegardes, supervision, dépannage) :
+### Avec Docker
+
+```bash
+git clone https://github.com/ShaNouhAr/local-repo.git
+cd local-repo
+cp .env.example .env          # réglages : LR_HOST, LR_ALLOW, LR_PROXY, LR_WU…
+docker compose up -d --build
+docker compose logs local-repo   # adresse, empreinte de l'autorité, mot de passe initial de « admin »
+```
+
+Même portail, mêmes fonctions et même configuration que l'installation native : au démarrage, le
+conteneur applique les variables de `.env` avec `install.sh --container`, puis `supervisord` lance nginx,
+apt-cacher-ng, le portail et les tâches périodiques. Le conteneur utilise le **réseau de l'hôte** (ports
+8443, 8088, 3142, et 80/443 pour Windows Update) : ne pas l'associer à une installation native sur la même
+machine. Les données sont dans des volumes Docker (`LR_DATA_DIR` : dossier de l'hôte pour les dépôts et
+caches). Mise à jour : `git pull && docker compose up -d --build`.
+
+L'installation native reste recommandée en production : elle confine chaque service avec systemd
+(détails dans [SECURITY.md](SECURITY.md)). Docker Engine 26 ou plus récent avec Compose v2 (validé avec
+les paquets `docker.io` et `docker-compose` de Debian 13).
+
+Déploiement en entreprise (réseau, GPO, proxy, sauvegardes, supervision, Docker, dépannage) :
 **[guide d'exploitation](docs/EXPLOITATION.md)**.
 
 ## Brancher les postes
@@ -98,6 +121,10 @@ sudo local-repo-backup create | list | restore ARCHIVE             # sauvegardes
 sudo /opt/local-repo/remove.sh [--purge]                           # désinstallation
 ```
 
+Avec Docker, les mêmes commandes passent par le conteneur : `docker compose exec local-repo local-repo-user list`,
+`docker compose exec local-repo local-repo-backup create`. Désinstallation : `docker compose down`
+(ajouter `-v` pour effacer aussi les données).
+
 Supervision : `https://<ip>:8443/metrics` (Prometheus) et `/healthz`.
 
 ## Architecture
@@ -129,14 +156,16 @@ python3 -m unittest discover -s tests          # portail, dépôts APT et RPM, s
 tests/e2e.sh                                   # bout en bout, sur une machine JETABLE uniquement
 tests/vm-e2e.sh debian-13                       # VM jetable ; nécessite QEMU, genisoimage, SSH et curl
 tests/vm-rpm-e2e.sh rocky-9                     # serveur Debian 13 + poste Rocky 9, deux VM jetables
+tests/vm-docker-e2e.sh                          # image Docker et docker compose dans une VM Debian 13 jetable
 ```
 
 Le workflow CI lance `shellcheck`, `pyflakes` puis une VM QEMU pour chaque entrée de
 [`tests/platforms.json`](tests/platforms.json) : Debian 12/13 et Ubuntu 22.04/24.04/26.04 ;
 puis, pour chaque poste de [`tests/rpm-platforms.json`](tests/rpm-platforms.json) (Rocky Linux et
-AlmaLinux 8, 9, 10), un serveur et ce poste : dépôt local, cache des dépôts officiels, EPEL et retrait.
+AlmaLinux 8, 9, 10), un serveur et ce poste : dépôt local, cache des dépôts officiels, EPEL et retrait ;
+enfin le déploiement Docker (construction, poste client, recréation du conteneur, sauvegarde).
 Il fonctionne à chaque PR/push, chaque semaine et à la demande, avec conservation des journaux.
-Les images officielles sont vérifiées par leur empreinte avant le démarrage ; Docker n'est pas utilisé.
+Les images des VM sont vérifiées par leur empreinte avant le démarrage.
 Les tests couvrent la mise à jour depuis 1.0.0 sur les systèmes déjà pris en charge, la détection du poste,
 l'isolation des paquets, Flatpak, une restauration et la désinstallation. Le workflow est publié et actif sur GitHub.
 Historique : [CHANGELOG.md](CHANGELOG.md).

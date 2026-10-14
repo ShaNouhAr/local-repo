@@ -28,6 +28,9 @@ local-repo est conçu pour un **réseau d'entreprise interne**. Il n'est pas pr�
 - Les `.rpm` des dépôts locaux ne sont pas re-signés un par un : leur intégrité repose sur les
   métadonnées signées (`repo_gpgcheck=1`), et non sur une signature par paquet (`gpgcheck=0`).
 - Les dépôts RHEL (abonnement Red Hat) ne passent pas par le cache.
+- Déploiement Docker : les processus gardent leurs comptes dédiés et le conteneur n'a que les capacités
+  utiles, mais le confinement systemd du portail n'y est pas disponible ; l'installation native est plus
+  cloisonnée. Le conteneur utilise le réseau de l'hôte.
 
 - Le port HTTP d'amorçage (8088) sert scripts et installeurs sans chiffrement : un attaquant sur le réseau
   pourrait modifier un script. Déployez l'autorité de certification puis utilisez `--no-http`.

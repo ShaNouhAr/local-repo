@@ -1,5 +1,16 @@
 # Journal des versions
 
+## 1.3.0 — 2026-10-14
+
+- **Déploiement Docker** (`docker compose up -d --build`), en plus de l'installation native qui reste
+  recommandée : image Debian 13, configuration par variables (`.env.example`) appliquée à chaque démarrage
+  par `install.sh --container`, services lancés par `supervisord`, tâches périodiques (statistiques,
+  rechargement nginx, rotation des journaux, sauvegarde quotidienne) par `local-repo-cron`.
+- Conteneur sans capacités superflues, `no-new-privileges`, comptes de service à identifiants fixes,
+  contrôle de santé, volumes pour les données, la configuration et les sauvegardes.
+- Le portail reconnaît le mode conteneur : état des services, commandes d'aide et restauration adaptées.
+- Validation dans une VM Debian 13 jetable (`tests/vm-docker-e2e.sh`).
+
 ## 1.2.0 — 2026-10-13
 
 - **Famille Red Hat** : cache des miroirs Rocky Linux, AlmaLinux et EPEL (paquets et métadonnées à nom

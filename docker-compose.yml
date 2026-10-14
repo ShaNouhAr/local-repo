@@ -1,0 +1,59 @@
+# local-repo en conteneur.
+#   cp .env.example .env     puis renseigner au moins LR_HOST
+#   docker compose up -d --build
+#   docker compose logs local-repo     compte initial « admin » et empreinte de l'autorité HTTPS
+#
+# Réseau de l'hôte : le cache Windows Update écoute sur 80 et 443, et le filtrage par réseau
+# (LR_ALLOW, LR_ADMIN_ALLOW) doit voir la vraie adresse des postes. Ne pas lancer en même temps
+# qu'une installation native de local-repo sur la même machine (mêmes ports).
+services:
+  local-repo:
+    build: .
+    image: local-repo:1.3.0
+    network_mode: host
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      LR_HOST: ${LR_HOST:-}
+      LR_HTTPS_PORT: ${LR_HTTPS_PORT:-8443}
+      LR_HTTP_PORT: ${LR_HTTP_PORT:-8088}
+      LR_HTTP: ${LR_HTTP:-1}
+      LR_ALLOW: ${LR_ALLOW:-}
+      LR_ADMIN_ALLOW: ${LR_ADMIN_ALLOW:-}
+      LR_PROXY: ${LR_PROXY:-}
+      LR_WU: ${LR_WU:-1}
+      LR_WU_CACHE_SIZE: ${LR_WU_CACHE_SIZE:-}
+      LR_RESOLVERS: ${LR_RESOLVERS:-}
+      LR_FLATPAK: ${LR_FLATPAK:-1}
+      LR_FLATPAK_CACHE_SIZE: ${LR_FLATPAK_CACHE_SIZE:-}
+      LR_RPM: ${LR_RPM:-1}
+      LR_RPM_CACHE_SIZE: ${LR_RPM_CACHE_SIZE:-}
+      LR_MAX_UPLOAD: ${LR_MAX_UPLOAD:-}
+      LR_BACKUP_KEEP: ${LR_BACKUP_KEEP:-3}
+      LR_TLS_CERT: ${LR_TLS_CERT:-}
+      LR_TLS_KEY: ${LR_TLS_KEY:-}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ${LR_DATA_DIR:-local-repo-data}:/srv/local-repo
+      - ${LR_BACKUP_DIR:-local-repo-backups}:/var/backups/local-repo
+      - local-repo-state:/var/lib/local-repo
+      - local-repo-etc:/etc/local-repo
+      - local-repo-apt-cache:/var/cache/apt-cacher-ng
+      - local-repo-logs:/var/log/nginx
+      # Certificat d'entreprise (LR_TLS_CERT=/run/local-repo-tls/server.crt, LR_TLS_KEY=…/server.key) :
+      # - ./tls:/run/local-repo-tls:ro
+    # Seuls les droits utiles aux processus root (configuration, changement d'utilisateur, ports 80/443).
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID, KILL, NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    logging:
+      driver: json-file
+      options: {max-size: 20m, max-file: "5"}
+
+volumes:
+  local-repo-data:
+  local-repo-backups:
+  local-repo-state:
+  local-repo-etc:
+  local-repo-apt-cache:
+  local-repo-logs:

@@ -1,0 +1,9 @@
+.git
+.github
+.env
+**/__pycache__
+**/*.pyc
+test-results
+local-repo
+docs
+tests

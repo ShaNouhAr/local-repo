@@ -47,7 +47,11 @@ case "${1:-}" in
         archive="${2:-}"
         [ -f "$archive" ] || { echo "Archive introuvable : $archive" >&2; exit 1; }
         tar -tzf "$archive" | grep -qx "portal.db" || { echo "Ce n'est pas une sauvegarde local-repo." >&2; exit 1; }
-        systemctl stop local-repo-portal 2>/dev/null || true
+        if [ "${LR_RUNTIME:-}" = container ]; then
+            supervisorctl -c /etc/supervisor/local-repo.conf stop local-repo-portal >/dev/null 2>&1 || true
+        else
+            systemctl stop local-repo-portal 2>/dev/null || true
+        fi
         # La configuration propre à ce serveur (IP, ports, réseaux) est conservée ; le reste est restauré.
         tar -xzpf "$archive" -C / --exclude=portal.db --exclude=etc/local-repo/local-repo.conf
         tar -xzf "$archive" -O portal.db > "$STATE/portal.db"
@@ -57,8 +61,13 @@ case "${1:-}" in
             if [ -d "$DATA/flatpak" ]; then chown -R localrepo:localrepo "$DATA/flatpak"; fi
             if [ -d "$DATA/rpm" ]; then chown -R localrepo:localrepo "$DATA/rpm"; fi
         fi
-        echo "Archive restaurée. Relancez maintenant l'installation pour régénérer services et configuration :"
-        echo "    sudo ./install.sh      (depuis le dossier du projet)"
+        if [ "${LR_RUNTIME:-}" = container ]; then
+            echo "Archive restaurée. Redémarrez maintenant le conteneur pour régénérer la configuration :"
+            echo "    docker compose restart local-repo"
+        else
+            echo "Archive restaurée. Relancez maintenant l'installation pour régénérer services et configuration :"
+            echo "    sudo ./install.sh      (depuis le dossier du projet)"
+        fi
         ;;
     list)
         ls -lh "$DEST"/local-repo-*.tar.gz 2>/dev/null || echo "Aucune sauvegarde dans $DEST."

@@ -21,13 +21,17 @@ jobs:
           persist-credentials: false
       - name: Shell et Python
         run: |
-          shellcheck -S style install.sh remove.sh bin/* tests/*.sh portal/templates/setup.sh portal/templates/flatpak-setup.sh
+          shellcheck -S style -x install.sh remove.sh bin/* tests/*.sh docker/entrypoint.sh docker/local-repo-cron portal/templates/setup.sh portal/templates/flatpak-setup.sh portal/templates/rpm-setup.sh
           pipx run pyflakes portal tests
+          docker compose config -q
       - name: Plateformes à tester
         id: platforms
-        run: echo "matrix=$(jq -c '{include:map({platform:.id})}' tests/platforms.json)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "matrix=$(jq -c '{include:map({platform:.id})}' tests/platforms.json)" >> "$GITHUB_OUTPUT"
+          echo "rpm=$(jq -c '{include:map({platform:.id})}' tests/rpm-platforms.json)" >> "$GITHUB_OUTPUT"
     outputs:
       platforms: ${{ steps.platforms.outputs.matrix }}
+      rpm: ${{ steps.platforms.outputs.rpm }}
   vm:
     name: VM / ${{ matrix.platform }}
     runs-on: ubuntu-24.04
@@ -54,5 +58,55 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: resultats-${{ matrix.platform }}
+          path: test-results/
+          retention-days: 14
+  rpm:
+    name: Postes Red Hat / ${{ matrix.platform }}
+    runs-on: ubuntu-24.04
+    needs: lint
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix: ${{ fromJSON(needs.lint.outputs.rpm) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Outils de virtualisation
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q qemu-system-x86 qemu-utils genisoimage
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+      - name: Serveur Debian 13 et poste ${{ matrix.platform }} (dépôt local, cache, EPEL, retrait)
+        run: tests/vm-rpm-e2e.sh '${{ matrix.platform }}'
+      - name: Conserver les résultats
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: resultats-rpm-${{ matrix.platform }}
+          path: test-results/
+          retention-days: 14
+  docker:
+    name: Docker / Debian 13
+    runs-on: ubuntu-24.04
+    needs: lint
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Outils de virtualisation
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q qemu-system-x86 qemu-utils genisoimage
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+      - name: Image, docker compose, poste client, recréation, sauvegarde
+        run: tests/vm-docker-e2e.sh
+      - name: Conserver les résultats
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: resultats-docker
           path: test-results/
           retention-days: 14

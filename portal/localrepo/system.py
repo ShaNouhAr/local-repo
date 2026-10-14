@@ -22,6 +22,8 @@ UNITS = [
     ("local-repo-nginx.path", "Recharge nginx quand la liste des domaines change"),
     ("local-repo-backup.timer", "Sauvegarde quotidienne"),
 ]
+if config.CONTAINER:
+    UNITS = UNITS[:3] + [("local-repo-cron", "Tâches périodiques : taille des caches, rechargement nginx, sauvegarde")]
 
 
 def cert_info(path):
@@ -124,7 +126,7 @@ def metrics():
             lines.append(f"{name}{label} {value}")
 
     metric("local_repo_info", "Version de local-repo.", "gauge", [({"version": config.VERSION}, 1)])
-    metric("local_repo_service_up", "Unité systemd active (1) ou non (0).", "gauge",
+    metric("local_repo_service_up", "Service actif (1) ou non (0).", "gauge",
            [({"unit": u}, int(service_active(u))) for u, _ in UNITS])
     metric("local_repo_cache_bytes", "Taille des caches sur disque.", "gauge",
            [({"cache": "apt"}, stats.get("acng", 0)), ({"cache": "windows_update"}, stats.get("wucache", 0)),
