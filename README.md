@@ -17,7 +17,7 @@ Serveur de dépôts et de caches pour un réseau d'entreprise, installé en une 
 | | |
 |---|---|
 | ![Vue d'ensemble, thème OLED](docs/dashboard-oled.png) | ![Vue d'ensemble, thème clair](docs/dashboard-light.png) |
-| ![Catalogue de logiciels Windows](docs/apps.png) | ![Flatpak](docs/flatpak.png) |
+| ![Catalogue de logiciels Windows](docs/apps.png) | ![Cache Windows Update](docs/windows-update.png) |
 
 ## Installation
 
