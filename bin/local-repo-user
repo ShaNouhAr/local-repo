@@ -10,4 +10,4 @@ set -euo pipefail
 . /etc/local-repo/local-repo.conf
 cd /opt/local-repo/portal
 exec runuser -u localrepo -- env LR_DATA="$DATA" LR_STATE=/var/lib/local-repo LR_ETC=/etc/local-repo \
-    python3 -m localrepo.cli user "$@"
+    "${PYTHON:-python3}" -m localrepo.cli user "$@"

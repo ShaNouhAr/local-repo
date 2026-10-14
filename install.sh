@@ -1,6 +1,6 @@
 #!/bin/bash
 # local-repo : installe le dépôt local (paquets Linux, Windows Update, logiciels Windows)
-# sur Debian / Ubuntu (versions validées : README). Relançable sans risque pour mettre à jour ou reconfigurer.
+# sur Debian / Ubuntu / Rocky Linux (versions validées : README). Relançable sans risque pour mettre à jour ou reconfigurer.
 # L'image Docker l'utilise aussi, avec --container (voir docker-compose.yml).
 #
 #   sudo ./install.sh [options]
@@ -44,7 +44,33 @@ trap 'die "échec inattendu ligne $LINENO : $BASH_COMMAND"' ERR
 LOG=/var/log/local-repo-install.log
 
 [ "$(id -u)" -eq 0 ] || die "lancez ce script en root (sudo ./install.sh)."
-command -v apt-get >/dev/null || die "Debian ou Ubuntu requis (apt-get introuvable)."
+# La présence éventuelle d'APT sur Rocky ne doit pas sélectionner le mauvais gestionnaire.
+# shellcheck disable=SC1091
+. /etc/os-release
+PLATFORM=debian
+PYTHON=/usr/bin/python3
+GUNICORN=/usr/bin/gunicorn
+OS_MAJOR=${VERSION_ID%%.*}
+NGINX_USER=www-data
+LOG_GROUP=adm
+CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+case "$ID" in
+    debian|ubuntu) command -v apt-get >/dev/null || die "apt-get requis." ;;
+    rocky)
+        case "$OS_MAJOR" in 9|10) ;; *) die "Serveur Rocky Linux 9 ou 10 requis (Rocky 8 reste pris en charge comme poste client)." ;; esac
+        PLATFORM=rocky
+        PYTHON=/usr/local/lib/local-repo/venv/bin/python
+        GUNICORN=/usr/local/lib/local-repo/venv/bin/gunicorn
+        NGINX_USER=nginx
+        LOG_GROUP=nginx
+        CA_BUNDLE=/etc/pki/tls/certs/ca-bundle.crt
+        # shellcheck source=lib/rocky.sh
+        . "$SRC/lib/rocky.sh"
+        ;;
+    *) die "Serveur Debian, Ubuntu ou Rocky Linux requis." ;;
+esac
+# Le code et les ressources publiques doivent rester lisibles même avec umask 077.
+umask 022
 # --container : exécution au démarrage de l'image Docker (paquets déjà installés, pas de systemd ;
 # les processus sont lancés par supervisord, voir docker/). Repéré avant le reste des options.
 CONTAINER=0
@@ -59,8 +85,12 @@ fi
 if ! command -v python3 >/dev/null; then
     mkdir -p "$STATE"
     echo python3 >> "$STATE/installed-packages"
-    { apt-get update -q -o APT::Update::Error-Mode=any && DEBIAN_FRONTEND=noninteractive apt-get install -y -q python3; } >/dev/null 2>&1 \
-        || die "impossible d'installer python3."
+    if [ "$PLATFORM" = rocky ]; then
+        dnf install -y python3 >/dev/null 2>&1 || die "impossible d'installer python3."
+    else
+        { apt-get update -q -o APT::Update::Error-Mode=any && DEBIAN_FRONTEND=noninteractive apt-get install -y -q python3; } >/dev/null 2>&1 \
+            || die "impossible d'installer python3."
+    fi
 fi
 
 # ---------------------------------------------------------------- réglages
@@ -168,7 +198,7 @@ check_port() {
 say "Vérification des ports"
 check_port "$HTTPS_PORT" nginx
 if [ "$HTTP_ENABLED" = 1 ]; then check_port "$PORTAL_PORT" nginx; fi
-check_port 3142 apt-cacher-ng
+if [ "$PLATFORM" = rocky ]; then check_port 3142 nginx; else check_port 3142 apt-cacher-ng; fi
 check_port "$APP_PORT" gunicorn
 if [ "$WU_ENABLED" = 1 ]; then
     check_port 80 nginx
@@ -181,6 +211,9 @@ if [ "$RPM_ENABLED" = 1 ]; then PACKAGES+=(createrepo-c rpm); fi
 mkdir -p "$STATE"
 if [ "$CONTAINER" = 0 ]; then
 say "Installation des paquets"
+if [ "$PLATFORM" = rocky ]; then
+    rocky_packages
+else
 touch "$STATE/installed-packages"
 for p in "${PACKAGES[@]}"; do
     if ! dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q "install ok installed"; then
@@ -195,6 +228,7 @@ if ! { apt-get update -q -o APT::Update::Error-Mode=any && apt-get install -y -q
     die "installation des paquets impossible (journal complet : $LOG)."
 fi
 fi
+fi
 
 # ---------------------------------------------------------------- utilisateur et dossiers
 say "Utilisateur et dossiers"
@@ -202,7 +236,7 @@ id localrepo >/dev/null 2>&1 || useradd --system --home-dir "$STATE" --shell /us
 install -d -m 755 -o localrepo -g localrepo "$DATA" "$DATA/apt" "$DATA/apt/pool" "$DATA/win"
 install -d -m 700 -o localrepo -g localrepo "$DATA/.tmp" "$STATE/gnupg"
 install -d -m 755 -o localrepo -g localrepo "$STATE" "$STATE/nginx"
-install -d -m 700 -o www-data -g www-data "$DATA/wucache" "$DATA/flatpakcache" "$DATA/rpmcache"
+install -d -m 700 -o "$NGINX_USER" -g "$NGINX_USER" "$DATA/wucache" "$DATA/flatpakcache" "$DATA/rpmcache"
 install -d -m 755 -o localrepo -g localrepo "$DATA/flatpak" "$DATA/rpm"
 chown -R localrepo:localrepo "$DATA/apt" "$DATA/win" "$STATE"
 install -d -m 755 "$ETC"
@@ -235,6 +269,7 @@ ALLOW="$ALLOW"
 ADMIN_ALLOW="$ADMIN_ALLOW"
 UPSTREAM_PROXY="$UPSTREAM_PROXY"
 DATA=$DATA
+PYTHON=$PYTHON
 WU_ENABLED=$WU_ENABLED
 WU_CACHE_SIZE=$WU_CACHE_SIZE
 FLATPAK_ENABLED=$FLATPAK_ENABLED
@@ -252,7 +287,7 @@ chmod 644 "$ETC/local-repo.conf"
 say "Copie du portail dans $PREFIX"
 rm -rf "$PREFIX.new"
 install -d "$PREFIX.new"
-cp -r "$SRC/portal" "$SRC/bin" "$SRC/conf" "$SRC/remove.sh" "$PREFIX.new/"
+cp -r "$SRC/portal" "$SRC/bin" "$SRC/conf" "$SRC/lib" "$SRC/remove.sh" "$PREFIX.new/"
 find "$PREFIX.new" -name __pycache__ -prune -exec rm -rf {} +
 chmod 755 "$PREFIX.new/bin/"* "$PREFIX.new/remove.sh"
 rm -rf "$PREFIX"
@@ -263,7 +298,7 @@ ln -sf "$PREFIX/bin/local-repo-apt" /usr/local/sbin/local-repo-apt
 
 cli() {
     (cd "$PREFIX/portal" && runuser -u localrepo -- env LR_DATA="$DATA" LR_STATE="$STATE" LR_ETC="$ETC" \
-        LR_PASSWORD="${LR_PASSWORD:-}" LR_MUST_CHANGE="${LR_MUST_CHANGE:-0}" python3 -m localrepo.cli "$@")
+        LR_PASSWORD="${LR_PASSWORD:-}" LR_MUST_CHANGE="${LR_MUST_CHANGE:-0}" "$PYTHON" -m localrepo.cli "$@")
 }
 
 # ---------------------------------------------------------------- secrets et comptes
@@ -375,13 +410,13 @@ SHORT_HOSTNAME=$(hostname)
 GUNICORN_FLAGS=""
 # Les versions récentes ajoutent une socket de contrôle dans le dossier de travail (confiné en lecture seule).
 # Désactiver ce canal facultatif lorsqu'il existe ; les anciennes versions gardent leurs options habituelles.
-if gunicorn --help | grep -- '--no-control-socket' >/dev/null; then GUNICORN_FLAGS="--no-control-socket"; fi
+if "$GUNICORN" --help | grep -- '--no-control-socket' >/dev/null; then GUNICORN_FLAGS="--no-control-socket"; fi
 export LRT_PORTAL_PORT="$PORTAL_PORT" LRT_HTTPS_PORT="$HTTPS_PORT" LRT_APP_PORT="$APP_PORT" LRT_DATA="$DATA" \
        LRT_HOST="$HOST" LRT_HOSTNAME="$SHORT_HOSTNAME" LRT_ADMIN_URL="$ADMIN_URL" LRT_HTTP_URL="$HTTP_URL" \
        LRT_WU_CACHE_SIZE="$WU_CACHE_SIZE" LRT_RESOLVERS="$RESOLVERS" LRT_MAX_UPLOAD="$MAX_UPLOAD" \
        LRT_BACKUP_DIR="$BACKUP_DIR" LRT_PROXY_ENV="$PROXY_ENV" LRT_ALLOW_SPACE="$ALLOW_LIST" \
        LRT_FLATPAK_CACHE_SIZE="$FLATPAK_CACHE_SIZE" LRT_FLATPAK="$FLATPAK_ENABLED" LRT_GUNICORN_FLAGS="$GUNICORN_FLAGS" \
-       LRT_RPM="$RPM_ENABLED" LRT_RPM_CACHE_SIZE="$RPM_CACHE_SIZE"
+       LRT_RPM="$RPM_ENABLED" LRT_RPM_CACHE_SIZE="$RPM_CACHE_SIZE" LRT_LOG_GROUP="$LOG_GROUP" LRT_CA_BUNDLE="$CA_BUNDLE" LRT_GUNICORN="$GUNICORN"
 # Emplacements Flatpak insérés dans les deux serveurs du portail (déjà rendus).
 LRT_FLATPAK_LOCATIONS=""
 if [ "$FLATPAK_ENABLED" = 1 ]; then LRT_FLATPAK_LOCATIONS=$(render "$PREFIX/conf/nginx-flatpak-locations.conf"); fi
@@ -392,7 +427,7 @@ export LRT_RPM_LOCATIONS
 
 # ---------------------------------------------------------------- nginx
 say "Configuration de nginx"
-install -d /etc/nginx/snippets
+install -d /etc/nginx/snippets /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/nginx/modules-enabled
 { echo "# local-repo : réseaux autorisés pour les postes (--allow)."; acl "$ALLOW_LIST"; } > /etc/nginx/snippets/local-repo-clients.conf
 { echo "# local-repo : réseaux autorisés pour l'interface (--admin-allow)."; acl "$ADMIN_LIST"; } > /etc/nginx/snippets/local-repo-admin.conf
 render "$PREFIX/conf/nginx-proxy-snippet.conf" > /etc/nginx/snippets/local-repo-proxy.conf
@@ -424,6 +459,7 @@ else
     rm -f /etc/nginx/sites-enabled/local-repo-wucache.conf /etc/nginx/sites-available/local-repo-wucache.conf \
           /etc/nginx/modules-enabled/99-local-repo-stream.conf
 fi
+if [ "$PLATFORM" = rocky ]; then rocky_nginx; rocky_access; fi
 if ! nginx -t >/dev/null 2>&1; then
     nginx -t 2>&1 | grep -v -e "syntax is ok" -e "test is successful" || true
     # On retire notre configuration pour ne pas laisser nginx dans un état cassé.
@@ -438,16 +474,23 @@ fi
 
 # ---------------------------------------------------------------- apt-cacher-ng
 say "Configuration d'apt-cacher-ng"
+if [ "$PLATFORM" = debian ]; then
 ldd /usr/sbin/apt-cacher-ng | grep libwrap >/dev/null || die "apt-cacher-ng sans libwrap : impossible de garantir le filtrage des postes sur cette distribution."
+fi
 if [ ! -s "$ETC/acng-admin" ]; then
     (umask 077; echo "admin:$(python3 -c 'import secrets; print(secrets.token_urlsafe(18))')" > "$ETC/acng-admin")
 fi
 {
     echo "# Géré par local-repo (install.sh) : ne pas modifier."
     echo "AdminAuth: $(cat "$ETC/acng-admin")"
-    echo "UseWrap: 1"
+    if [ "$PLATFORM" = rocky ]; then
+        echo "UseWrap: 0"
+        echo "BindAddress: 127.0.0.1"
+        echo "Port: 23142"
+    else echo "UseWrap: 1"; fi
     if [ -n "$UPSTREAM_PROXY" ]; then echo "Proxy: $UPSTREAM_PROXY"; fi
 } > /etc/apt-cacher-ng/zz-local-repo.conf
+if [ "$PLATFORM" = debian ]; then
 # Filtrage par apt-cacher-ng lui-même (tcpwrappers) : fonctionne aussi là où systemd ne peut pas filtrer (LXC).
 WRAP_NETS=$(python3 -c '
 import ipaddress, sys
@@ -462,6 +505,7 @@ for f in /etc/hosts.allow /etc/hosts.deny; do
 done
 echo "apt-cacher-ng: $WRAP_NETS # local-repo" >> /etc/hosts.allow
 echo "apt-cacher-ng: ALL # local-repo" >> /etc/hosts.deny
+fi
 chown root:apt-cacher-ng /etc/apt-cacher-ng/zz-local-repo.conf
 chmod 640 /etc/apt-cacher-ng/zz-local-repo.conf
 if [ "$CONTAINER" = 0 ]; then
@@ -489,6 +533,9 @@ cp "$PREFIX/conf/local-repo-stats.service" "$PREFIX/conf/local-repo-stats.timer"
    "$PREFIX/conf/local-repo-nginx.service" "$PREFIX/conf/local-repo-nginx.path" \
    "$PREFIX/conf/local-repo-backup.service" "$PREFIX/conf/local-repo-backup.timer" /etc/systemd/system/
 systemctl daemon-reload
+if [ "$PLATFORM" = rocky ] && [ "$OS_MAJOR" = 10 ]; then
+    systemctl enable --now local-repo-acng-maintenance.timer >/dev/null 2>&1
+fi
 systemctl enable apt-cacher-ng nginx >/dev/null 2>&1
 systemctl restart apt-cacher-ng || die "apt-cacher-ng ne démarre pas (journalctl -u apt-cacher-ng)."
 if systemctl is-active -q nginx; then
@@ -511,6 +558,9 @@ for _ in $(seq 1 30); do
     sleep 0.5
 done
 curl -fsk --connect-timeout 2 --max-time 5 "https://127.0.0.1:$HTTPS_PORT/healthz" >/dev/null || die "le portail ne répond pas (journalctl -u local-repo-portal)."
+systemctl is-active --quiet apt-cacher-ng nginx local-repo-portal || die "un service ne reste pas actif (journalctl -u apt-cacher-ng -u nginx -u local-repo-portal)."
+cache_status=$(curl -s --connect-timeout 2 --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:3142/acng-report.html) || die "le cache APT ne répond pas."
+case "$cache_status" in 200|401) ;; *) die "le cache APT ne répond pas correctement (HTTP $cache_status)." ;; esac
 fi
 
 # ---------------------------------------------------------------- résumé

@@ -1,5 +1,13 @@
 # Journal des versions
 
+## 1.6.0 — 2026-10-14
+
+- Installation native du serveur complet sur Rocky Linux 9 et 10 avec le même `install.sh` : DNF, EPEL/CRB, nginx, cache APT, dépôts APT/RPM, Flatpak et Windows Update.
+- SELinux conservé actif, service firewalld dédié si le pare-feu tourne, filtrage du cache APT par nginx avec backend en boucle locale.
+- Rocky 10 : cache APT compilé depuis les sources Debian 3.7.5-1.3 avec correctifs et empreintes figées.
+- Désinstallation adaptée à DNF, restauration des réglages SELinux, du pare-feu et de nginx ajoutés par l’application.
+- Tests du serveur dans des VM Rocky 9/10, ajoutés à la CI ; installation compatible avec une umask restrictive.
+
 ## 1.5.1 — 2026-10-14
 
 - Vue d'ensemble, *Brancher un poste* : un onglet par type de poste (Debian / Ubuntu ; Rocky Linux,

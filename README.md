@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/ShaNouhAr/local-repo/actions/workflows/ci.yml/badge.svg)](https://github.com/ShaNouhAr/local-repo/actions/workflows/ci.yml)
 
-Serveur de dépôts et de caches pour un réseau d'entreprise, installé en une commande sur Debian ou Ubuntu
+Serveur de dépôts et de caches pour un réseau d'entreprise, installé en une commande sur Debian, Ubuntu ou Rocky Linux
 (installation native, recommandée), dans un **conteneur LXC Proxmox VE** ou avec **Docker Compose** :
 
 - **Paquets Linux** : cache [apt-cacher-ng](https://www.unix-ag.uni-kl.de/~bloch/acng/) pour Debian / Ubuntu
@@ -29,10 +29,16 @@ cd local-repo
 sudo ./install.sh
 ```
 
-Debian 12 / 13, Ubuntu 22.04 / 24.04 / 26.04 (validations serveur en amd64). L'installation affiche l'adresse de l'interface
+Debian 12 / 13, Ubuntu 22.04 / 24.04 / 26.04 et Rocky Linux 9 / 10 (validations serveur en amd64). L'installation affiche l'adresse de l'interface
 (`https://<ip>:8443`), l'empreinte de l'autorité de certification et le mot de passe initial du compte
 `admin` (à changer à la première connexion). Le script est relançable : il sert aussi à mettre à jour
 (`git pull && sudo ./install.sh`) et à reconfigurer.
+
+Sur Rocky Linux, la même commande détecte le système et utilise DNF avec EPEL et CRB. SELinux reste
+actif ; les contextes et les ports nécessaires sont configurés. Si firewalld tourne déjà, une règle de
+service dédiée est ajoutée ; les réseaux autorisés restent contrôlés par `--allow` et `--admin-allow`.
+Rocky 10 compile le cache APT depuis une version des sources Debian avec ses correctifs, vérifiée par
+SHA-256 (ce composant manque dans EPEL 10). Rocky 8 est pris en charge comme poste client, pas comme serveur.
 
 Options principales (toutes : `sudo ./install.sh --help`) :
 

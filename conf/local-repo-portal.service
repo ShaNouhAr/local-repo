@@ -7,7 +7,7 @@ Wants=network-online.target
 [Service]
 User=localrepo
 Group=localrepo
-SupplementaryGroups=adm
+SupplementaryGroups=@LOG_GROUP@
 Environment=LR_DATA=@DATA@
 Environment=LR_STATE=/var/lib/local-repo
 Environment=LR_ETC=/etc/local-repo
@@ -21,7 +21,7 @@ Environment=LR_RPM=@RPM@
 Environment=TMPDIR=@DATA@/.tmp
 @PROXY_ENV@
 WorkingDirectory=/opt/local-repo/portal
-ExecStart=/usr/bin/gunicorn @GUNICORN_FLAGS@ --workers 1 --threads 8 --timeout 120 --bind 127.0.0.1:@APP_PORT@ --access-logfile - --access-logformat "%%(h)s %%(m)s %%(U)s %%(s)s" app:app
+ExecStart=@GUNICORN@ @GUNICORN_FLAGS@ --workers 1 --threads 8 --timeout 120 --bind 127.0.0.1:@APP_PORT@ --access-logfile - --access-logformat "%%(h)s %%(m)s %%(U)s %%(s)s" app:app
 Restart=always
 RestartSec=3
 

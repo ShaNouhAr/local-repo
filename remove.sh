@@ -27,6 +27,10 @@ for arg in "$@"; do
 done
 
 DATA=/srv/local-repo
+ACNG_SOURCE=0
+ACNG_USER_CREATED=0
+[ -d /usr/local/lib/local-repo/acng ] && ACNG_SOURCE=1
+[ -f "$STATE/rocky-acng-user-created" ] && ACNG_USER_CREATED=1
 # shellcheck disable=SC1091
 [ -f "$ETC/local-repo.conf" ] && . "$ETC/local-repo.conf"
 cd /
@@ -57,6 +61,11 @@ done
 systemctl daemon-reload
 
 say "Configuration nginx"
+if [ -f "$STATE/nginx-rocky-original.conf" ]; then
+    # shellcheck source=lib/rocky.sh
+    . "$PREFIX/lib/rocky.sh"
+    rocky_remove
+fi
 rm -f /etc/nginx/sites-enabled/local-repo-portal.conf /etc/nginx/sites-available/local-repo-portal.conf \
       /etc/nginx/sites-enabled/local-repo-wucache.conf /etc/nginx/sites-available/local-repo-wucache.conf \
       /etc/nginx/modules-enabled/99-local-repo-stream.conf /etc/nginx/snippets/local-repo-clients.conf \
@@ -74,8 +83,15 @@ if [ -f "$STATE/installed-packages" ]; then
 fi
 if [ ${#PKGS[@]} -gt 0 ]; then
     say "Désinstallation des paquets : ${PKGS[*]}"
-    DEBIAN_FRONTEND=noninteractive apt-get purge -y -q "${PKGS[@]}" >/dev/null || true
-    DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y -q >/dev/null || true
+    # EPEL peut fournir apt-get sur Rocky : choisir d'après le système, jamais d'après sa présence.
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    if [ "$ID" = rocky ]; then
+        dnf remove -y --setopt=clean_requirements_on_remove=False "${PKGS[@]}" >/dev/null
+    else
+        DEBIAN_FRONTEND=noninteractive apt-get purge -y -q "${PKGS[@]}" >/dev/null || true
+        DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y -q >/dev/null || true
+    fi
 fi
 if systemctl is-active -q nginx 2>/dev/null; then
     if nginx -t >/dev/null 2>&1; then systemctl reload nginx; fi
@@ -91,9 +107,10 @@ if [ "$PURGE" = 1 ]; then
     rm -rf "$DATA" "$STATE" "$ETC"
     rm -f /var/log/nginx/local-repo-*.log* /var/log/local-repo-install.log
     # Cache et journaux d'apt-cacher-ng seulement s'il avait été installé par local-repo.
-    if printf '%s\n' "${PKGS[@]}" | grep -qx apt-cacher-ng; then
+    if [ "$ACNG_SOURCE" = 1 ] || printf '%s\n' "${PKGS[@]}" | grep -qx apt-cacher-ng; then
         rm -rf /var/cache/apt-cacher-ng /var/log/apt-cacher-ng
     fi
+    if [ "$ACNG_USER_CREATED" = 1 ]; then userdel apt-cacher-ng; fi
     userdel localrepo 2>/dev/null || true
     BACKUP_DIR=${BACKUP_DIR:-/var/backups/local-repo}
     if [ -d "$BACKUP_DIR" ]; then

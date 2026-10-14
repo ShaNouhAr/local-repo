@@ -12,4 +12,4 @@ cd /opt/local-repo/portal
 args=(apt-repo "${@:-list}")
 if [ "${1:-}" = rebuild ]; then args=(rebuild-apt); fi
 exec runuser -u localrepo -- env LR_DATA="$DATA" LR_STATE=/var/lib/local-repo LR_ETC=/etc/local-repo \
-    python3 -m localrepo.cli "${args[@]}"
+    "${PYTHON:-python3}" -m localrepo.cli "${args[@]}"

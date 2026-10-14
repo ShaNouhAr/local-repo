@@ -63,11 +63,25 @@ def _cert_date(text):
 
 
 def package_version(name):
+    if name == "python3-flask":
+        from importlib.metadata import version
+        return version("Flask")
     try:
         out = subprocess.run(["dpkg-query", "-W", "-f=${Version}", name], capture_output=True, text=True, timeout=5)
-        return out.stdout.strip() if out.returncode == 0 else ""
+        if out.returncode == 0:
+            return out.stdout.strip()
     except (OSError, subprocess.SubprocessError):
-        return ""
+        pass
+    try:
+        out = subprocess.run(["rpm", "-q", "--qf", "%{VERSION}-%{RELEASE}", name], capture_output=True, text=True, timeout=5)
+        if out.returncode == 0:
+            return out.stdout.strip()
+        if name == "apt-cacher-ng":
+            with open("/usr/local/lib/local-repo/acng/version") as f:
+                return f.read().strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return ""
 
 
 def list_backups():
