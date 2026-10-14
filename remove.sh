@@ -93,6 +93,7 @@ if [ ${#PKGS[@]} -gt 0 ]; then
         DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y -q >/dev/null || true
     fi
 fi
+if [ "$PACKAGE_RECORD" = "$ETC/install-state/installed-packages" ]; then rm -f "$PACKAGE_RECORD"; fi
 if systemctl is-active -q nginx 2>/dev/null; then
     if nginx -t >/dev/null 2>&1; then systemctl reload nginx; fi
 fi

@@ -33,7 +33,7 @@ trap failure_log EXIT
 ./install.sh --host 10.0.2.15 --password "$PW" > "$install_log" 2>&1
 CA=/etc/local-repo/tls/ca.crt
 BASE=https://127.0.0.1:8443
-health() { curl -fsS --cacert "$CA" "$BASE/healthz" | grep -qx ok; }
+health() { curl -fsS --cacert "$CA" "$BASE/healthz" | grep -x ok > /dev/null; }
 health
 if runuser -u localrepo -- test -r /etc/local-repo/install-state/nginx-rocky-original.conf; then
     echo 'Les métadonnées de désinstallation doivent être réservées à root' >&2; exit 1
@@ -54,12 +54,15 @@ echo serveur-rocky > "$work/deb/usr/share/lr-native-e2e/content"
 dpkg-deb --build --root-owner-group "$work/deb" "$work/lr-native-e2e.deb"
 /usr/local/sbin/local-repo-apt add debian trixie 13
 python3 tests/e2e_portal.py "$BASE" "$PW" "$work/lr-native-e2e.deb" linux debian/trixie
-curl -fsS --cacert "$CA" "$BASE/apt/repositories/debian/trixie/Packages" | grep -q 'Package: lr-native-e2e'
-curl -fsS --cacert "$CA" "$BASE/linux/repositories/debian/trixie.sources" | grep -q 'Signed-By:'
+curl -fsS --cacert "$CA" "$BASE/apt/repositories/debian/trixie/Packages" | grep 'Package: lr-native-e2e' > /dev/null
+curl -fsS --cacert "$CA" "$BASE/linux/repositories/debian/trixie.sources" | grep 'Signed-By:' > /dev/null
 curl -fsS --proxy http://127.0.0.1:3142 http://deb.debian.org/debian/dists/stable/Release -o "$work/debian-release"
 grep -q '^Origin: Debian' "$work/debian-release"
 
 major=${VERSION_ID%%.*}
+# Sortie HTTPS de nginx, bundle de CA Rocky et écriture du cache sous SELinux.
+curl -fsS --max-time 90 --cacert "$CA" "$BASE/rpmcache/rocky/$major/BaseOS/x86_64/os/repodata/repomd.xml" -o "$work/upstream-rpm.xml"
+grep -q '<repomd' "$work/upstream-rpm.xml"
 cat > "$work/test.spec" <<EOF
 Name: lr-native-e2e
 Version: 1.0
@@ -83,13 +86,13 @@ dnf install -y --disablerepo='*' --enablerepo=local-repo lr-native-e2e
 grep -qx serveur-rocky /usr/share/lr-native-rpm/content
 dnf remove -y lr-native-e2e >/dev/null
 sh "$work/rpm-setup.sh" --remove
-curl -fsS --cacert "$CA" "$BASE/flatpak/local-repo.flatpakrepo" | grep -q 'GPGKey='
+curl -fsS --cacert "$CA" "$BASE/flatpak/local-repo.flatpakrepo" | grep 'GPGKey=' > /dev/null
 
 keys=$(sha256sum "$CA" /srv/local-repo/apt/local-repo.gpg)
 users=$(python3 -c 'import sqlite3,hashlib; c=sqlite3.connect("/var/lib/local-repo/portal.db"); print(hashlib.sha256(repr(c.execute("SELECT * FROM users").fetchall()).encode()).hexdigest())')
 ./install.sh --allow 127.0.0.1 > "$install_log" 2>&1
 [ "$(curl -sS -o /dev/null -w '%{http_code}' --interface 10.0.2.15 --cacert "$CA" https://10.0.2.15:8443/healthz)" = 403 ]
-if curl -fsS --max-time 10 --interface 10.0.2.15 --proxy http://10.0.2.15:3142 http://deb.debian.org/debian/dists/stable/Release > /dev/null; then
+if curl -fsS --max-time 10 --interface 10.0.2.15 --proxy http://10.0.2.15:3142 http://deb.debian.org/debian/dists/stable/Release > /dev/null 2>&1; then
     echo 'Le cache APT accepte un client interdit' >&2; exit 1
 fi
 ./install.sh --allow '10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7 fe80::/10' > "$install_log" 2>&1

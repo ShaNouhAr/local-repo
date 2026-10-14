@@ -60,14 +60,14 @@ grep -q "https://$HOST:8443/apt/repositories/$ID/$VERSION_CODENAME/" /etc/apt/so
 
 step "Famille Red Hat, Flatpak, Windows Update, sécurité"
 curl -fsS "https://$HOST:8443/rpm/el9/repodata/repomd.xml.asc" -o /dev/null
-curl -fsS "https://$HOST:8443/rpm/local-repo.asc" | grep -q "BEGIN PGP PUBLIC KEY BLOCK"
+curl -fsS "https://$HOST:8443/rpm/local-repo.asc" | grep "BEGIN PGP PUBLIC KEY BLOCK" > /dev/null
 curl -fsS "https://$HOST:8443/rpmcache/rocky/9/BaseOS/x86_64/os/repodata/repomd.xml" -o /dev/null
 curl -fsS "https://$HOST:8443/flatpak/repo/config" -o /dev/null
 curl -fsS "https://$HOST:8443/flathub/repo/summary.idx" -o /dev/null
 [ "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: example.com' http://127.0.0.1/)" = 403 ] || fail "relais Windows Update ouvert"
 [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3142/acng-report.html?doCount=1)" = 401 ] || fail "rapport apt-cacher-ng accessible"
 [ "$(curl -s -o /dev/null -w '%{http_code}' "http://$HOST:8088/")" = 301 ] || fail "HTTP doit renvoyer vers HTTPS"
-curl -sk -D - -o /dev/null https://127.0.0.1:8443/login | grep -qi "content-security-policy: default-src 'none'"
+curl -sk -D - -o /dev/null https://127.0.0.1:8443/login | grep -i "content-security-policy: default-src 'none'" > /dev/null
 
 step "Sauvegarde"
 dc exec -T local-repo local-repo-backup create | tee "$work/backup"

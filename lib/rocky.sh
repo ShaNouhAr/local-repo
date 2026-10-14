@@ -276,5 +276,5 @@ rocky_remove() {
         systemctl daemon-reload
     fi
     rm -rf /usr/local/lib/local-repo/venv
-    rm -f "$ROCKY_STATE"/rocky-selinux-* "$ROCKY_STATE/rocky-firewall-zones" "$ROCKY_STATE/rocky-crb-enabled" "$ROCKY_STATE/nginx-rocky-managed.sha256"
+    rm -f "$ROCKY_STATE"/rocky-selinux-* "$ROCKY_STATE/rocky-firewall-zones" "$ROCKY_STATE/rocky-crb-enabled" "$ROCKY_STATE/nginx-rocky-managed.sha256" "$ROCKY_STATE/nginx-rocky-original.conf"
 }

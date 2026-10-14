@@ -107,7 +107,7 @@ step "Contrôles de sécurité"
 [ "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: example.com' http://127.0.0.1/)" = 403 ]
 [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3142/acng-report.html?doCount=1)" = 401 ]
 curl -fsS -x http://127.0.0.1:3142 http://deb.debian.org/debian/dists/stable/Release -o /dev/null
-curl -sk -D - -o /dev/null https://127.0.0.1:8443/login | grep -qi "content-security-policy: default-src 'none'"
+curl -sk -D - -o /dev/null https://127.0.0.1:8443/login | grep -i "content-security-policy: default-src 'none'" > /dev/null
 step "Sauvegarde et restauration des dépôts / comptes / signatures"
 sudo local-repo-backup create "$work/backups"
 archive=$(sudo find "$work/backups" -name '*.tar.gz' -type f | head -1)

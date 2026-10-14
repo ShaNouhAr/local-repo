@@ -306,6 +306,7 @@ cli() {
 
 # ---------------------------------------------------------------- secrets et comptes
 say "Comptes du portail"
+(umask 077
 python3 - "$ETC/portal.secret" <<'EOF'
 import json, secrets, sys
 path = sys.argv[1]
@@ -316,6 +317,7 @@ except (OSError, ValueError):
 data.setdefault("secret_key", secrets.token_hex(32))
 json.dump(data, open(path, "w"))
 EOF
+)
 chown root:localrepo "$ETC/portal.secret"
 chmod 640 "$ETC/portal.secret"
 cli init    # migrations ; une ancienne installation à mot de passe unique devient le compte « admin »

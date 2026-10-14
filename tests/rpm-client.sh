@@ -33,7 +33,7 @@ case "$(from_repo tree)" in local-repo-baseos|local-repo-appstream) ;; *) fail "
 url=$(dnf repoquery --location tree 2>/dev/null | grep -m1 "^https://$SERVER:8443/rpmcache/")
 [ -n "$url" ] || fail "tree ne passe pas par le cache"
 curl -fsS -o /dev/null "$url"
-curl -fsS -D - -o /dev/null "$url" | grep -qi "x-local-repo-cache: HIT" || fail "paquet non servi par le cache"
+curl -fsS -D - -o /dev/null "$url" | grep -i "x-local-repo-cache: HIT" > /dev/null || fail "paquet non servi par le cache"
 
 step "EPEL via le cache"
 dnf -y -q install htop
