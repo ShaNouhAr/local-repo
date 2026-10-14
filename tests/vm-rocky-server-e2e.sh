@@ -1,5 +1,5 @@
 #!/bin/bash
-# Installation native du serveur complet sur Rocky Linux 9 et 10, VM QEMU jetables.
+# Installation native du serveur complet sur Rocky Linux 8, 9 et 10, VM QEMU jetables.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # shellcheck source=tests/lib-vm.sh
@@ -24,9 +24,9 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-if [ "$#" = 0 ]; then set -- rocky-9 rocky-10; fi
+if [ "$#" = 0 ]; then set -- rocky-8 rocky-9 rocky-10; fi
 for id in "$@"; do
-    case "$id" in rocky-9|rocky-10) ;; *) echo 'Rocky 9 ou 10 attendu' >&2; exit 1 ;; esac
+    case "$id" in rocky-8|rocky-9|rocky-10) ;; *) echo 'Rocky 8, 9 ou 10 attendu' >&2; exit 1 ;; esac
     image=$(vm_image "$ROOT/tests/rpm-platforms.json" "$id")
     VMS+=("$id")
     vm_start "$id" "$image" "$(free_port)"

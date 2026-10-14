@@ -1,18 +1,19 @@
 #!/bin/bash
-# Serveur natif Rocky 9/10 : VM jetable uniquement (installation puis purge).
+# Serveur natif Rocky 8/9/10 : VM jetable uniquement (installation puis purge).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . /etc/os-release
 [ "$ID" = rocky ]
-case "$VERSION_ID" in 9.*|10.*) ;; *) exit 1 ;; esac
+case "$VERSION_ID" in 8.*|9.*|10.*) ;; *) exit 1 ;; esac
 # Les essais locaux peuvent choisir un miroir Rocky plus rapide ; signatures RPM conservées.
 if [ -n "${LR_TEST_ROCKY_MIRROR:-}" ]; then
-    python3 - <<'PY'
+    interpreter=$(command -v python3 || echo /usr/libexec/platform-python)
+    "$interpreter" - <<'PY'
 from pathlib import Path
 import os,re
 mirror=os.environ['LR_TEST_ROCKY_MIRROR'].rstrip('/')+'/'
 assert re.fullmatch(r'https://[a-zA-Z0-9./_-]+/',mirror)
-for p in Path('/etc/yum.repos.d').glob('rocky*.repo'):
+for p in Path('/etc/yum.repos.d').glob('*.repo'):
     text=re.sub(r'^mirrorlist=', '#mirrorlist=',p.read_text(),flags=re.M)
     text=re.sub(r'^#baseurl=https?://dl.rockylinux.org/\$contentdir/', 'baseurl='+mirror,text,flags=re.M)
     p.write_text(text)
@@ -24,6 +25,9 @@ systemctl enable --now firewalld >/dev/null
 [ "$(getenforce)" = Enforcing ]
 original_nginx=$(sha256sum /etc/nginx/nginx.conf | cut -d' ' -f1)
 original_bool=$(getsebool httpd_can_network_connect)
+builder_repo=crb
+if [ "${VERSION_ID%%.*}" = 8 ]; then builder_repo=powertools; fi
+builder_enabled=$(dnf -q repolist --enabled | awk -v repo="$builder_repo" '$1 == repo {found=1} END {print found+0}')
 install_log=/tmp/native-rocky-install.log
 failure_log() {
     local rc=$?
@@ -35,6 +39,10 @@ CA=/etc/local-repo/tls/ca.crt
 BASE=https://127.0.0.1:8443
 health() { curl -fsS --cacert "$CA" "$BASE/healthz" | grep -x ok > /dev/null; }
 health
+apt_binary_stamp=""
+if [ "${VERSION_ID%%.*}" = 8 ]; then
+    apt_binary_stamp=$(stat -c '%Y:%i' /usr/local/lib/local-repo/apt/bin/apt-ftparchive)
+fi
 if runuser -u localrepo -- test -r /etc/local-repo/install-state/nginx-rocky-original.conf; then
     echo 'Les métadonnées de désinstallation doivent être réservées à root' >&2; exit 1
 fi
@@ -51,10 +59,12 @@ work=$(mktemp -d)
 mkdir -p "$work/deb/DEBIAN" "$work/deb/usr/share/lr-native-e2e"
 printf 'Package: lr-native-e2e\nVersion: 1.0\nArchitecture: all\nMaintainer: CI <ci@invalid>\nDescription: Test serveur Rocky\n' > "$work/deb/DEBIAN/control"
 echo serveur-rocky > "$work/deb/usr/share/lr-native-e2e/content"
-dpkg-deb --build --root-owner-group "$work/deb" "$work/lr-native-e2e.deb"
+dpkg-deb --build "$work/deb" "$work/lr-native-e2e.deb"
 /usr/local/sbin/local-repo-apt add debian trixie 13
 python3 tests/e2e_portal.py "$BASE" "$PW" "$work/lr-native-e2e.deb" linux debian/trixie
 curl -fsS --cacert "$CA" "$BASE/apt/repositories/debian/trixie/Packages" | grep 'Package: lr-native-e2e' > /dev/null
+curl -fsS --cacert "$CA" "$BASE/apt/repositories/debian/trixie/InRelease" -o "$work/InRelease"
+gpgv --keyring /srv/local-repo/apt/local-repo.gpg "$work/InRelease"
 curl -fsS --cacert "$CA" "$BASE/linux/repositories/debian/trixie.sources" | grep 'Signed-By:' > /dev/null
 curl -fsS --proxy http://127.0.0.1:3142 http://deb.debian.org/debian/dists/stable/Release -o "$work/debian-release"
 grep -q '^Origin: Debian' "$work/debian-release"
@@ -98,6 +108,9 @@ fi
 ./install.sh --allow '10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7 fe80::/10' > "$install_log" 2>&1
 health
 [ "$keys" = "$(sha256sum "$CA" /srv/local-repo/apt/local-repo.gpg)" ]
+if [ -n "$apt_binary_stamp" ]; then
+    [ "$apt_binary_stamp" = "$(stat -c '%Y:%i' /usr/local/lib/local-repo/apt/bin/apt-ftparchive)" ]
+fi
 [ "$users" = "$(python3 -c 'import sqlite3,hashlib; c=sqlite3.connect("/var/lib/local-repo/portal.db"); print(hashlib.sha256(repr(c.execute("SELECT * FROM users").fetchall()).encode()).hexdigest())')" ]
 backup=$(/usr/local/sbin/local-repo-backup create | awk '{print $1}')
 deb=$(find /srv/local-repo/apt/repositories/debian/trixie/pool -name '*.deb' -print -quit)
@@ -119,9 +132,11 @@ done
 [ ! -e /etc/local-repo ]
 [ ! -e /srv/local-repo ]
 [ ! -e /usr/local/lib/local-repo/acng ]
+[ ! -e /usr/local/lib/local-repo/apt ]
 rpm -q nginx firewalld >/dev/null
 [ "$original_nginx" = "$(sha256sum /etc/nginx/nginx.conf | cut -d' ' -f1)" ]
 [ "$original_bool" = "$(getsebool httpd_can_network_connect)" ]
+[ "$builder_enabled" = "$(dnf -q repolist --enabled | awk -v repo="$builder_repo" '$1 == repo {found=1} END {print found+0}')" ]
 if firewall-cmd --query-service=local-repo >/dev/null 2>&1; then exit 1; fi
 [ "$(getenforce)" = Enforcing ]
 rm -rf "$work"

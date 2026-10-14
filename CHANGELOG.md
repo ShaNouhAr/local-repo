@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 1.7.0 — 2026-10-14
+
+- Installation native du serveur sur Rocky Linux 8, avec le même `install.sh` et les mêmes fonctions que Rocky 9/10.
+- Python 3.11 isolé, dépôt PowerTools et indexeur APT 2.6.1 compilé depuis les sources Debian avec contrôle SHA-256 ; aucun remplacement du Python système.
+- Désinstallation de l’indexeur privé et restauration du dépôt PowerTools si l’installateur l’avait activé.
+- Test complet Rocky 8 ajouté à la CI, avec SELinux et firewalld actifs.
+
 ## 1.6.0 — 2026-10-14
 
 - Installation native du serveur complet sur Rocky Linux 9 et 10 avec le même `install.sh` : DNF, EPEL/CRB, nginx, cache APT, dépôts APT/RPM, Flatpak et Windows Update.

@@ -1,12 +1,16 @@
 #!/bin/bash
-# Adaptation native Rocky Linux 9/10, sourcée par install.sh (mêmes réglages et services).
+# Adaptation native Rocky Linux 8/9/10, sourcée par install.sh (mêmes réglages et services).
 ROCKY_STATE="$ETC/install-state"
 
 rocky_packages() {
-    PACKAGES=(tar xz gzip logrotate nginx nginx-mod-stream gnupg2 apt-utils dpkg curl openssl ca-certificates policycoreutils-python-utils)
-    if [ "$OS_MAJOR" = 9 ]; then PACKAGES+=(apt-cacher-ng python3.11 python3.11-pip); else
+    PACKAGES=(tar xz gzip logrotate nginx nginx-mod-stream gnupg2 dpkg curl openssl ca-certificates policycoreutils-python-utils)
+    if [ "$OS_MAJOR" != 8 ]; then PACKAGES+=(apt-utils); fi
+    if [ "$OS_MAJOR" != 10 ]; then PACKAGES+=(apt-cacher-ng python3.11 python3.11-pip); else
         PACKAGES+=(python3-pip)
         PACKAGES+=(gcc-c++ cmake make patch zlib-devel bzip2-devel xz-devel openssl-devel libevent-devel c-ares-devel)
+    fi
+    if [ "$OS_MAJOR" = 8 ]; then
+        PACKAGES+=(gcc-c++ cmake make perl libdb-devel gnutls-devel zlib-devel bzip2-devel xz-devel lz4-devel libzstd-devel libgcrypt-devel xxhash-devel dpkg-dev)
     fi
     if [ "$FLATPAK_ENABLED" = 1 ]; then PACKAGES+=(flatpak ostree); fi
     if [ "$RPM_ENABLED" = 1 ]; then PACKAGES+=(createrepo_c rpm); fi
@@ -19,9 +23,11 @@ rocky_packages() {
         fi
     done
     dnf install -y epel-release dnf-plugins-core >> "$LOG" 2>&1
-    if ! dnf config-manager --dump crb | grep -q '^enabled = 1'; then
-        dnf config-manager --set-enabled crb >> "$LOG" 2>&1
-        touch "$ROCKY_STATE/rocky-crb-enabled"
+    local builder_repo=crb
+    if [ "$OS_MAJOR" = 8 ]; then builder_repo=powertools; fi
+    if ! dnf config-manager --dump "$builder_repo" | grep -q '^enabled = 1'; then
+        dnf config-manager --set-enabled "$builder_repo" >> "$LOG" 2>&1
+        echo "$builder_repo" > "$ROCKY_STATE/rocky-builder-enabled"
     fi
     if ! dnf install -y "${PACKAGES[@]}" >> "$LOG" 2>&1; then
         tail -20 "$LOG" >&2
@@ -30,11 +36,36 @@ rocky_packages() {
     # Runtime isolé : les comptes/sauvegardes scrypt restent compatibles entre distributions.
     local runtime=/usr/local/lib/local-repo/venv
     local interpreter=python3
-    if [ "$OS_MAJOR" = 9 ]; then interpreter=python3.11; fi
+    if [ "$OS_MAJOR" != 10 ]; then interpreter=python3.11; fi
     if [ ! -x "$runtime/bin/python" ]; then "$interpreter" -m venv "$runtime"; fi
     "$runtime/bin/python" -m pip install --disable-pip-version-check --only-binary=:all: --require-hashes \
         -r "$SRC/lib/requirements-rocky.txt" >> "$LOG" 2>&1
+    if [ "$OS_MAJOR" = 8 ]; then rocky_build_apt; fi
     if [ "$OS_MAJOR" = 10 ]; then rocky_build_acng; fi
+}
+
+# shellcheck disable=SC2129 # Étapes de compilation explicites, journal commun.
+rocky_build_apt() {
+    local deps=/usr/local/lib/local-repo/apt build
+    if [ -x "$deps/bin/apt-ftparchive" ] && [ "$(cat "$deps/version" 2>/dev/null)" = 2.6.1 ]; then return; fi
+    say "Compilation de l'indexeur APT (Rocky 8, source Debian vérifiée)"
+    build=$(mktemp -d)
+    curl -fSL --retry 3 https://deb.debian.org/debian/pool/main/a/apt/apt_2.6.1.tar.xz -o "$build/apt.tar.xz" >> "$LOG" 2>&1
+    curl -fSL --retry 3 https://deb.debian.org/debian/pool/main/t/triehash/triehash_0.3.orig.tar.gz -o "$build/triehash.tar.gz" >> "$LOG" 2>&1
+    printf '%s  %s\n' 86b888c901fa2e78f1bf52a2aaa2f400ff82a472b94ff0ac6631939ee68fa6fd "$build/apt.tar.xz" \
+        289a0966c02c2008cd263d3913a8e3c84c97b8ded3e08373d63a382c71d2199c "$build/triehash.tar.gz" | sha256sum -c - >> "$LOG"
+    tar -xf "$build/apt.tar.xz" -C "$build"
+    tar -xf "$build/triehash.tar.gz" -C "$build"
+    cmake -S "$build/apt-2.6.1" -B "$build/build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$deps" \
+        -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON -DCMAKE_INSTALL_RPATH="$deps/lib" \
+        -DTRIEHASH_EXECUTABLE="$build/triehash-0.3/triehash.pl" -DWITH_DOC=OFF -DWITH_TESTS=OFF -DUSE_NLS=OFF >> "$LOG" 2>&1
+    cmake --build "$build/build" --target apt-ftparchive -j2 >> "$LOG" 2>&1
+    install -d "$deps/bin" "$deps/lib"
+    install -m 755 "$build/build/ftparchive/apt-ftparchive" "$deps/bin/apt-ftparchive"
+    cp -a "$build/build/apt-pkg/"*.so* "$build/build/apt-private/"*.so* "$deps/lib/"
+    install -m 644 "$build/apt-2.6.1/COPYING" "$deps/COPYING"
+    echo 2.6.1 > "$deps/version"
+    rm -rf "$build"
 }
 
 # shellcheck disable=SC2129 # Étapes de compilation explicites, journal commun.
@@ -193,13 +224,14 @@ rocky_access() {
             rocky_context /usr/local/lib/local-repo/acng/lib/apt-cacher-ng/acngtool bin_t /usr/local/lib/local-repo/acng/lib/apt-cacher-ng/acngtool
             restorecon /usr/local/lib/local-repo/acng/lib/apt-cacher-ng/acngtool
         fi
+        # Le runtime moderne garde les mêmes regex sur toutes les versions Rocky.
         for path in "$DATA" "$STATE/nginx" /opt/local-repo/portal/static; do
-            pattern=$(python3 -c 'import re,sys; print(re.escape(sys.argv[1])+"(/.*)?")' "$path")
+            pattern=$("$PYTHON" -c 'import re,sys; print(re.escape(sys.argv[1])+"(/.*)?")' "$path")
             rocky_context "$pattern" httpd_sys_content_t "$path"
             restorecon -R "$path"
         done
         for path in "$DATA/wucache" "$DATA/flatpakcache" "$DATA/rpmcache"; do
-            pattern=$(python3 -c 'import re,sys; print(re.escape(sys.argv[1])+"(/.*)?")' "$path")
+            pattern=$("$PYTHON" -c 'import re,sys; print(re.escape(sys.argv[1])+"(/.*)?")' "$path")
             rocky_context "$pattern" httpd_cache_t "$path"
             restorecon -R "$path"
         done
@@ -267,7 +299,13 @@ rocky_remove() {
         sed -i '/# local-repo$/d' /etc/nginx/nginx.conf
     fi
     rm -f /etc/nginx/conf.d/local-repo.conf /etc/nginx/local-repo-stream.conf
+    # Compatibilité avec les installations 1.6.0 qui utilisaient un marqueur CRB fixe.
     if [ -f "$ROCKY_STATE/rocky-crb-enabled" ]; then dnf config-manager --set-disabled crb >/dev/null; fi
+    if [ -f "$ROCKY_STATE/rocky-builder-enabled" ]; then
+        case "$(cat "$ROCKY_STATE/rocky-builder-enabled")" in
+            crb|powertools) dnf config-manager --set-disabled "$(cat "$ROCKY_STATE/rocky-builder-enabled")" >/dev/null ;;
+        esac
+    fi
     if [ -d /usr/local/lib/local-repo/acng ]; then
         systemctl disable --now local-repo-acng-maintenance.timer >/dev/null 2>&1 || true
         systemctl disable --now apt-cacher-ng >/dev/null 2>&1 || true
@@ -275,6 +313,6 @@ rocky_remove() {
         rm -rf /usr/local/lib/local-repo/acng
         systemctl daemon-reload
     fi
-    rm -rf /usr/local/lib/local-repo/venv
-    rm -f "$ROCKY_STATE"/rocky-selinux-* "$ROCKY_STATE/rocky-firewall-zones" "$ROCKY_STATE/rocky-crb-enabled" "$ROCKY_STATE/nginx-rocky-managed.sha256" "$ROCKY_STATE/nginx-rocky-original.conf"
+    rm -rf /usr/local/lib/local-repo/venv /usr/local/lib/local-repo/apt
+    rm -f "$ROCKY_STATE"/rocky-selinux-* "$ROCKY_STATE/rocky-firewall-zones" "$ROCKY_STATE/rocky-crb-enabled" "$ROCKY_STATE/rocky-builder-enabled" "$ROCKY_STATE/nginx-rocky-managed.sha256" "$ROCKY_STATE/nginx-rocky-original.conf"
 }

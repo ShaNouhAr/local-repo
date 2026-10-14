@@ -29,16 +29,18 @@ cd local-repo
 sudo ./install.sh
 ```
 
-Debian 12 / 13, Ubuntu 22.04 / 24.04 / 26.04 et Rocky Linux 9 / 10 (validations serveur en amd64). L'installation affiche l'adresse de l'interface
+Debian 12 / 13, Ubuntu 22.04 / 24.04 / 26.04 et Rocky Linux 8 / 9 / 10 (validations serveur en amd64). L'installation affiche l'adresse de l'interface
 (`https://<ip>:8443`), l'empreinte de l'autorité de certification et le mot de passe initial du compte
 `admin` (à changer à la première connexion). Le script est relançable : il sert aussi à mettre à jour
 (`git pull && sudo ./install.sh`) et à reconfigurer.
 
-Sur Rocky Linux, la même commande détecte le système et utilise DNF avec EPEL et CRB. SELinux reste
+Sur Rocky Linux, la même commande détecte le système et utilise DNF avec EPEL et PowerTools (8) ou CRB (9/10). SELinux reste
 actif ; les contextes et les ports nécessaires sont configurés. Si firewalld tourne déjà, une règle de
 service dédiée est ajoutée ; les réseaux autorisés restent contrôlés par `--allow` et `--admin-allow`.
 Rocky 10 compile le cache APT depuis une version des sources Debian avec ses correctifs, vérifiée par
-SHA-256 (ce composant manque dans EPEL 10). Rocky 8 est pris en charge comme poste client, pas comme serveur.
+SHA-256 (ce composant manque dans EPEL 10). Rocky 8 compile uniquement l’indexeur `apt-ftparchive`
+2.6.1 depuis les sources Debian vérifiées ; il utilise Python 3.11 pour le portail, dans un environnement
+isolé. La première installation prend donc plus de temps ; les relances réutilisent les outils compilés.
 
 Options principales (toutes : `sudo ./install.sh --help`) :
 
@@ -163,8 +165,10 @@ Supervision : `https://<ip>:8443/metrics` (Prometheus) et `/healthz`.
 | Base, clé GPG, statistiques | `/var/lib/local-repo` | — |
 | Configuration, autorité et certificats | `/etc/local-repo` | — |
 
-Tout vient des dépôts officiels Debian / Ubuntu (`nginx`, `apt-cacher-ng`, `python3-flask`, `gunicorn`,
+Sur Debian / Ubuntu, les dépendances viennent des dépôts officiels (`nginx`, `apt-cacher-ng`, `python3-flask`, `gunicorn`,
 `gnupg`, `flatpak`, `ostree`, `createrepo-c`, `rpm`) : les correctifs de sécurité arrivent avec `apt upgrade`.
+Sur Rocky, les paquets système sont suivis par `dnf upgrade` ; le runtime Python isolé et les composants
+compilés sont figés et mis à jour avec les versions de local-repo.
 
 ## Sécurité
 
@@ -178,6 +182,7 @@ sudo apt-get install python3-flask apt-utils gnupg createrepo-c rpm
 python3 -m unittest discover -s tests          # portail, dépôts APT et RPM, signatures réelles
 tests/e2e.sh                                   # bout en bout, sur une machine JETABLE uniquement
 tests/vm-e2e.sh debian-13                       # VM jetable ; nécessite QEMU, genisoimage, SSH et curl
+tests/vm-rocky-server-e2e.sh rocky-8             # serveur Rocky 8 natif, SELinux et pare-feu actifs
 tests/vm-rpm-e2e.sh rocky-9                     # serveur Debian 13 + poste Rocky 9, deux VM jetables
 tests/vm-docker-e2e.sh                          # image Docker et docker compose dans une VM Debian 13 jetable
 ```
@@ -186,7 +191,9 @@ Le workflow CI lance `shellcheck`, `pyflakes` puis une VM QEMU pour chaque entr�
 [`tests/platforms.json`](tests/platforms.json) : Debian 12/13 et Ubuntu 22.04/24.04/26.04 ;
 puis, pour chaque poste de [`tests/rpm-platforms.json`](tests/rpm-platforms.json) (Rocky Linux et
 AlmaLinux 8, 9, 10), un serveur et ce poste : dépôt local, cache des dépôts officiels, EPEL et retrait ;
-enfin le déploiement Docker (construction, poste client, recréation du conteneur, sauvegarde).
+enfin le déploiement Docker (construction, poste client, recréation du conteneur, sauvegarde) et les
+serveurs natifs Rocky 8/9/10 (installation, publication APT/RPM, caches, réinstallation, sauvegarde,
+restauration et désinstallation avec SELinux et firewalld actifs).
 Il fonctionne à chaque PR/push, chaque semaine et à la demande, avec conservation des journaux.
 Les images des VM sont vérifiées par leur empreinte avant le démarrage.
 Les tests couvrent la mise à jour depuis 1.0.0 sur les systèmes déjà pris en charge, la détection du poste,

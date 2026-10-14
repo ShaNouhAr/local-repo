@@ -17,6 +17,7 @@ from .util import back, download, explain, read_stats, service_active, sha256_of
 
 _apt_lock = threading.RLock()
 LEGACY = "legacy"
+APT_FTPARCHIVE = shutil.which("apt-ftparchive") or "/usr/local/lib/local-repo/apt/bin/apt-ftparchive"
 
 
 def repository_path(repository=LEGACY):
@@ -90,7 +91,7 @@ def rebuild_apt(repository=LEGACY):
         root = repository_path(repository)
         os.makedirs(os.path.join(root, "pool"), exist_ok=True)
         env = dict(os.environ, GNUPGHOME=config.GNUPGHOME)
-        packages = subprocess.run(["apt-ftparchive", "packages", "pool"], cwd=root,
+        packages = subprocess.run([APT_FTPARCHIVE, "packages", "pool"], cwd=root,
                                   capture_output=True, check=True, timeout=120).stdout
         with tempfile.TemporaryDirectory(prefix=".metadata-", dir=root) as stage:
             with open(os.path.join(stage, "Packages"), "wb") as f:
@@ -98,7 +99,7 @@ def rebuild_apt(repository=LEGACY):
             subprocess.run(["gzip", "-9nk", "Packages"], cwd=stage, check=True, timeout=30)
             suite = "local" if repository == LEGACY else repository.split("/")[1]
             release = subprocess.run(
-                ["apt-ftparchive", "-o", "APT::FTPArchive::Release::Origin=local-repo",
+                [APT_FTPARCHIVE, "-o", "APT::FTPArchive::Release::Origin=local-repo",
                  "-o", "APT::FTPArchive::Release::Label=" + ("local-repo" if repository == LEGACY else f"local-repo {repository}"),
                  "-o", "APT::FTPArchive::Release::Suite=" + ("stable" if repository == LEGACY else suite),
                  "-o", f"APT::FTPArchive::Release::Codename={suite}", "release", "."],

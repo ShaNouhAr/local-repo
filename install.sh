@@ -58,7 +58,7 @@ CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 case "$ID" in
     debian|ubuntu) command -v apt-get >/dev/null || die "apt-get requis." ;;
     rocky)
-        case "$OS_MAJOR" in 9|10) ;; *) die "Serveur Rocky Linux 9 ou 10 requis (Rocky 8 reste pris en charge comme poste client)." ;; esac
+        case "$OS_MAJOR" in 8|9|10) ;; *) die "Serveur Rocky Linux 8, 9 ou 10 requis." ;; esac
         PLATFORM=rocky
         PACKAGE_RECORD="$ETC/install-state/installed-packages"
         PYTHON=/usr/local/lib/local-repo/venv/bin/python
