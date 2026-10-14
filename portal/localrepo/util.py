@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -97,7 +98,23 @@ def process_running(marker):
     return False
 
 
+def windows_status():
+    """État publié toutes les quelques secondes par le service Windows (lrwin.py)."""
+    try:
+        with open(os.path.join(config.STATE, "service-status.json")) as f:
+            status = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return status if time.time() - status.get("updated", 0) < 60 else {}
+
+
 def service_active(name):
+    if config.WINDOWS:
+        if name == "local-repo-portal":
+            return True
+        # Sous Windows, le cache APT est assuré par nginx (proxy sur le port 3142).
+        name = "nginx" if name == "apt-cacher-ng" else name
+        return bool(windows_status().get("services", {}).get(name))
     if config.CONTAINER:
         if name == "local-repo-portal":
             return True

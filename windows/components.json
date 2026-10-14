@@ -1,0 +1,80 @@
+{
+  "_comment": "Composants téléchargés par install.ps1 : sources officielles, empreintes SHA-256 vérifiées avant usage. nginx et GnuPG : signatures PGP des éditeurs vérifiées lors de la mise à jour de ce fichier.",
+  "python": {
+    "version": "3.14.8",
+    "url": "https://www.python.org/ftp/python/3.14.8/python-3.14.8-embed-amd64.zip",
+    "sha256": "a93abe456ab01bd96d7a085b3cdb6566b3063f4241360d114142fbdb07f0a310"
+  },
+  "nginx": {
+    "version": "1.30.5",
+    "url": "https://nginx.org/download/nginx-1.30.5.zip",
+    "sha256": "e5afe28b6a50bec92c478bfe1a4d3758206b80fb77159277bc5c4e88955c2a35"
+  },
+  "gnupg": {
+    "version": "2.5.24",
+    "url": "https://gnupg.org/ftp/gcrypt/binary/gnupg-w32-2.5.24_20260923.exe",
+    "sha256": "ea6f9dee2cccd83287432625b8b399173805add81d27067fcaf019c0c4da1ad8"
+  },
+  "winsw": {
+    "version": "2.12.0",
+    "url": "https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW.NET461.exe",
+    "sha256": "b5066b7bbdfba1293e5d15cda3caaea88fbeab35bd5b38c41c913d492aadfc4f"
+  },
+  "wheels": [
+    {
+      "name": "blinker-1.9.0-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/10/cb/f2ad4230dc2eb1a74edf38f1a38b9b52277f75bef262d8908e60d957e13c/blinker-1.9.0-py3-none-any.whl",
+      "sha256": "ba0efaa9080b619ff2f3459d1d500c57bddea4a6b424b60a91141db6fd2f08bc"
+    },
+    {
+      "name": "cffi-2.1.1-cp314-cp314-win_amd64.whl",
+      "url": "https://files.pythonhosted.org/packages/a7/06/1c3e01e3ba14c39f6d10bfbac52753b7e22259e38088e5cfe1d704918690/cffi-2.1.1-cp314-cp314-win_amd64.whl",
+      "sha256": "3222ba5d678f80a030e6afbcc33dc1ae5cb45facabb61cee2c7016b8432fde48"
+    },
+    {
+      "name": "click-8.5.0-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/58/50/6c0d534c5f134586a8e1ba4e330569e32f057e33372ae556463212fb4cd3/click-8.5.0-py3-none-any.whl",
+      "sha256": "255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360"
+    },
+    {
+      "name": "cryptography-50.0.2-cp311-abi3-win_amd64.whl",
+      "url": "https://files.pythonhosted.org/packages/9a/4f/adfc442765721292fff86d314ce385d3249d22db42295c0dd057727b60f3/cryptography-50.0.2-cp311-abi3-win_amd64.whl",
+      "sha256": "7afa5a6602a9f29af1f3a2965f831bae7c9d5d597b7cbb716d41ab3b7d89879c"
+    },
+    {
+      "name": "flask-3.1.3-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/7f/9c/34f6962f9b9e9c71f6e5ed806e0d0ff03c9d1b0b2340088a0cf4bce09b18/flask-3.1.3-py3-none-any.whl",
+      "sha256": "f4bcbefc124291925f1a26446da31a5178f9483862233b23c0c96a20701f670c"
+    },
+    {
+      "name": "itsdangerous-2.2.0-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/04/96/92447566d16df59b2a776c0fb82dbc4d9e07cd95062562af01e408583fc4/itsdangerous-2.2.0-py3-none-any.whl",
+      "sha256": "c6242fc49e35958c8b15141343aa660db5fc54d4f13a1db01a3f5891b98700ef"
+    },
+    {
+      "name": "jinja2-3.1.6-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl",
+      "sha256": "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67"
+    },
+    {
+      "name": "markupsafe-3.0.4-cp314-cp314-win_amd64.whl",
+      "url": "https://files.pythonhosted.org/packages/80/f0/5792ff768a410f93ee3f84fc19345295ffc352d2c936b424cb37e514714c/markupsafe-3.0.4-cp314-cp314-win_amd64.whl",
+      "sha256": "c1bc67752d5f21013cfe430df4062441714eab79f65a6a05e01505957e9c35fe"
+    },
+    {
+      "name": "pycparser-3.11-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/90/11/0e6f11117525ff0eec40ebac3d313376f102df93ca44ad9e893ee85e4f89/pycparser-3.11-py3-none-any.whl",
+      "sha256": "51d5a8ba2be0bbe440b99d2112604c95bbbc3c2748a64260186c541e1729cd80"
+    },
+    {
+      "name": "waitress-3.0.2-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/8d/57/a27182528c90ef38d82b636a11f606b0cbb0e17588ed205435f8affe3368/waitress-3.0.2-py3-none-any.whl",
+      "sha256": "c56d67fd6e87c2ee598b76abdd4e96cfad1f24cacdea5078d382b1f9d7b5ed2e"
+    },
+    {
+      "name": "werkzeug-3.1.9-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/a1/38/df03f564f43cec2684823f3cccae1a652ee7face1cbaa76fb223096e64d7/werkzeug-3.1.9-py3-none-any.whl",
+      "sha256": "6392e50c78460ba618e5b21f08a71f59c99ce99cdc6cf6e3dd7e6ccca8754fab"
+    }
+  ]
+}

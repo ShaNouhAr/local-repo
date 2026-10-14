@@ -3,7 +3,7 @@
 import os
 import re
 
-VERSION = "1.7.0"
+VERSION = "1.8.0"
 
 DATA = os.environ.get("LR_DATA", "/srv/local-repo")
 STATE = os.environ.get("LR_STATE", "/var/lib/local-repo")
@@ -12,6 +12,9 @@ HOST = os.environ.get("LR_HOST", "localhost")
 ACNG_PORT = os.environ.get("LR_ACNG_PORT", "3142")
 # Image Docker : supervisord à la place de systemd (voir docker/).
 CONTAINER = os.environ.get("LR_RUNTIME") == "container"
+# Serveur Windows natif : service Windows, nginx et waitress (voir windows/).
+WINDOWS = os.name == "nt" or os.environ.get("LR_RUNTIME") == "windows"
+GPG = os.environ.get("LR_GPG", "gpg")
 
 # Adresse HTTPS (interface, et postes qui font confiance à l'autorité locale).
 HTTPS_URL = os.environ.get("LR_ADMIN_URL", "https://localhost:8443").rstrip("/")
@@ -36,6 +39,8 @@ STATS_PATH = os.path.join(STATE, "stats.json")
 WU_DOMAINS_PATH = os.path.join(STATE, "wu-domains.txt")
 NGINX_MAP_DIR = os.path.join(STATE, "nginx")
 FLATPAK_ENABLED = os.environ.get("LR_FLATPAK", "1") == "1"
+# Dépôt Flatpak local : ostree n'existe pas sous Windows ; le cache Flathub y fonctionne.
+FLATPAK_LOCAL = FLATPAK_ENABLED and not WINDOWS
 FLATPAK_REPO = os.path.join(DATA, "flatpak", "repo")
 FLATHUB_URL = "https://dl.flathub.org/repo/"
 

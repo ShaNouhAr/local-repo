@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/ShaNouhAr/local-repo/actions/workflows/ci.yml/badge.svg)](https://github.com/ShaNouhAr/local-repo/actions/workflows/ci.yml)
 
-Serveur de dépôts et de caches pour un réseau d'entreprise, installé en une commande sur Debian, Ubuntu ou Rocky Linux
+Serveur de dépôts et de caches pour un réseau d'entreprise, installé sur Debian, Ubuntu, Rocky Linux ou Windows
 (installation native, recommandée), dans un **conteneur LXC Proxmox VE** ou avec **Docker Compose** :
 
 - **Paquets Linux** : cache [apt-cacher-ng](https://www.unix-ag.uni-kl.de/~bloch/acng/) pour Debian / Ubuntu
@@ -21,7 +21,7 @@ Serveur de dépôts et de caches pour un réseau d'entreprise, installé en une 
 
 ## Installation
 
-### Native (recommandée)
+### Native sur Linux
 
 ```bash
 git clone https://github.com/ShaNouhAr/local-repo.git
@@ -55,6 +55,23 @@ Options principales (toutes : `sudo ./install.sh --help`) :
 | `--no-wu`, `--no-flatpak`, `--no-rpm` | sans cache Windows Update, sans Flatpak, sans famille Red Hat |
 | `--tls-cert F --tls-key F` | certificat d'entreprise au lieu de l'autorité locale |
 | `--backup-keep N` | sauvegardes quotidiennes gardées (défaut 3, 0 = aucune) |
+
+### Native sur Windows
+
+Windows 11 Professionnel / Entreprise et Windows Server 2022 / 2025, en x64, avec PowerShell 5.1
+ou supérieur. Dans une console PowerShell **administrateur**, depuis les sources du projet :
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\windows\install.ps1
+```
+
+L'application tourne dans le service Windows `local-repo`, avec ses composants Windows natifs :
+Python, nginx et GnuPG. Aucune VM Linux, WSL, Hyper-V ou installation Docker n'est nécessaire.
+Relancer le même script met à jour le programme en conservant les comptes, les clés et les dépôts.
+
+Les dépôts APT/RPM signés, les caches APT/RPM/Flathub, le catalogue Windows et Windows Update
+sont disponibles. Le **dépôt Flatpak local** reste réservé aux serveurs Linux. Pour un réseau important,
+consulter les limites du nginx Windows et le dimensionnement dans le [guide Windows](docs/windows.md).
 
 ### Conteneur LXC sur Proxmox VE
 

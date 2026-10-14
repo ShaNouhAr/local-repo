@@ -25,7 +25,7 @@ def _run(args, timeout=600):
 
 def signing_key():
     """Empreinte de la clé GPG du dépôt (partagée avec le dépôt APT)."""
-    out = _run(["gpg", "--batch", "--with-colons", "--list-secret-keys"], timeout=30)
+    out = _run([config.GPG, "--batch", "--with-colons", "--list-secret-keys"], timeout=30)
     for line in out.splitlines():
         if line.startswith("fpr:"):
             return line.split(":")[9]
@@ -88,17 +88,20 @@ def dir_size(path):
 def flatpak():
     if not config.FLATPAK_ENABLED:
         abort(404)
-    try:
-        refs, error = list_refs(), None
-    except (RuntimeError, OSError, subprocess.SubprocessError) as e:
-        refs, error = [], str(e)
-    return render_template("flatpak.html", refs=refs, error=error, stats=read_stats(), repo_ready=repo_ready())
+    refs, error = [], None
+    if config.FLATPAK_LOCAL:
+        try:
+            refs = list_refs()
+        except (RuntimeError, OSError, subprocess.SubprocessError) as e:
+            error = str(e)
+    return render_template("flatpak.html", refs=refs, error=error, stats=read_stats(),
+                           repo_ready=config.FLATPAK_LOCAL and repo_ready(), local=config.FLATPAK_LOCAL)
 
 
 @app.route("/flatpak/upload", methods=["POST"])
 @admin_required
 def flatpak_upload():
-    if not config.FLATPAK_ENABLED:
+    if not config.FLATPAK_LOCAL:
         abort(404)
     os.makedirs(config.TMP_DIR, exist_ok=True)
     done = 0
@@ -126,6 +129,8 @@ def flatpak_upload():
 @app.route("/flatpak/delete", methods=["POST"])
 @admin_required
 def flatpak_delete():
+    if not config.FLATPAK_LOCAL:
+        abort(404)
     ref = request.form.get("ref", "")
     if not config.FLATPAK_REF_RE.match(ref):
         abort(400)

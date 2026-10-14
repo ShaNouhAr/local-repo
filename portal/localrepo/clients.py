@@ -58,14 +58,15 @@ def windows_install_script(slugs):
 def flatpak_setup():
     if not config.FLATPAK_ENABLED:
         abort(404)
-    script = render_template("flatpak-setup.sh", base=client_base(), flathub_url=config.FLATHUB_URL)
+    script = render_template("flatpak-setup.sh", base=client_base(), flathub_url=config.FLATHUB_URL,
+                             local=config.FLATPAK_LOCAL)
     return Response(script, mimetype="text/x-shellscript")
 
 
 @app.route("/flatpak/local-repo.flatpakrepo")
 def flatpak_repo_file():
     """Fichier .flatpakrepo du dépôt local : adresse (selon le protocole utilisé) et clé publique GPG."""
-    if not config.FLATPAK_ENABLED:
+    if not config.FLATPAK_LOCAL:
         abort(404)
     try:
         with open(os.path.join(config.APT_DIR, "local-repo.gpg"), "rb") as f:

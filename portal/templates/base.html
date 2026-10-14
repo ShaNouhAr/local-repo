@@ -23,7 +23,7 @@
           <div class="nav-panel">
             <a href="{{ url_for('linux') }}" {% if ep.startswith('linux') %}aria-current="page"{% endif %}>{{ nav_icon('package') }}<span><strong>Paquets APT</strong><small>Cache et dépôt local</small></span></a>
             {% if rpm_enabled %}<a href="{{ url_for('rpm') }}" {% if ep.startswith('rpm') %}aria-current="page"{% endif %}>{{ nav_icon('package') }}<span><strong>Paquets RPM</strong><small>RHEL, Rocky, AlmaLinux</small></span></a>{% endif %}
-            {% if flatpak_enabled %}<a href="{{ url_for('flatpak') }}" {% if ep.startswith('flatpak') %}aria-current="page"{% endif %}>{{ nav_icon('layers') }}<span><strong>Flatpak</strong><small>Flathub et applications internes</small></span></a>{% endif %}
+            {% if flatpak_enabled %}<a href="{{ url_for('flatpak') }}" {% if ep.startswith('flatpak') %}aria-current="page"{% endif %}>{{ nav_icon('layers') }}<span><strong>Flatpak</strong><small>{{ "Cache Flathub" if windows else "Flathub et applications internes" }}</small></span></a>{% endif %}
           </div>
         </div>
       </details>

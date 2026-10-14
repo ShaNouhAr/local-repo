@@ -119,7 +119,7 @@ def main(argv):
         import subprocess
         from . import rpmrepo
         os.makedirs(config.RPM_DIR, exist_ok=True)
-        key = subprocess.run(["gpg", "--batch", "--armor", "--export"], env=dict(os.environ, GNUPGHOME=config.GNUPGHOME),
+        key = subprocess.run([config.GPG, "--batch", "--armor", "--export"], env=dict(os.environ, GNUPGHOME=config.GNUPGHOME),
                              check=True, capture_output=True).stdout
         tmp = os.path.join(config.RPM_DIR, ".local-repo.asc.tmp")
         with open(tmp, "wb") as f:

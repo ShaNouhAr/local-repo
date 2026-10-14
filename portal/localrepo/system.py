@@ -24,10 +24,43 @@ UNITS = [
 ]
 if config.CONTAINER:
     UNITS = UNITS[:3] + [("local-repo-cron", "Tâches périodiques : taille des caches, rechargement nginx, sauvegarde")]
+if config.WINDOWS:
+    UNITS = [
+        ("local-repo-portal", "Interface et scripts clients (service Windows local-repo)"),
+        ("nginx", "HTTPS, fichiers, caches APT, RPM, Flathub et Windows Update"),
+        ("local-repo-tasks", "Tâches : taille des caches, rechargement nginx, sauvegarde quotidienne"),
+    ]
+
+
+def _cert_info_python(path):
+    """Résumé d'un certificat X.509 avec la bibliothèque cryptography (serveur Windows, sans openssl)."""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes
+    try:
+        with open(path, "rb") as f:
+            cert = x509.load_pem_x509_certificate(f.read())
+    except (OSError, ValueError):
+        return None
+
+    def when(d):
+        return {"text": d.strftime("%d/%m/%Y"),
+                "days": (d - datetime.datetime.now(datetime.timezone.utc)).days}
+    info = {"subject": cert.subject.rfc4514_string(), "issuer": cert.issuer.rfc4514_string(),
+            "start": when(cert.not_valid_before_utc), "end": when(cert.not_valid_after_utc),
+            "sha256": ":".join(f"{b:02X}" for b in cert.fingerprint(hashes.SHA256())), "san": []}
+    try:
+        san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+        info["san"] = [f"DNS:{n}" for n in san.get_values_for_type(x509.DNSName)] + \
+                      [f"IP:{n}" for n in san.get_values_for_type(x509.IPAddress)]
+    except x509.ExtensionNotFound:
+        pass
+    return info
 
 
 def cert_info(path):
     """Résumé d'un certificat X.509 (via openssl)."""
+    if config.WINDOWS:
+        return _cert_info_python(path)
     try:
         out = subprocess.run(["openssl", "x509", "-in", path, "-noout", "-subject", "-issuer", "-startdate",
                               "-enddate", "-fingerprint", "-sha256", "-ext", "subjectAltName"],
@@ -66,6 +99,9 @@ def package_version(name):
     if name == "python3-flask":
         from importlib.metadata import version
         return version("Flask")
+    if config.WINDOWS:
+        from .util import windows_status
+        return windows_status().get("versions", {}).get(name, "")
     try:
         out = subprocess.run(["dpkg-query", "-W", "-f=${Version}", name], capture_output=True, text=True, timeout=5)
         if out.returncode == 0:
@@ -106,9 +142,13 @@ def system():
         services=[(unit, desc, service_active(unit)) for unit, desc in UNITS],
         cert=cert_info(os.path.join(config.TLS_DIR, "server.crt")),
         ca=cert_info(os.path.join(config.TLS_DIR, "ca.crt")),
-        versions={"local-repo": config.VERSION, "nginx": package_version("nginx"),
-                  "apt-cacher-ng": package_version("apt-cacher-ng"), "Python": sys.version.split()[0],
-                  "Flask": package_version("python3-flask")},
+        versions=({"local-repo": config.VERSION, "nginx": package_version("nginx"),
+                   "GnuPG": package_version("gnupg"), "Python": sys.version.split()[0],
+                   "Flask": package_version("python3-flask"), "Windows": package_version("windows")}
+                  if config.WINDOWS else
+                  {"local-repo": config.VERSION, "nginx": package_version("nginx"),
+                   "apt-cacher-ng": package_version("apt-cacher-ng"), "Python": sys.version.split()[0],
+                   "Flask": package_version("python3-flask")}),
         disk=disk_usage(),
         stats=read_stats(),
         backups=list_backups(),

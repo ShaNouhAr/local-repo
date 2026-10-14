@@ -10,7 +10,7 @@ import threading
 from flask import abort, flash, render_template, request
 from werkzeug.utils import secure_filename
 
-from . import app, config
+from . import app, config, debpkg
 from .auth import admin_required, audit, login_required
 from .db import transaction
 from .util import back, download, explain, read_stats, service_active, sha256_of
@@ -18,6 +18,8 @@ from .util import back, download, explain, read_stats, service_active, sha256_of
 _apt_lock = threading.RLock()
 LEGACY = "legacy"
 APT_FTPARCHIVE = shutil.which("apt-ftparchive") or "/usr/local/lib/local-repo/apt/bin/apt-ftparchive"
+# Sans les outils Debian (serveur Windows), les index sont produits en Python (debpkg).
+DEBIAN_TOOLS = os.path.exists(APT_FTPARCHIVE) and shutil.which("dpkg-deb") is not None
 
 
 def repository_path(repository=LEGACY):
@@ -75,6 +77,8 @@ def list_debs(repository=None):
 
 
 def deb_fields(path):
+    if not DEBIAN_TOOLS:
+        return debpkg.deb_fields(path)
     out = subprocess.run(["dpkg-deb", "-f", path, "Package", "Version", "Architecture"],
                          capture_output=True, text=True, timeout=30)
     if out.returncode != 0:
@@ -91,23 +95,32 @@ def rebuild_apt(repository=LEGACY):
         root = repository_path(repository)
         os.makedirs(os.path.join(root, "pool"), exist_ok=True)
         env = dict(os.environ, GNUPGHOME=config.GNUPGHOME)
-        packages = subprocess.run([APT_FTPARCHIVE, "packages", "pool"], cwd=root,
-                                  capture_output=True, check=True, timeout=120).stdout
+        suite = "local" if repository == LEGACY else repository.split("/")[1]
+        label = "local-repo" if repository == LEGACY else f"local-repo {repository}"
+        if DEBIAN_TOOLS:
+            packages = subprocess.run([APT_FTPARCHIVE, "packages", "pool"], cwd=root,
+                                      capture_output=True, check=True, timeout=120).stdout
+        else:
+            packages = debpkg.packages_index(root)
         with tempfile.TemporaryDirectory(prefix=".metadata-", dir=root) as stage:
             with open(os.path.join(stage, "Packages"), "wb") as f:
                 f.write(packages)
-            subprocess.run(["gzip", "-9nk", "Packages"], cwd=stage, check=True, timeout=30)
-            suite = "local" if repository == LEGACY else repository.split("/")[1]
-            release = subprocess.run(
-                [APT_FTPARCHIVE, "-o", "APT::FTPArchive::Release::Origin=local-repo",
-                 "-o", "APT::FTPArchive::Release::Label=" + ("local-repo" if repository == LEGACY else f"local-repo {repository}"),
-                 "-o", "APT::FTPArchive::Release::Suite=" + ("stable" if repository == LEGACY else suite),
-                 "-o", f"APT::FTPArchive::Release::Codename={suite}", "release", "."],
-                cwd=stage, capture_output=True, check=True, timeout=60).stdout
+            if DEBIAN_TOOLS:
+                subprocess.run(["gzip", "-9nk", "Packages"], cwd=stage, check=True, timeout=30)
+                release = subprocess.run(
+                    [APT_FTPARCHIVE, "-o", "APT::FTPArchive::Release::Origin=local-repo",
+                     "-o", "APT::FTPArchive::Release::Label=" + label,
+                     "-o", "APT::FTPArchive::Release::Suite=" + ("stable" if repository == LEGACY else suite),
+                     "-o", f"APT::FTPArchive::Release::Codename={suite}", "release", "."],
+                    cwd=stage, capture_output=True, check=True, timeout=60).stdout
+            else:
+                debpkg.gzip_file(os.path.join(stage, "Packages"))
+                release = debpkg.release_file(stage, "local-repo", label,
+                                              "stable" if repository == LEGACY else suite, suite)
             with open(os.path.join(stage, "Release"), "wb") as f:
                 f.write(release)
             for args in (["--clearsign", "-o", "InRelease"], ["-abs", "-o", "Release.gpg"]):
-                subprocess.run(["gpg", "--batch", "--yes"] + args + ["Release"], cwd=stage,
+                subprocess.run([config.GPG, "--batch", "--yes"] + args + ["Release"], cwd=stage,
                                env=env, check=True, capture_output=True, timeout=60)
             for name in ("Packages", "Packages.gz", "Release", "Release.gpg", "InRelease"):
                 os.chmod(os.path.join(stage, name), 0o644)

@@ -32,10 +32,12 @@ $GET "$BASE/flathub/repo/flathub.flatpakrepo" > "$TMP"
 flatpak remote-add --system --if-not-exists flathub "$TMP"
 flatpak remote-modify --system flathub --url="$BASE/flathub/repo/"
 
+{% if local %}
 # Dépôt local de l'entreprise (clé local-repo).
 $GET "$BASE/flatpak/local-repo.flatpakrepo" > "$TMP"
 flatpak remote-add --system --if-not-exists local-repo "$TMP"
 flatpak remote-modify --system local-repo --url="$BASE/flatpak/repo/"
+{% endif %}
 
 flatpak remotes --system --show-details
 echo "Flatpak configuré pour local-repo ($BASE)."

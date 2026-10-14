@@ -13,12 +13,14 @@ import xml.etree.ElementTree as ET
 from flask import abort, flash, render_template, request
 from werkzeug.utils import secure_filename
 
-from . import app, config
+from . import app, config, rpmpkg
 from .auth import admin_required, audit, login_required
 from .db import transaction
 from .util import back, download, explain, read_stats, sha256_of
 
 _lock = threading.RLock()
+# Sans rpm ni createrepo_c (serveur Windows), lecture des paquets et métadonnées en Python (rpmpkg).
+RPM_TOOLS = shutil.which("createrepo_c") is not None and shutil.which("rpm") is not None
 _NS = {"repo": "http://linux.duke.edu/metadata/repo", "common": "http://linux.duke.edu/metadata/common"}
 
 
@@ -77,6 +79,8 @@ def list_rpms(name=None):
 
 def rpm_fields(path):
     """Champs d'un paquet binaire ; les signatures éventuelles ne sont pas vérifiées ici (clés tierces)."""
+    if not RPM_TOOLS:
+        return rpmpkg.rpm_fields(path)
     out = subprocess.run(["rpm", "-qp", "--nosignature", "--nodigest", "--qf",
                           "%{NAME}\\n%{VERSION}\\n%{RELEASE}\\n%{ARCH}\\n%{SOURCERPM}\\n", path],
                          capture_output=True, text=True, timeout=30)
@@ -98,11 +102,14 @@ def rebuild(name):
         # Dossiers de travail hors du dépôt : createrepo_c indexe tout .rpm trouvé sous la racine.
         os.makedirs(config.TMP_DIR, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix=".rpm-metadata-", dir=config.TMP_DIR) as stage:
-            subprocess.run(["createrepo_c", "--quiet", "--no-database", "--general-compress-type=gz",
-                            "--checksum=sha256", "--unique-md-filenames", "--outputdir", stage, root],
-                           check=True, capture_output=True, timeout=600)
+            if RPM_TOOLS:
+                subprocess.run(["createrepo_c", "--quiet", "--no-database", "--general-compress-type=gz",
+                                "--checksum=sha256", "--unique-md-filenames", "--outputdir", stage, root],
+                               check=True, capture_output=True, timeout=600)
+            else:
+                rpmpkg.createrepo(root, stage)
             new = os.path.join(stage, "repodata")
-            subprocess.run(["gpg", "--batch", "--yes", "--armor", "--detach-sign", "-o", "repomd.xml.asc",
+            subprocess.run([config.GPG, "--batch", "--yes", "--armor", "--detach-sign", "-o", "repomd.xml.asc",
                             "repomd.xml"], cwd=new, env=env, check=True, capture_output=True, timeout=60)
             for entry in os.listdir(new):
                 os.chmod(os.path.join(new, entry), 0o644)

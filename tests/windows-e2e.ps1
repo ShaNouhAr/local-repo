@@ -1,0 +1,66 @@
+﻿#Requires -Version 5.1
+#Requires -RunAsAdministrator
+# Machine Windows JETABLE : installation, requêtes réelles, sauvegarde, relance et désinstallation.
+[CmdletBinding()]
+param([Parameter(Mandatory = $true)][string]$Fixtures)
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+$source = Split-Path -Parent $PSScriptRoot
+$program = Join-Path $env:ProgramFiles 'local-repo'
+$root = Join-Path $env:ProgramData 'local-repo'
+if (Test-Path "$root\etc\local-repo.json") { throw 'Test réservé à une machine sans installation existante.' }
+$env:LR_E2E_PASSWORD = 'Native-E2e-' + [guid]::NewGuid().ToString()
+$password = ConvertTo-SecureString $env:LR_E2E_PASSWORD -AsPlainText -Force
+function Install {
+    & "$source\windows\install.ps1" -HostAddress 127.0.0.1 -Password $password
+    if ((Get-Service local-repo).Status -ne 'Running') { throw 'Service non démarré.' }
+}
+function Python {
+    & "$program\python\python.exe" @args
+    if ($LASTEXITCODE -ne 0) { throw "Commande Python en échec : $args" }
+}
+function Ready {
+    for ($i = 0; $i -lt 45; $i++) {
+        & curl.exe -fsk --max-time 3 https://127.0.0.1:8443/healthz 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) { return }
+        Start-Sleep 1
+    }
+    throw 'Portail indisponible.'
+}
+Install
+$env:LR_CONFIG = "$root\etc\local-repo.json"
+Python -m unittest discover -s "$source\tests" -p test_windows_runtime.py -v
+Python "$source\tests\windows_probe.py" $Fixtures
+$ca = (Get-FileHash "$root\etc\tls\ca.crt").Hash
+$secret = (Get-FileHash "$root\etc\portal.secret").Hash
+$configAcl = Get-Acl "$root\etc\local-repo.json"
+$svcRules = @($configAcl.Access | Where-Object { $_.IdentityReference -like '*\local-repo' })
+if (-not $svcRules.Count -or @($svcRules | Where-Object { $_.FileSystemRights -band [Security.AccessControl.FileSystemRights]::Write }).Count) {
+    throw 'La configuration de l''installateur doit rester en lecture seule pour le service.'
+}
+Python -m lrwin backup create
+$archive = (Get-ChildItem "$root\backups\*.tar.gz" | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+$package = Get-ChildItem "$root\data\apt\repositories\debian\native-xz\pool\*.deb" | Select-Object -First 1
+$digest = (Get-FileHash $package.FullName).Hash
+Remove-Item $package.FullName
+& "$program\local-repo.cmd" backup restore $archive
+if ($LASTEXITCODE -ne 0) { throw 'Restauration en échec.' }
+Ready
+if ((Get-FileHash $package.FullName).Hash -ne $digest) { throw 'Paquet non restauré.' }
+Install
+if ((Get-FileHash "$root\etc\tls\ca.crt").Hash -ne $ca -or (Get-FileHash "$root\etc\portal.secret").Hash -ne $secret) {
+    throw 'Une relance a changé les clés.'
+}
+& "$program\local-repo.cmd" restart
+if ($LASTEXITCODE -ne 0) { throw 'Redémarrage en échec.' }
+Ready
+& "$source\windows\remove.ps1" -Yes
+if (Get-Service local-repo -ErrorAction SilentlyContinue) { throw 'Service non désinstallé.' }
+if (-not (Test-Path $package.FullName)) { throw 'La désinstallation simple a effacé les données.' }
+Install
+if ((Get-FileHash "$root\etc\tls\ca.crt").Hash -ne $ca) { throw 'La réinstallation a changé la CA.' }
+& "$source\windows\remove.ps1" -Purge -Yes
+if ((Test-Path $root) -or (Test-Path $program)) { throw 'Purge incomplète.' }
+if (Get-NetFirewallRule -Group local-repo -ErrorAction SilentlyContinue) { throw 'Règles pare-feu restantes.' }
+Remove-Item Env:\LR_E2E_PASSWORD
+Write-Host 'Windows natif : installation, portail, APT/RPM, cache, sauvegarde, mise à jour, retrait et purge OK.'

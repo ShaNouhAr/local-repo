@@ -1,0 +1,139 @@
+"""Vérifie un serveur Windows réel par HTTPS, ses signatures et son cache APT.
+
+À lancer avec le Python embarqué, LR_E2E_PASSWORD et un dossier de paquets d'essai.
+"""
+import gzip
+import hashlib
+import http.client
+import http.cookiejar
+import http.server
+import os
+from pathlib import Path
+import re
+import ssl
+import subprocess
+import sys
+import tempfile
+import threading
+import urllib.parse
+import urllib.request
+import uuid
+import xml.etree.ElementTree as ET
+
+import lrwin
+
+cfg = lrwin.load_config()
+base = f"https://127.0.0.1:{cfg['https_port']}"
+fixtures = Path(sys.argv[1]).resolve()
+password = os.environ['LR_E2E_PASSWORD']
+context = ssl.create_default_context(cafile=str(Path(cfg['etc_dir'], 'tls', 'ca.crt')))
+opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()),
+                                   urllib.request.HTTPSHandler(context=context))
+
+
+def get(path):
+    with opener.open(base + path, timeout=90) as response:
+        return response.read()
+
+
+def csrf(page):
+    return re.search(rb'name="csrf" value="([^"]+)"', page).group(1).decode()
+
+
+def post(path, values):
+    with opener.open(base + path, urllib.parse.urlencode(values).encode(), timeout=90) as response:
+        return response.geturl(), response.read()
+
+
+def upload(page, repository, filename):
+    token = csrf(get('/' + page))
+    boundary = uuid.uuid4().hex
+    fields = {'csrf': token, 'repository': repository}
+    body = b''.join((f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n').encode()
+                    for k, v in fields.items())
+    body += (f'--{boundary}\r\nContent-Disposition: form-data; name="files"; filename="{filename.name}"\r\n'
+             'Content-Type: application/octet-stream\r\n\r\n').encode()
+    body += filename.read_bytes() + f'\r\n--{boundary}--\r\n'.encode()
+    request = urllib.request.Request(base + '/' + page + '/upload', body,
+                                    {'Content-Type': f'multipart/form-data; boundary={boundary}'})
+    with opener.open(request, timeout=120) as response:
+        result = response.read().decode()
+    messages = re.findall(r'data-flash="([^"]*)"', result)
+    assert any(m.startswith(('Paquet ajouté', 'Ajouté')) for m in messages), messages
+
+
+url, html = post('/login', {'csrf': csrf(get('/login')), 'username': 'admin', 'password': password})
+if url.endswith('/compte'):
+    changed = password + '-Changed'
+    url, html = post('/compte', {'csrf': csrf(html), 'current': password, 'new': changed, 'confirm': changed})
+assert url.rstrip('/') == base, f'Connexion refusée : {url}'
+for page in ('/', '/linux', '/rpm', '/flatpak', '/windows-apps', '/windows-update', '/systeme', '/api/status'):
+    assert get(page), page
+print('Portail HTTPS et pages authentifiées : OK')
+
+for compression in ('xz', 'gzip', 'zstd'):
+    # Des paquets identiques, encodés différemment, dans des dépôts séparés.
+    suite = 'native-' + compression
+    url, html = post('/linux/repositories', {'csrf': csrf(get('/linux')), 'distribution': 'debian',
+                                               'suite': suite, 'version': 'test'})
+    assert suite.encode() in html, 'Création dépôt APT refusée'
+    upload('linux', 'debian/' + suite, fixtures / (compression + '.deb'))
+    root = '/apt/repositories/debian/' + suite + '/'
+    packages = get(root + 'Packages')
+    assert b'Package: lr-native-e2e\n' in packages
+    assert gzip.decompress(get(root + 'Packages.gz')) == packages
+    path = re.search(rb'^Filename: (.+)$', packages, re.M).group(1).decode()
+    assert get(root + path) == (fixtures / (compression + '.deb')).read_bytes()
+    with tempfile.TemporaryDirectory() as work:
+        Path(work, 'InRelease').write_bytes(get(root + 'InRelease'))
+        subprocess.run([cfg['gpg'], '--batch', '--homedir', str(Path(cfg['state_dir'], 'gnupg')),
+                        '--verify', str(Path(work, 'InRelease'))], check=True, capture_output=True)
+print('APT gzip/xz/zstd, paquets et signatures : OK')
+
+upload('rpm', 'el9', fixtures / 'test.rpm')
+repomd = get('/rpm/el9/repodata/repomd.xml')
+ns = {'r': 'http://linux.duke.edu/metadata/repo'}
+for node in ET.fromstring(repomd).findall('r:data', ns):
+    payload = get('/rpm/el9/' + node.find('r:location', ns).get('href'))
+    assert hashlib.sha256(payload).hexdigest() == node.findtext('r:checksum', namespaces=ns)
+with tempfile.TemporaryDirectory() as work:
+    Path(work, 'repomd.xml').write_bytes(repomd)
+    Path(work, 'repomd.xml.asc').write_bytes(get('/rpm/el9/repodata/repomd.xml.asc'))
+    subprocess.run([cfg['gpg'], '--batch', '--homedir', str(Path(cfg['state_dir'], 'gnupg')), '--verify',
+                    str(Path(work, 'repomd.xml.asc')), str(Path(work, 'repomd.xml'))], check=True, capture_output=True)
+print('RPM, index et signature : OK')
+
+
+class Origin(http.server.BaseHTTPRequestHandler):
+    hits = 0
+
+    def do_GET(self):
+        type(self).hits += 1
+        body = b'local-repo-cache-test'
+        self.send_response(200)
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+origin = http.server.ThreadingHTTPServer(('127.0.0.2', 0), Origin)
+thread = threading.Thread(target=origin.serve_forever, daemon=True)
+thread.start()
+try:
+    target = f'http://127.0.0.2:{origin.server_port}/pool/{uuid.uuid4().hex}.deb'
+    for expected in ('MISS', 'HIT'):
+        connection = http.client.HTTPConnection('127.0.0.1', cfg['acng_port'], timeout=30)
+        connection.request('GET', target)
+        response = connection.getresponse()
+        assert response.status == 200
+        assert response.getheader('X-Local-Repo-Cache') == expected
+        assert response.read() == b'local-repo-cache-test'
+        connection.close()
+    assert Origin.hits == 1
+finally:
+    origin.shutdown()
+    origin.server_close()
+print('Cache APT natif MISS/HIT : OK')

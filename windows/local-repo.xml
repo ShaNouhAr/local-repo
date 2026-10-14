@@ -1,0 +1,24 @@
+<!-- Service Windows local-repo (WinSW), généré par install.ps1. -->
+<service>
+  <id>local-repo</id>
+  <name>local-repo</name>
+  <description>local-repo : portail, caches APT, RPM, Flathub et Windows Update, dépôts locaux.</description>
+  <executable>@PROGRAM@\python\python.exe</executable>
+  <arguments>-m lrwin service</arguments>
+  <workingdirectory>@PROGRAM@\portal</workingdirectory>
+  <env name="LR_CONFIG" value="@CONFIG@"/>
+  <env name="PYTHONUNBUFFERED" value="1"/>
+  <env name="PYTHONDONTWRITEBYTECODE" value="1"/>
+  <startmode>Automatic</startmode>
+  <delayedAutoStart>true</delayedAutoStart>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <onfailure action="restart" delay="60 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  <stoptimeout>40 sec</stoptimeout>
+  <logpath>@LOGS@</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>5</keepFiles>
+  </log>
+</service>

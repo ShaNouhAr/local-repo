@@ -1,5 +1,14 @@
 # Journal des versions
 
+## 1.8.0 — 2026-10-14
+
+- Serveur natif Windows 11 Professionnel / Entreprise et Windows Server 2022 / 2025 : service Windows, Python embarqué, nginx, Waitress et GnuPG, sans Linux ni Hyper-V.
+- Installateur PowerShell relançable, composants vérifiés par SHA-256, compte de service virtuel, ACL et règles du pare-feu limitées aux réseaux autorisés.
+- Dépôts APT et RPM indexés et signés sous Windows avec des lecteurs Python, comparés aux outils natifs Linux ; lecture des métadonnées sans charger tout le paquet en mémoire.
+- Cache APT nginx, caches RPM/Flathub/Windows Update et catalogue Windows ; le dépôt Flatpak local reste réservé à Linux.
+- Administration, sauvegardes SQLite, restauration avec arrêt du service, renouvellement HTTPS et désinstallation avec conservation des données ou purge explicite.
+- Tests automatiques des serveurs Windows Server 2022 et 2025, imports de paquets gzip/xz/zstd, signatures, cache et cycle de maintenance.
+
 ## 1.7.0 — 2026-10-14
 
 - Installation native du serveur sur Rocky Linux 8, avec le même `install.sh` et les mêmes fonctions que Rocky 9/10.
