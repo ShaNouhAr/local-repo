@@ -3,7 +3,7 @@
 [![CI](https://github.com/ShaNouhAr/local-repo/actions/workflows/ci.yml/badge.svg)](https://github.com/ShaNouhAr/local-repo/actions/workflows/ci.yml)
 
 Serveur de dépôts et de caches pour un réseau d'entreprise, installé en une commande sur Debian ou Ubuntu
-(installation native, recommandée) ou déployé avec **Docker Compose** :
+(installation native, recommandée), dans un **conteneur LXC Proxmox VE** ou avec **Docker Compose** :
 
 - **Paquets Linux** : cache [apt-cacher-ng](https://www.unix-ag.uni-kl.de/~bloch/acng/) pour Debian / Ubuntu
   et dépôts APT signés pour vos propres `.deb`, séparés par distribution et version.
@@ -46,6 +46,22 @@ Options principales (toutes : `sudo ./install.sh --help`) :
 | `--tls-cert F --tls-key F` | certificat d'entreprise au lieu de l'autorité locale |
 | `--backup-keep N` | sauvegardes quotidiennes gardées (défaut 3, 0 = aucune) |
 
+### Conteneur LXC sur Proxmox VE
+
+Sur n'importe quel hôte Proxmox VE 7, 8 ou 9, en root :
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/ShaNouhAr/local-repo/main/lxc/proxmox-lxc.sh
+bash proxmox-lxc.sh                                   # DHCP, 100 Go, 2 processeurs, 2 Go de mémoire
+bash proxmox-lxc.sh --ip 192.168.10.20/24 --gw 192.168.10.1 --disk 300 -- --allow "192.168.10.0/24"
+```
+
+Le script crée un conteneur Debian 13 non privilégié (Debian 12 sur Proxmox 7), choisit le stockage
+(`local-lvm`, `local-zfs`…) et le pont (`vmbr0`) disponibles, télécharge la dernière version publiée
+et y fait l'installation native ; les options après `--` sont celles d'`install.sh`. Il affiche ensuite
+l'adresse, l'empreinte de l'autorité et le mot de passe initial. Mise à jour :
+`bash proxmox-lxc.sh --ctid N --update`. Toutes les options : `bash proxmox-lxc.sh --help`.
+
 ### Avec Docker
 
 ```bash
@@ -67,7 +83,7 @@ L'installation native reste recommandée en production : elle confine chaque ser
 (détails dans [SECURITY.md](SECURITY.md)). Docker Engine 26 ou plus récent avec Compose v2 (validé avec
 les paquets `docker.io` et `docker-compose` de Debian 13).
 
-Déploiement en entreprise (réseau, GPO, proxy, sauvegardes, supervision, Docker, dépannage) :
+Déploiement en entreprise (réseau, GPO, proxy, sauvegardes, supervision, LXC, Docker, dépannage) :
 **[guide d'exploitation](docs/EXPLOITATION.md)**.
 
 ## Brancher les postes
@@ -121,6 +137,7 @@ sudo local-repo-backup create | list | restore ARCHIVE             # sauvegardes
 sudo /opt/local-repo/remove.sh [--purge]                           # désinstallation
 ```
 
+Dans un conteneur LXC, depuis l'hôte Proxmox : `pct exec N -- local-repo-user list`, etc.
 Avec Docker, les mêmes commandes passent par le conteneur : `docker compose exec local-repo local-repo-user list`,
 `docker compose exec local-repo local-repo-backup create`. Désinstallation : `docker compose down`
 (ajouter `-v` pour effacer aussi les données).

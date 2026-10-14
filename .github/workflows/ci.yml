@@ -21,7 +21,7 @@ jobs:
           persist-credentials: false
       - name: Shell et Python
         run: |
-          shellcheck -S style -x install.sh remove.sh bin/* tests/*.sh docker/entrypoint.sh docker/local-repo-cron portal/templates/setup.sh portal/templates/flatpak-setup.sh portal/templates/rpm-setup.sh
+          shellcheck -S style -x install.sh remove.sh bin/* tests/*.sh docker/entrypoint.sh docker/local-repo-cron lxc/proxmox-lxc.sh portal/templates/setup.sh portal/templates/flatpak-setup.sh portal/templates/rpm-setup.sh
           pipx run pyflakes portal tests
           docker compose config -q
       - name: Plateformes à tester

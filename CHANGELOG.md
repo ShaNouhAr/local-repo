@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 1.4.0 — 2026-10-14
+
+- **Conteneur LXC Proxmox VE** : `lxc/proxmox-lxc.sh`, à lancer sur n'importe quel hôte Proxmox VE 7, 8 ou 9,
+  crée un conteneur Debian non privilégié (stockage, pont et modèle choisis selon l'hôte, IP fixe ou DHCP,
+  VLAN) et y fait l'installation native ; options d'`install.sh` transmises après `--` ; mise à jour par
+  `--update`, version fixée par `--version`, copie locale par `--source`.
+
 ## 1.3.0 — 2026-10-14
 
 - **Déploiement Docker** (`docker compose up -d --build`), en plus de l'installation native qui reste
