@@ -21,7 +21,7 @@ case "${1:-}" in
         trap 'rm -rf "$work"' EXIT
         chown localrepo "$work"
         # Copie cohérente de la base, même pendant une écriture.
-        runuser -u localrepo -- python3 -c "import sqlite3,sys; s=sqlite3.connect(sys.argv[1]); d=sqlite3.connect(sys.argv[2]); s.backup(d); d.close()" \
+        runuser -u localrepo -- "${PYTHON:-python3}" -c "import sqlite3,sys; s=sqlite3.connect(sys.argv[1]); d=sqlite3.connect(sys.argv[2]); s.backup(d); d.close()" \
             "$STATE/portal.db" "$work/portal.db"
         name="local-repo-$(hostname)-$(date +%Y%m%d-%H%M%S).tar.gz"
         S="${STATE#/}" D="${DATA#/}"

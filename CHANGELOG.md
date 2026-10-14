@@ -5,6 +5,7 @@
 - Installation native du serveur sur Rocky Linux 8, avec le même `install.sh` et les mêmes fonctions que Rocky 9/10.
 - Python 3.11 isolé, dépôt PowerTools et indexeur APT 2.6.1 compilé depuis les sources Debian avec contrôle SHA-256 ; aucun remplacement du Python système.
 - Sélection du flux nginx 1.24 AppStream sur Rocky 8 si le nginx présent ne fournit pas `stream_ssl_preread`, nécessaire au relais Windows Update.
+- Sauvegardes SQLite exécutées avec le runtime de l’application sur Rocky 8, compatible avec la copie en ligne de la base.
 - Génération de l’autorité HTTPS compatible OpenSSL 1.1, sans extensions dupliquées, et vérification du certificat serveur par cette autorité.
 - Désinstallation de l’indexeur privé et restauration du dépôt PowerTools si l’installateur l’avait activé.
 - Test complet Rocky 8 ajouté à la CI, avec SELinux et firewalld actifs.
