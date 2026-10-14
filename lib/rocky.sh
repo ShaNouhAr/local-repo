@@ -29,6 +29,7 @@ rocky_packages() {
         dnf config-manager --set-enabled "$builder_repo" >> "$LOG" 2>&1
         echo "$builder_repo" > "$ROCKY_STATE/rocky-builder-enabled"
     fi
+    if [ "$OS_MAJOR" = 8 ]; then rocky_nginx_runtime; fi
     if ! dnf install -y "${PACKAGES[@]}" >> "$LOG" 2>&1; then
         tail -20 "$LOG" >&2
         die "installation DNF impossible (journal : $LOG)."
@@ -42,6 +43,27 @@ rocky_packages() {
         -r "$SRC/lib/requirements-rocky.txt" >> "$LOG" 2>&1
     if [ "$OS_MAJOR" = 8 ]; then rocky_build_apt; fi
     if [ "$OS_MAJOR" = 10 ]; then rocky_build_acng; fi
+}
+
+# Le nginx 1.14 par défaut de Rocky 8 est compilé sans stream_ssl_preread.
+rocky_nginx_runtime() {
+    if nginx -V 2>&1 | grep -- '--with-stream_ssl_preread_module' >/dev/null; then return; fi
+    say "Activation de nginx 1.24 depuis AppStream (relais TLS Windows Update)"
+    if [ -f /etc/nginx/nginx.conf ] && [ ! -f "$ROCKY_STATE/nginx-rocky-original.conf" ]; then
+        cp -p /etc/nginx/nginx.conf "$ROCKY_STATE/nginx-rocky-original.conf"
+    fi
+    if [ ! -f "$ROCKY_STATE/rocky-nginx-module-managed.sha256" ]; then
+        if [ -f /etc/dnf/modules.d/nginx.module ]; then
+            cp -p /etc/dnf/modules.d/nginx.module "$ROCKY_STATE/rocky-nginx-module-original"
+        fi
+    fi
+    if rpm -q nginx >/dev/null 2>&1; then
+        dnf module switch-to -y nginx:1.24 >> "$LOG" 2>&1
+    else
+        dnf module reset -y nginx >> "$LOG" 2>&1
+        dnf module enable -y nginx:1.24 >> "$LOG" 2>&1
+    fi
+    sha256sum /etc/dnf/modules.d/nginx.module | cut -d' ' -f1 > "$ROCKY_STATE/rocky-nginx-module-managed.sha256"
 }
 
 # shellcheck disable=SC2129 # Étapes de compilation explicites, journal commun.
@@ -313,6 +335,15 @@ rocky_remove() {
         rm -rf /usr/local/lib/local-repo/acng
         systemctl daemon-reload
     fi
+    # Les nginx préexistants restent sur le flux correspondant à leur mise à jour.
+    # Pour un nginx ajouté par local-repo, restaurer le choix de module initial.
+    if [ -f "$ROCKY_STATE/rocky-nginx-module-managed.sha256" ] && grep -qx nginx "$ROCKY_STATE/installed-packages" &&
+       [ "$(sha256sum /etc/dnf/modules.d/nginx.module | cut -d' ' -f1)" = "$(cat "$ROCKY_STATE/rocky-nginx-module-managed.sha256")" ]; then
+        if [ -f "$ROCKY_STATE/rocky-nginx-module-original" ]; then
+            cp -p "$ROCKY_STATE/rocky-nginx-module-original" /etc/dnf/modules.d/nginx.module
+        else rm -f /etc/dnf/modules.d/nginx.module; fi
+    fi
+    rm -f "$ROCKY_STATE"/rocky-nginx-module-*
     rm -rf /usr/local/lib/local-repo/venv /usr/local/lib/local-repo/apt
     rm -f "$ROCKY_STATE"/rocky-selinux-* "$ROCKY_STATE/rocky-firewall-zones" "$ROCKY_STATE/rocky-crb-enabled" "$ROCKY_STATE/rocky-builder-enabled" "$ROCKY_STATE/nginx-rocky-managed.sha256" "$ROCKY_STATE/nginx-rocky-original.conf"
 }

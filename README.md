@@ -40,7 +40,9 @@ service dédiée est ajoutée ; les réseaux autorisés restent contrôlés par 
 Rocky 10 compile le cache APT depuis une version des sources Debian avec ses correctifs, vérifiée par
 SHA-256 (ce composant manque dans EPEL 10). Rocky 8 compile uniquement l’indexeur `apt-ftparchive`
 2.6.1 depuis les sources Debian vérifiées ; il utilise Python 3.11 pour le portail, dans un environnement
-isolé. La première installation prend donc plus de temps ; les relances réutilisent les outils compilés.
+isolé. Si nginx ne fournit pas le relais TLS requis, l’installateur sélectionne le flux nginx 1.24
+d’AppStream ; un nginx préexistant est mis à jour en conservant sa configuration et reste sur ce flux
+après désinstallation. La première installation prend donc plus de temps ; les relances réutilisent les outils compilés.
 
 Options principales (toutes : `sudo ./install.sh --help`) :
 
