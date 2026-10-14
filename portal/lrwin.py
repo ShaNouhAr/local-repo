@@ -239,6 +239,8 @@ def render_nginx(cfg):
         "MAX_UPLOAD": cfg.get("max_upload", "8g"), "WU_CACHE_SIZE": cfg.get("wu_cache_size", "50g"),
         "FLATPAK_CACHE_SIZE": cfg.get("flatpak_cache_size", "20g"), "RPM_CACHE_SIZE": cfg.get("rpm_cache_size", "20g"),
         "APT_CACHE_SIZE": cfg.get("apt_cache_size", "50g"), "RESOLVERS": " ".join(cfg["resolvers"]),
+        "APT_SELF_HOSTS": "\n    ".join(f"{h} 1;" for h in
+                                         dict.fromkeys(n.lower() for n in ("localhost", "127.0.0.1", cfg["host"], hostname()))),
         "DNS": " ".join(cfg["dns"] or cfg["resolvers"]), "LOGDIR": _slash(cfg["log_dir"]),
         "CA_BUNDLE": _slash(write_ca_bundle(cfg)),
     }
