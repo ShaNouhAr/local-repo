@@ -30,7 +30,7 @@ DATA=/srv/local-repo
 ACNG_SOURCE=0
 ACNG_USER_CREATED=0
 [ -d /usr/local/lib/local-repo/acng ] && ACNG_SOURCE=1
-[ -f "$STATE/rocky-acng-user-created" ] && ACNG_USER_CREATED=1
+[ -f "$ETC/install-state/rocky-acng-user-created" ] && ACNG_USER_CREATED=1
 # shellcheck disable=SC1091
 [ -f "$ETC/local-repo.conf" ] && . "$ETC/local-repo.conf"
 cd /
@@ -61,7 +61,7 @@ done
 systemctl daemon-reload
 
 say "Configuration nginx"
-if [ -f "$STATE/nginx-rocky-original.conf" ]; then
+if [ -f "$ETC/install-state/nginx-rocky-original.conf" ]; then
     # shellcheck source=lib/rocky.sh
     . "$PREFIX/lib/rocky.sh"
     rocky_remove
@@ -78,9 +78,9 @@ fi
 
 # Paquets installés par local-repo uniquement (ceux déjà présents avant restent en place).
 PKGS=()
-if [ -f "$STATE/installed-packages" ]; then
-    mapfile -t PKGS < "$STATE/installed-packages"
-fi
+PACKAGE_RECORD="$STATE/installed-packages"
+if [ -f "$ETC/install-state/installed-packages" ]; then PACKAGE_RECORD="$ETC/install-state/installed-packages"; fi
+if [ -f "$PACKAGE_RECORD" ]; then mapfile -t PKGS < "$PACKAGE_RECORD"; fi
 if [ ${#PKGS[@]} -gt 0 ]; then
     say "Désinstallation des paquets : ${PKGS[*]}"
     # EPEL peut fournir apt-get sur Rocky : choisir d'après le système, jamais d'après sa présence.

@@ -30,7 +30,7 @@ case "${1:-}" in
         if [ -d "$DATA/rpm" ]; then paths+=("$D/rpm"); fi
         rc=0
         tar -czf "$work/$name" --warning=no-file-changed \
-            --exclude="$S/portal.db" --exclude="$S/portal.db-*" --exclude="$S/gnupg/S.*" \
+            --exclude=etc/local-repo/install-state --exclude="$S/portal.db" --exclude="$S/portal.db-*" --exclude="$S/gnupg/S.*" \
             --exclude="$D/win/*/.*" \
             --exclude="$D/flatpak/repo/tmp" \
             -C / "${paths[@]}" \
@@ -53,7 +53,7 @@ case "${1:-}" in
             systemctl stop local-repo-portal 2>/dev/null || true
         fi
         # La configuration propre à ce serveur (IP, ports, réseaux) est conservée ; le reste est restauré.
-        tar -xzpf "$archive" -C / --exclude=portal.db --exclude=etc/local-repo/local-repo.conf
+        tar -xzpf "$archive" -C / --exclude=portal.db --exclude=etc/local-repo/local-repo.conf --exclude=etc/local-repo/install-state
         tar -xzf "$archive" -O portal.db > "$STATE/portal.db"
         rm -f "$STATE/portal.db-wal" "$STATE/portal.db-shm"
         if id localrepo >/dev/null 2>&1; then

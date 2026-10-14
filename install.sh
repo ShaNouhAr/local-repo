@@ -34,6 +34,7 @@ PREFIX=/opt/local-repo
 ETC=/etc/local-repo
 STATE=/var/lib/local-repo
 APP_PORT=8089
+PACKAGE_RECORD="$STATE/installed-packages"
 PACKAGES=(nginx libnginx-mod-stream apt-cacher-ng apt-utils gnupg python3-flask gunicorn curl openssl ca-certificates)
 PRIVATE_NETS="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7 fe80::/10"
 
@@ -59,6 +60,7 @@ case "$ID" in
     rocky)
         case "$OS_MAJOR" in 9|10) ;; *) die "Serveur Rocky Linux 9 ou 10 requis (Rocky 8 reste pris en charge comme poste client)." ;; esac
         PLATFORM=rocky
+        PACKAGE_RECORD="$ETC/install-state/installed-packages"
         PYTHON=/usr/local/lib/local-repo/venv/bin/python
         GUNICORN=/usr/local/lib/local-repo/venv/bin/gunicorn
         NGINX_USER=nginx
@@ -84,7 +86,8 @@ fi
 # Python sert à valider la configuration : installé d'abord s'il manque (système minimal).
 if ! command -v python3 >/dev/null; then
     mkdir -p "$STATE"
-    echo python3 >> "$STATE/installed-packages"
+    if [ "$PLATFORM" = rocky ]; then install -d -m 700 -o root -g root "$ETC/install-state"; fi
+    echo python3 >> "$PACKAGE_RECORD"
     if [ "$PLATFORM" = rocky ]; then
         dnf install -y python3 >/dev/null 2>&1 || die "impossible d'installer python3."
     else
@@ -214,10 +217,10 @@ say "Installation des paquets"
 if [ "$PLATFORM" = rocky ]; then
     rocky_packages
 else
-touch "$STATE/installed-packages"
+touch "$PACKAGE_RECORD"
 for p in "${PACKAGES[@]}"; do
     if ! dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q "install ok installed"; then
-        grep -qx "$p" "$STATE/installed-packages" || echo "$p" >> "$STATE/installed-packages"
+        grep -qx "$p" "$PACKAGE_RECORD" || echo "$p" >> "$PACKAGE_RECORD"
     fi
 done
 echo "apt-cacher-ng apt-cacher-ng/tunnelenable boolean false" | debconf-set-selections
@@ -442,7 +445,7 @@ render "$PREFIX/conf/nginx-rpm-proxy-snippet.conf" > /etc/nginx/snippets/local-r
 ln -sf ../sites-available/local-repo-portal.conf /etc/nginx/sites-enabled/local-repo-portal.conf
 # Site nginx par défaut (port 80) : désactivé si nginx a été installé par local-repo,
 # ou si le cache Windows Update a besoin du port 80 ; sinon on le laisse (ou le remet) en place.
-if [ "$WU_ENABLED" = 1 ] || [ "$CONTAINER" = 1 ] || grep -qx nginx "$STATE/installed-packages"; then
+if [ "$WU_ENABLED" = 1 ] || [ "$CONTAINER" = 1 ] || grep -qx nginx "$PACKAGE_RECORD"; then
     if [ -L /etc/nginx/sites-enabled/default ]; then
         rm /etc/nginx/sites-enabled/default
         touch "$STATE/nginx-default-disabled"

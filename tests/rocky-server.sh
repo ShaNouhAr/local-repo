@@ -35,6 +35,9 @@ CA=/etc/local-repo/tls/ca.crt
 BASE=https://127.0.0.1:8443
 health() { curl -fsS --cacert "$CA" "$BASE/healthz" | grep -qx ok; }
 health
+if runuser -u localrepo -- test -r /etc/local-repo/install-state/nginx-rocky-original.conf; then
+    echo 'Les métadonnées de désinstallation doivent être réservées à root' >&2; exit 1
+fi
 systemctl is-active --quiet nginx apt-cacher-ng local-repo-portal local-repo-backup.timer local-repo-stats.timer
 if [ "${VERSION_ID%%.*}" = 10 ]; then
     systemctl is-active --quiet local-repo-acng-maintenance.timer
@@ -74,7 +77,7 @@ echo serveur-rocky > %{buildroot}/usr/share/lr-native-rpm/content
 EOF
 rpmbuild --quiet --define "_topdir $work/rpm" --define '_build_id_links none' -bb "$work/test.spec"
 python3 tests/e2e_portal.py "$BASE" "$PW" "$work/rpm/RPMS/noarch/lr-native-e2e-1.0-1.el$major.noarch.rpm" rpm "el$major"
-curl -fsS --cacert "$CA" "$BASE/rpm/setup.sh" -o "$work/rpm-setup.sh"
+curl -fsS http://127.0.0.1:8088/rpm/setup.sh -o "$work/rpm-setup.sh"
 sh "$work/rpm-setup.sh" --no-cache --trust-ca
 dnf install -y --disablerepo='*' --enablerepo=local-repo lr-native-e2e
 grep -qx serveur-rocky /usr/share/lr-native-rpm/content

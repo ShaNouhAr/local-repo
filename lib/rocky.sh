@@ -1,5 +1,6 @@
 #!/bin/bash
 # Adaptation native Rocky Linux 9/10, sourcée par install.sh (mêmes réglages et services).
+ROCKY_STATE="$ETC/install-state"
 
 rocky_packages() {
     PACKAGES=(tar xz gzip logrotate nginx nginx-mod-stream gnupg2 apt-utils dpkg curl openssl ca-certificates policycoreutils-python-utils)
@@ -9,18 +10,18 @@ rocky_packages() {
     fi
     if [ "$FLATPAK_ENABLED" = 1 ]; then PACKAGES+=(flatpak ostree); fi
     if [ "$RPM_ENABLED" = 1 ]; then PACKAGES+=(createrepo_c rpm); fi
-    mkdir -p "$STATE"
-    touch "$STATE/installed-packages"
+    install -d -m 700 -o root -g root "$ROCKY_STATE"
+    touch "$PACKAGE_RECORD"
     : > "$LOG"
     for p in epel-release dnf-plugins-core "${PACKAGES[@]}"; do
         if ! rpm -q "$p" >/dev/null 2>&1; then
-            grep -qx "$p" "$STATE/installed-packages" || echo "$p" >> "$STATE/installed-packages"
+            grep -qx "$p" "$PACKAGE_RECORD" || echo "$p" >> "$PACKAGE_RECORD"
         fi
     done
     dnf install -y epel-release dnf-plugins-core >> "$LOG" 2>&1
     if ! dnf config-manager --dump crb | grep -q '^enabled = 1'; then
         dnf config-manager --set-enabled crb >> "$LOG" 2>&1
-        touch "$STATE/rocky-crb-enabled"
+        touch "$ROCKY_STATE/rocky-crb-enabled"
     fi
     if ! dnf install -y "${PACKAGES[@]}" >> "$LOG" 2>&1; then
         tail -20 "$LOG" >&2
@@ -75,7 +76,7 @@ rocky_acng_service() {
     local deps=/usr/local/lib/local-repo/acng
     if ! id apt-cacher-ng >/dev/null 2>&1; then
         useradd --system --home-dir /var/cache/apt-cacher-ng --shell /sbin/nologin apt-cacher-ng
-        touch "$STATE/rocky-acng-user-created"
+        touch "$ROCKY_STATE/rocky-acng-user-created"
     fi
     install -d -o apt-cacher-ng -g apt-cacher-ng /var/cache/apt-cacher-ng /var/log/apt-cacher-ng
     cat > /etc/systemd/system/apt-cacher-ng.service <<EOF
@@ -131,7 +132,7 @@ rocky_nginx() {
     # Les fichiers du portail utilisent la disposition commune ; conf.d les inclut dans http{}.
     install -d /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/nginx/modules-enabled
     echo 'include /etc/nginx/sites-enabled/*.conf;' > /etc/nginx/conf.d/local-repo.conf
-    if [ ! -f "$STATE/nginx-rocky-original.conf" ]; then cp -p /etc/nginx/nginx.conf "$STATE/nginx-rocky-original.conf"; fi
+    if [ ! -f "$ROCKY_STATE/nginx-rocky-original.conf" ]; then cp -p /etc/nginx/nginx.conf "$ROCKY_STATE/nginx-rocky-original.conf"; fi
     python3 - "$WU_ENABLED" <<'PY'
 from pathlib import Path
 import sys,re
@@ -153,7 +154,7 @@ s=s.replace(line,'')
 s=s.rstrip()+'\n'+line
 p.write_text(s)
 PY
-    sha256sum /etc/nginx/nginx.conf | cut -d' ' -f1 > "$STATE/nginx-rocky-managed.sha256"
+    sha256sum /etc/nginx/nginx.conf | cut -d' ' -f1 > "$ROCKY_STATE/nginx-rocky-managed.sha256"
     # TCP : le backend APT écoute uniquement en boucle locale ; nginx filtre les clients.
     {
         if [ "$WU_ENABLED" = 1 ]; then
@@ -178,8 +179,8 @@ EOF
 rocky_access() {
     if selinuxenabled; then
         # Ne jamais désactiver SELinux ; enregistrer seulement nos ajouts pour la désinstallation.
-        if [ ! -e "$STATE/rocky-selinux-connect" ]; then
-            getsebool httpd_can_network_connect | awk '{print $3}' > "$STATE/rocky-selinux-connect"
+        if [ ! -e "$ROCKY_STATE/rocky-selinux-connect" ]; then
+            getsebool httpd_can_network_connect | awk '{print $3}' > "$ROCKY_STATE/rocky-selinux-connect"
         fi
         setsebool -P httpd_can_network_connect on
         local path pattern port
@@ -205,7 +206,7 @@ rocky_access() {
         for port in "$HTTPS_PORT" "$PORTAL_PORT" 3142; do
             if ! semanage port -l | awk '$1=="http_port_t" && $2=="tcp" {for(i=3;i<=NF;i++){gsub(/,/,"",$i);print $i}}' | grep -qx "$port"; then
                 semanage port -a -t http_port_t -p tcp "$port" >> "$LOG" 2>&1 || die "SELinux : port $port réservé à un autre service ; choisissez un autre port."
-                echo "$port" >> "$STATE/rocky-selinux-ports"
+                echo "$port" >> "$ROCKY_STATE/rocky-selinux-ports"
             fi
         done
     fi
@@ -222,7 +223,7 @@ rocky_access() {
         while read -r zone; do
             if ! firewall-cmd --permanent --zone="$zone" --query-service=local-repo >/dev/null; then
                 firewall-cmd --permanent --zone="$zone" --add-service=local-repo >> "$LOG"
-                echo "$zone" >> "$STATE/rocky-firewall-zones"
+                echo "$zone" >> "$ROCKY_STATE/rocky-firewall-zones"
             fi
         done < <(firewall-cmd --get-active-zones | awk '/^[^ ]/{print $1}')
         firewall-cmd --reload >> "$LOG"
@@ -236,7 +237,7 @@ rocky_context() {
         [ "$existing" = "$2" ] || die "SELinux : $3 possède une règle personnalisée incompatible avec $2."
     else
         semanage fcontext -a -t "$2" "$1" >> "$LOG" 2>&1
-        grep -Fxq "$1" "$STATE/rocky-selinux-contexts" 2>/dev/null || echo "$1" >> "$STATE/rocky-selinux-contexts"
+        grep -Fxq "$1" "$ROCKY_STATE/rocky-selinux-contexts" 2>/dev/null || echo "$1" >> "$ROCKY_STATE/rocky-selinux-contexts"
     fi
     if ! matchpathcon -n "$3" | grep -q ":$2:"; then
         die "SELinux : $3 possède une règle personnalisée incompatible avec $2."
@@ -245,28 +246,28 @@ rocky_context() {
 
 rocky_remove() {
     local port pattern zone
-    if [ -f "$STATE/rocky-firewall-zones" ] && systemctl is-active -q firewalld; then
-        while read -r zone; do firewall-cmd --permanent --zone="$zone" --remove-service=local-repo >/dev/null; done < "$STATE/rocky-firewall-zones"
+    if [ -f "$ROCKY_STATE/rocky-firewall-zones" ] && systemctl is-active -q firewalld; then
+        while read -r zone; do firewall-cmd --permanent --zone="$zone" --remove-service=local-repo >/dev/null; done < "$ROCKY_STATE/rocky-firewall-zones"
         rm -f /etc/firewalld/services/local-repo.xml
         firewall-cmd --reload >/dev/null
     fi
-    if [ -f "$STATE/rocky-selinux-ports" ]; then
-        while read -r port; do semanage port -d -p tcp "$port"; done < "$STATE/rocky-selinux-ports"
+    if [ -f "$ROCKY_STATE/rocky-selinux-ports" ]; then
+        while read -r port; do semanage port -d -p tcp "$port"; done < "$ROCKY_STATE/rocky-selinux-ports"
     fi
-    if [ -f "$STATE/rocky-selinux-contexts" ]; then
-        while read -r pattern; do semanage fcontext -d "$pattern"; done < "$STATE/rocky-selinux-contexts"
+    if [ -f "$ROCKY_STATE/rocky-selinux-contexts" ]; then
+        while read -r pattern; do semanage fcontext -d "$pattern"; done < "$ROCKY_STATE/rocky-selinux-contexts"
         restorecon -R "$DATA" "$STATE/nginx" /opt/local-repo/portal/static
     fi
-    if [ -f "$STATE/rocky-selinux-connect" ]; then
-        setsebool -P httpd_can_network_connect "$(cat "$STATE/rocky-selinux-connect")"
+    if [ -f "$ROCKY_STATE/rocky-selinux-connect" ]; then
+        setsebool -P httpd_can_network_connect "$(cat "$ROCKY_STATE/rocky-selinux-connect")"
     fi
-    if [ -f "$STATE/nginx-rocky-managed.sha256" ] && [ "$(sha256sum /etc/nginx/nginx.conf | cut -d' ' -f1)" = "$(cat "$STATE/nginx-rocky-managed.sha256")" ]; then
-        cp -p "$STATE/nginx-rocky-original.conf" /etc/nginx/nginx.conf
+    if [ -f "$ROCKY_STATE/nginx-rocky-managed.sha256" ] && [ "$(sha256sum /etc/nginx/nginx.conf | cut -d' ' -f1)" = "$(cat "$ROCKY_STATE/nginx-rocky-managed.sha256")" ]; then
+        cp -p "$ROCKY_STATE/nginx-rocky-original.conf" /etc/nginx/nginx.conf
     else
         sed -i '/# local-repo$/d' /etc/nginx/nginx.conf
     fi
     rm -f /etc/nginx/conf.d/local-repo.conf /etc/nginx/local-repo-stream.conf
-    if [ -f "$STATE/rocky-crb-enabled" ]; then dnf config-manager --set-disabled crb >/dev/null; fi
+    if [ -f "$ROCKY_STATE/rocky-crb-enabled" ]; then dnf config-manager --set-disabled crb >/dev/null; fi
     if [ -d /usr/local/lib/local-repo/acng ]; then
         systemctl disable --now local-repo-acng-maintenance.timer >/dev/null 2>&1 || true
         systemctl disable --now apt-cacher-ng >/dev/null 2>&1 || true
@@ -275,5 +276,5 @@ rocky_remove() {
         systemctl daemon-reload
     fi
     rm -rf /usr/local/lib/local-repo/venv
-    rm -f "$STATE"/rocky-selinux-* "$STATE/rocky-firewall-zones" "$STATE/rocky-crb-enabled" "$STATE/nginx-rocky-managed.sha256"
+    rm -f "$ROCKY_STATE"/rocky-selinux-* "$ROCKY_STATE/rocky-firewall-zones" "$ROCKY_STATE/rocky-crb-enabled" "$ROCKY_STATE/nginx-rocky-managed.sha256"
 }
