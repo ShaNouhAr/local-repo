@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 1.5.1 — 2026-10-14
+
+- Vue d'ensemble, *Brancher un poste* : un onglet par type de poste (Debian / Ubuntu ; Rocky Linux,
+  AlmaLinux, RHEL ; Flatpak ; Windows), chacun avec sa commande, le premier branchement et le lien vers
+  ses options. Windows précise que Windows Update passe par le DNS, sans rien installer sur le poste.
+- Onglets sur une seule ligne, défilants sur petit écran.
+
 ## 1.5.0 — 2026-10-14
 
 - Mot de passe temporaire (première connexion, réinitialisation) : page dédiée, sans la navigation du
