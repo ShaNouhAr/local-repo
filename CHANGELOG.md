@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 1.5.0 — 2026-10-14
+
+- Mot de passe temporaire (première connexion, réinitialisation) : page dédiée, sans la navigation du
+  portail, avec déconnexion possible ; aucune autre page n'est accessible avant le changement.
+- Thème : OLED par défaut, bascule vers le thème clair par une icône discrète (lune) dans la barre de
+  navigation et sur les écrans de connexion ; choix mémorisé par le navigateur.
+
 ## 1.4.0 — 2026-10-14
 
 - **Conteneur LXC Proxmox VE** : `lxc/proxmox-lxc.sh`, à lancer sur n'importe quel hôte Proxmox VE 7, 8 ou 9,

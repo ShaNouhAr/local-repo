@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fr" data-theme="light">
+<html lang="fr" data-theme="oled">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -11,7 +11,7 @@
 <body>
 {% block body %}
 {% set ep = request.endpoint or '' %}
-{% from '_nav_icons.html' import nav_icon %}
+{% from '_nav_icons.html' import nav_icon, theme_toggle %}
 <header class="top">
   <div class="top-in">
     <a class="brand" href="{{ url_for('index') }}"><b>local-repo</b><span>{{ host }}</span></a>
@@ -50,6 +50,7 @@
       {% endif %}
     </nav>
     <div class="top-r">
+      {{ theme_toggle() }}
       {% if current_user %}
       <div class="userbox">
         <a href="{{ url_for('account') }}" class="{{ 'on' if ep == 'account' }}" title="{{ roles[current_user.role] }}">{{ nav_icon('user') }}<span>{{ current_user.username }}</span></a>

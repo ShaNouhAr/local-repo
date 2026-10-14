@@ -12,7 +12,7 @@ Serveur de dépôts et de caches pour un réseau d'entreprise, installé en une 
 - **Windows Update** : cache des téléchargements de mises à jour (même principe que [lancache](https://lancache.net)).
 - **Logiciels Windows** : catalogue d'installeurs (`exe`, `msi`, `msu`, `ps1`) installés en silence par PowerShell.
 - **Flatpak** : cache Flathub et dépôt Flatpak local signé pour les applications de l'entreprise.
-- **Portail web** en HTTPS : comptes nommés, journal d'audit, supervision, sauvegardes ; thème clair ou OLED.
+- **Portail web** en HTTPS : comptes nommés, journal d'audit, supervision, sauvegardes ; thème OLED (par défaut) ou clair.
 
 | | |
 |---|---|

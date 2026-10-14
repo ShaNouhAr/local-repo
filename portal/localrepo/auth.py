@@ -86,7 +86,8 @@ def login_required(view):
                 abort(401)
             return redirect(url_for("login", next=request.full_path.rstrip("?")))
         if g.user["must_change"] and request.endpoint not in ("account", "logout"):
-            flash("Choisissez un nouveau mot de passe avant de continuer.", "error")
+            if request.headers.get("X-Requested-With") == "fetch":
+                abort(403)
             return redirect(url_for("account"))
         return view(*args, **kwargs)
     return wrapper
@@ -183,10 +184,15 @@ def account():
             db().commit()
             session["pwv"] = g.user["pw_version"] + 1
             audit("compte.mot_de_passe")
-            flash("Mot de passe changé. Les autres sessions de ce compte sont fermées.", "ok")
+            if g.user["must_change"]:
+                flash("Mot de passe enregistré. Bienvenue sur local-repo.", "ok")
+            else:
+                flash("Mot de passe changé. Les autres sessions de ce compte sont fermées.", "ok")
             return redirect(url_for("index"))
         return redirect(url_for("account"))
-    return render_template("account.html", min_password=config.MIN_PASSWORD)
+    # Mot de passe temporaire : page dédiée, sans la navigation, qui ne mène nulle part avant le changement.
+    template = "password_setup.html" if g.user["must_change"] else "account.html"
+    return render_template(template, min_password=config.MIN_PASSWORD)
 
 
 # --------------------------------------------------------------------------- gestion des comptes

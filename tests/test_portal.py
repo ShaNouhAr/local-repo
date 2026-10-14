@@ -126,6 +126,12 @@ class TestAuth(unittest.TestCase):
         r = b.login("lecteur", "Temporaire-123456")
         self.assertTrue(r.headers["Location"].endswith("/compte"))
         self.assertTrue(b.c.get("/linux").headers["Location"].endswith("/compte"))
+        # Page dédiée : formulaire seul, aucun lien de navigation vers le reste du portail.
+        page = b.c.get("/compte").get_data(as_text=True)
+        self.assertIn("Choisissez votre mot de passe", page)
+        self.assertNotIn('class="nav"', page)
+        self.assertNotIn('href="/linux"', page)
+        self.assertEqual(b.c.get("/api/status", headers={"X-Requested-With": "fetch"}).status_code, 403)
         r = b.post("/compte", {"current": "Temporaire-123456", "new": "court", "confirm": "court"}, page="/compte")
         self.assertIn("au moins", b.c.get(r.headers["Location"]).get_data(as_text=True))
         b.post("/compte", {"current": "Temporaire-123456", "new": "Nouveau-Secret-2026x", "confirm": "Nouveau-Secret-2026x"},

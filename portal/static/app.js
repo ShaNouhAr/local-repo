@@ -81,19 +81,20 @@
 
   /* ---------------------------------------------------------------- thème */
 
-  var mq = window.matchMedia("(prefers-color-scheme: dark)");
-  function pref() { try { return localStorage.getItem("lr-theme") || "auto"; } catch (e) { return "auto"; } }
+  /* OLED par défaut ; la lune bascule vers le thème clair et inversement (choix mémorisé). */
   function applyTheme(p) {
-    document.documentElement.dataset.theme = p === "auto" ? (mq.matches ? "oled" : "light") : p;
-    $$(".theme button").forEach(function (b) { b.setAttribute("aria-pressed", b.dataset.theme === p); });
+    document.documentElement.dataset.theme = p;
+    $$(".theme-toggle").forEach(function (b) {
+      b.setAttribute("aria-pressed", p === "oled");
+      b.title = p === "oled" ? "Passer au thème clair" : "Passer au thème OLED";
+    });
   }
-  applyTheme(pref());
-  if (mq.addEventListener) mq.addEventListener("change", function () { if (pref() === "auto") applyTheme("auto"); });
+  applyTheme(document.documentElement.dataset.theme === "light" ? "light" : "oled");
   document.addEventListener("click", function (e) {
-    var b = e.target.closest(".theme button");
-    if (!b) return;
-    try { localStorage.setItem("lr-theme", b.dataset.theme); } catch (err) { /* navigation privée */ }
-    applyTheme(b.dataset.theme);
+    if (!e.target.closest(".theme-toggle")) return;
+    var p = document.documentElement.dataset.theme === "light" ? "oled" : "light";
+    try { localStorage.setItem("lr-theme", p); } catch (err) { /* navigation privée */ }
+    applyTheme(p);
   });
 
   /* ---------------------------------------------------------------- notifications */

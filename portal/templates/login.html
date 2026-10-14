@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Connexion{% endblock %}
 {% block body %}
+{% from '_nav_icons.html' import theme_toggle %}
 <div class="login">
   <div class="login-box">
     <div class="brand"><b>local-repo</b><span>{{ host }}</span></div>
@@ -19,9 +20,7 @@
     </form>
     <div class="foot">
       <span>local-repo {{ version }}</span>
-      <div class="theme" role="group" aria-label="Thème">
-        <button type="button" data-theme="auto">Auto</button><button type="button" data-theme="light">Clair</button><button type="button" data-theme="oled">OLED</button>
-      </div>
+      {{ theme_toggle() }}
     </div>
   </div>
 </div>
