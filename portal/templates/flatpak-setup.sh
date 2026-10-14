@@ -7,6 +7,7 @@ set -e
 [ "$(id -u)" -eq 0 ] || { echo "Lancez ce script en root (sudo)." >&2; exit 1; }
 BASE="{{ base }}"
 FLATHUB="{{ flathub_url }}"
+LOCAL='{{ "1" if local else "0" }}'
 
 if [ "${1:-}" = "--remove" ]; then
     if command -v flatpak >/dev/null 2>&1; then
@@ -32,7 +33,7 @@ $GET "$BASE/flathub/repo/flathub.flatpakrepo" > "$TMP"
 flatpak remote-add --system --if-not-exists flathub "$TMP"
 flatpak remote-modify --system flathub --url="$BASE/flathub/repo/"
 
-if [ '{{ "1" if local else "0" }}' = 1 ]; then
+if [ "$LOCAL" = 1 ]; then
 # Dépôt local de l'entreprise (clé local-repo).
 $GET "$BASE/flatpak/local-repo.flatpakrepo" > "$TMP"
 flatpak remote-add --system --if-not-exists local-repo "$TMP"
