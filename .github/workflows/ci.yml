@@ -177,7 +177,10 @@ jobs:
           path: test-results/packages
       - name: Installation, portail, signatures, caches, sauvegarde, retrait et purge
         shell: powershell
-        run: .\tests\windows-e2e.ps1 -Fixtures "$env:GITHUB_WORKSPACE\test-results\packages"
+        run: |
+          # Les images hébergées ont IIS/HTTP.sys actif ; ce runner est jetable.
+          Stop-Service HTTP -Force
+          .\tests\windows-e2e.ps1 -Fixtures "$env:GITHUB_WORKSPACE\test-results\packages"
       - name: Journaux en cas d'échec
         if: failure()
         shell: powershell
