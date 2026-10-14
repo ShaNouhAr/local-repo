@@ -140,4 +140,20 @@ rpm -q nginx firewalld >/dev/null
 if firewall-cmd --query-service=local-repo >/dev/null 2>&1; then exit 1; fi
 [ "$(getenforce)" = Enforcing ]
 rm -rf "$work"
+if [ "${VERSION_ID%%.*}" = 8 ]; then
+    # Second cas : machine sans nginx, sélection d'un flux puis restauration de son état.
+    dnf remove -y --setopt=clean_requirements_on_remove=False nginx >/dev/null
+    dnf module reset -y nginx >/dev/null
+    module_before=absent
+    if [ -f /etc/dnf/modules.d/nginx.module ]; then module_before=$(sha256sum /etc/dnf/modules.d/nginx.module | cut -d' ' -f1); fi
+    ./install.sh --host 10.0.2.15 --password "$PW" --no-flatpak --no-rpm > "$install_log" 2>&1
+    health
+    nginx -V 2>&1 | grep -- '--with-stream_ssl_preread_module' >/dev/null
+    ./remove.sh --purge -y
+    if rpm -q nginx >/dev/null; then echo 'Le nginx ajouté doit être retiré' >&2; exit 1; fi
+    module_after=absent
+    if [ -f /etc/dnf/modules.d/nginx.module ]; then module_after=$(sha256sum /etc/dnf/modules.d/nginx.module | cut -d' ' -f1); fi
+    [ "$module_before" = "$module_after" ]
+    [ "$(getenforce)" = Enforcing ]
+fi
 echo "Serveur natif Rocky $VERSION_ID : validation réussie."

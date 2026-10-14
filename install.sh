@@ -371,7 +371,10 @@ if [ -n "$TLS_CERT" ]; then
 elif [ ! -f "$TLS/custom" ]; then
     # Autorité locale (10 ans) : à importer une fois sur les postes (GPO, ou page Système).
     if [ ! -f "$TLS/ca.key" ]; then
+        # OpenSSL 1.1 de Rocky 8 cumule les extensions du fichier système et -addext.
+        # Une configuration minimale évite une CA invalide avec deux basicConstraints.
         openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 \
+            -config <(printf '[req]\ndistinguished_name=dn\n[dn]\n') \
             -subj "/O=local-repo/CN=local-repo CA ($(hostname))" \
             -addext "basicConstraints=critical,CA:TRUE,pathlen:0" -addext "keyUsage=critical,keyCertSign,cRLSign" \
             -keyout "$TLS/ca.key" -out "$TLS/ca.crt" 2>>"$LOG"
@@ -392,6 +395,8 @@ elif [ ! -f "$TLS/custom" ]; then
         rm -f "$TLS/server.csr"
         chmod 600 "$TLS/server.key"; chmod 644 "$TLS/server.crt"
     fi
+    openssl verify -CAfile "$TLS/ca.crt" "$TLS/server.crt" >> "$LOG" 2>&1 \
+        || die "le certificat serveur n'est pas vérifiable avec l'autorité locale (journal : $LOG)."
 fi
 
 # ---------------------------------------------------------------- génération des configurations

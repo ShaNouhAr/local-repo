@@ -16,7 +16,7 @@ from localrepo.db import transaction
 class TestAptRepositories(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        for command in ('apt-ftparchive', 'gpg', 'dpkg-deb'):
+        for command in (linux.APT_FTPARCHIVE, 'gpg', 'dpkg-deb'):
             if shutil.which(command) is None:
                 raise RuntimeError('Installez apt-utils et gnupg pour les tests APT.')
         os.makedirs(config.GNUPGHOME, mode=0o700, exist_ok=True)
