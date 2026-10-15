@@ -1,7 +1,7 @@
 #!/bin/sh
-# local-repo : poste de la famille Red Hat (Rocky Linux, AlmaLinux, RHEL, CentOS Stream, Oracle Linux).
+# loco : poste de la famille Red Hat (Rocky Linux, AlmaLinux, RHEL, CentOS Stream, Oracle Linux).
 #   curl -fsSL {{ base }}/rpm/setup.sh | sudo sh
-#   ... | sudo sh -s -- --trust-ca   importe l'autorité de certification local-repo et passe en HTTPS
+#   ... | sudo sh -s -- --trust-ca   importe l'autorité de certification loco et passe en HTTPS
 #   ... | sudo sh -s -- --epel       installe EPEL et le fait passer par le cache
 #   ... | sudo sh -s -- --no-cache   dépôt local seulement (dépôts du système en accès direct)
 #   ... | sudo sh -s -- --no-local   cache seulement, sans le dépôt local
@@ -14,10 +14,10 @@ set -eu
 
 BASE="{{ base }}"
 HTTPS_BASE="{{ https_url }}"
-LOCAL=/etc/yum.repos.d/local-repo.repo
-CACHE=/etc/yum.repos.d/local-repo-cache.repo
-STATE=/etc/local-repo-rpm.state
-CA=/etc/pki/ca-trust/source/anchors/local-repo.crt
+LOCAL=/etc/yum.repos.d/loco.repo
+CACHE=/etc/yum.repos.d/loco-cache.repo
+STATE=/etc/loco-rpm.state
+CA=/etc/pki/ca-trust/source/anchors/loco.crt
 
 USE_CACHE=1 USE_LOCAL=1 TRUST_CA=0 EPEL=0 REMOVE=0
 for arg in "$@"; do
@@ -31,6 +31,17 @@ for arg in "$@"; do
     esac
 done
 command -v dnf >/dev/null 2>&1 || { echo "Ce poste doit utiliser dnf (famille Red Hat 8 ou plus)." >&2; exit 1; }
+# Reprendre le journal des dépôts désactivés ; il sert aussi à restaurer le système avec --remove.
+if [ -f /etc/local-repo-rpm.state ]; then
+    [ ! -e "$STATE" ] || { echo 'Deux états de dépôts RPM existent ; migration refusée.' >&2; exit 1; }
+    mv /etc/local-repo-rpm.state "$STATE"
+fi
+rm -f /etc/yum.repos.d/local-repo.repo /etc/yum.repos.d/local-repo-cache.repo
+if [ -f /etc/pki/ca-trust/source/anchors/local-repo.crt ]; then
+    if [ ! -f "$CA" ]; then mv /etc/pki/ca-trust/source/anchors/local-repo.crt "$CA";
+    else rm -f /etc/pki/ca-trust/source/anchors/local-repo.crt; fi
+    update-ca-trust extract
+fi
 
 # Valeur de « clé » dans la section [id] d'un fichier .repo (première ligne seulement).
 get_opt() {
@@ -53,7 +64,7 @@ set_enabled() {
     rm -f "$tmp"
 }
 
-# Fichier .repo du système qui définit [id] (hors fichiers de local-repo).
+# Fichier .repo du système qui définit [id] (hors fichiers de loco).
 repo_file() {
     for f in /etc/yum.repos.d/*.repo; do
         case "$f" in "$LOCAL"|"$CACHE") continue ;; esac
@@ -77,7 +88,7 @@ if [ "$REMOVE" = 1 ]; then
     rm -f "$LOCAL"
     if [ -f "$CA" ]; then rm -f "$CA"; update-ca-trust extract; fi
     dnf clean all >/dev/null 2>&1 || true
-    echo "Configuration local-repo retirée ; dépôts du système rétablis."
+    echo "Configuration loco retirée ; dépôts du système rétablis."
     exit 0
 fi
 
@@ -115,13 +126,13 @@ if [ "$USE_LOCAL" = 1 ]; then
         exit 1
     fi
     cat > "$WORK/local" <<EOF
-[local-repo]
-name=local-repo ($EL)
+[loco]
+name=loco ($EL)
 baseurl=$BASE/rpm/$EL/
 enabled=1
 gpgcheck=0
 repo_gpgcheck=1
-gpgkey=$BASE/rpm/local-repo.asc
+gpgkey=$BASE/rpm/loco.asc
 metadata_expire=5m
 EOF
     install -m 644 "$WORK/local" "$LOCAL"
@@ -141,8 +152,8 @@ redirect() {   # id chemin-amont
     key=$(get_opt "$file" "$1" gpgkey)
     name=$(get_opt "$file" "$1" name)
     {
-        echo "[local-repo-$1]"
-        echo "name=${name:-$1} (via local-repo)"
+        echo "[loco-$1]"
+        echo "name=${name:-$1} (via loco)"
         echo "baseurl=$2"
         echo "enabled=$prev"
         echo "gpgcheck=1"
@@ -163,7 +174,7 @@ if [ "$USE_CACHE" = 1 ]; then
     fi
     restore_system
     : > "$WORK/cache"
-    echo "# Géré par local-repo (rpm/setup.sh) ; « --remove » rétablit les dépôts d'origine." > "$WORK/cache.head"
+    echo "# Géré par loco (rpm/setup.sh) ; « --remove » rétablit les dépôts d'origine." > "$WORK/cache.head"
     if [ -n "$VENDOR" ]; then
         U="$BASE/rpmcache/$VENDOR/\$releasever"
         redirect baseos "$U/BaseOS/\$basearch/os/"
@@ -182,5 +193,5 @@ else
 fi
 
 dnf -y -q makecache
-echo "Poste configuré pour local-repo ($BASE) :"
+echo "Poste configuré pour loco ($BASE) :"
 dnf repolist --enabled

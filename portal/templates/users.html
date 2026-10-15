@@ -72,7 +72,7 @@
         <label class="f"><span>Identifiant</span><input type="text" name="username" required pattern="[a-z0-9][a-z0-9._\-]{1,31}" placeholder="prenom.nom" autocapitalize="none" spellcheck="false"></label>
         <label class="f"><span>Rôle</span><select name="role">{% for k, label in roles.items() %}<option value="{{ k }}" {{ 'selected' if k == 'viewer' }}>{{ label }}</option>{% endfor %}</select></label>
         <button class="btn primary"><span class="spin"></span>Créer le compte</button>
-        <p class="hint">Un mot de passe temporaire est généré ; il devra être changé à la première connexion. En cas de perte de tous les accès : <code>{% if container %}docker compose exec local-repo local-repo-user passwd admin{% else %}sudo local-repo-user passwd admin{% endif %}</code>.</p>
+        <p class="hint">Un mot de passe temporaire est généré ; il devra être changé à la première connexion. En cas de perte de tous les accès : <code>{% if container %}docker compose exec loco loco-user passwd admin{% else %}sudo loco-user passwd admin{% endif %}</code>.</p>
       </form>
     </section>
   </div>

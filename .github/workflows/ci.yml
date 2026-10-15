@@ -21,7 +21,7 @@ jobs:
           persist-credentials: false
       - name: Shell et Python
         run: |
-          shellcheck -S style -x install.sh linux/install.sh linux/remove.sh linux/lib/*.sh linux/bin/* tests/*.sh linux/docker/entrypoint.sh linux/docker/local-repo-cron linux/lxc/proxmox-lxc.sh portal/templates/setup.sh portal/templates/flatpak-setup.sh portal/templates/rpm-setup.sh
+          shellcheck -S style -x install.sh linux/install.sh linux/remove.sh linux/lib/*.sh linux/bin/* tests/*.sh linux/docker/*.sh linux/docker/loco-cron linux/lxc/proxmox-lxc.sh portal/templates/setup.sh portal/templates/flatpak-setup.sh portal/templates/rpm-setup.sh
           pipx run pyflakes portal tests
           docker compose -f linux/docker/docker-compose.yml config -q
       - name: PowerShell (syntaxe des scripts Windows)
@@ -106,6 +106,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - name: Outils de virtualisation
         run: |
@@ -126,7 +127,7 @@ jobs:
     name: Serveur natif / ${{ matrix.platform }}
     runs-on: ubuntu-24.04
     needs: lint
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -134,6 +135,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - name: Outils de virtualisation
         run: |
@@ -181,6 +183,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -191,14 +194,18 @@ jobs:
         run: |
           # Les images hébergées ont IIS/HTTP.sys actif ; ce runner est jetable.
           Stop-Service HTTP -Force
-          .\tests\windows-e2e.ps1 -Fixtures "$env:GITHUB_WORKSPACE\test-results\packages"
+          $legacy = Join-Path $env:RUNNER_TEMP 'local-repo-1.9.0'
+          New-Item $legacy -ItemType Directory -Force | Out-Null
+          git archive --format=tar -o "$env:RUNNER_TEMP\legacy.tar" v1.9.0
+          tar.exe -xf "$env:RUNNER_TEMP\legacy.tar" -C $legacy
+          .\tests\windows-e2e.ps1 -Fixtures "$env:GITHUB_WORKSPACE\test-results\packages" -LegacySource $legacy
       - name: Journaux en cas d'échec
         if: failure()
         shell: powershell
         run: |
           New-Item test-results/logs -ItemType Directory -Force | Out-Null
-          Copy-Item "$env:ProgramData\local-repo\logs\*" test-results/logs -ErrorAction SilentlyContinue
-          Get-Service local-repo -ErrorAction SilentlyContinue | Out-File test-results/logs/service.txt
+          Copy-Item "$env:ProgramData\loco\logs\*" test-results/logs -ErrorAction SilentlyContinue
+          Get-Service loco -ErrorAction SilentlyContinue | Out-File test-results/logs/service.txt
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:

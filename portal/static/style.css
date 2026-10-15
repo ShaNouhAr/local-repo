@@ -1,4 +1,4 @@
-/* local-repo — feuille de style du portail.
+/* loco — feuille de style du portail.
    Deux thèmes : clair (blanc) et OLED (noir pur). Monochrome ; la couleur ne sert qu'aux états. */
 
 @font-face { font-family: "Plex"; src: url("fonts/IBMPlexSans-Regular-Latin1.woff2") format("woff2"); font-weight: 400; font-display: swap; }

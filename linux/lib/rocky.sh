@@ -35,7 +35,7 @@ rocky_packages() {
         die "installation DNF impossible (journal : $LOG)."
     fi
     # Runtime isolé : les comptes/sauvegardes scrypt restent compatibles entre distributions.
-    local runtime=/usr/local/lib/local-repo/venv
+    local runtime=/usr/local/lib/loco/venv
     local interpreter=python3
     if [ "$OS_MAJOR" != 10 ]; then interpreter=python3.11; fi
     if [ ! -x "$runtime/bin/python" ]; then "$interpreter" -m venv "$runtime"; fi
@@ -68,7 +68,7 @@ rocky_nginx_runtime() {
 
 # shellcheck disable=SC2129 # Étapes de compilation explicites, journal commun.
 rocky_build_apt() {
-    local deps=/usr/local/lib/local-repo/apt build
+    local deps=/usr/local/lib/loco/apt build
     if [ -x "$deps/bin/apt-ftparchive" ] && [ "$(cat "$deps/version" 2>/dev/null)" = 2.6.1 ]; then return; fi
     say "Compilation de l'indexeur APT (Rocky 8, source Debian vérifiée)"
     build=$(mktemp -d)
@@ -93,7 +93,7 @@ rocky_build_apt() {
 # shellcheck disable=SC2129 # Étapes de compilation explicites, journal commun.
 rocky_build_acng() {
     # Absent d'EPEL 10 : source Debian et correctifs figés, vérifiés par SHA-256.
-    local deps=/usr/local/lib/local-repo/acng build series patch_file
+    local deps=/usr/local/lib/loco/acng build series patch_file
     if [ -x "$deps/sbin/apt-cacher-ng" ] && [ -f /etc/apt-cacher-ng/acng.conf ] && [ "$(cat "$deps/version" 2>/dev/null)" = 3.7.5-1.3 ]; then
         rocky_acng_service
         return
@@ -126,7 +126,7 @@ rocky_build_acng() {
 }
 
 rocky_acng_service() {
-    local deps=/usr/local/lib/local-repo/acng
+    local deps=/usr/local/lib/loco/acng
     if ! id apt-cacher-ng >/dev/null 2>&1; then
         useradd --system --home-dir /var/cache/apt-cacher-ng --shell /sbin/nologin apt-cacher-ng
         touch "$ROCKY_STATE/rocky-acng-user-created"
@@ -134,7 +134,7 @@ rocky_acng_service() {
     install -d -o apt-cacher-ng -g apt-cacher-ng /var/cache/apt-cacher-ng /var/log/apt-cacher-ng
     cat > /etc/systemd/system/apt-cacher-ng.service <<EOF
 [Unit]
-Description=Cache APT local-repo (source Debian 3.7.5-1.3)
+Description=Cache APT loco (source Debian 3.7.5-1.3)
 After=network-online.target
 [Service]
 User=apt-cacher-ng
@@ -145,9 +145,9 @@ Restart=on-failure
 [Install]
 WantedBy=multi-user.target
 EOF
-    cat > /etc/systemd/system/local-repo-acng-maintenance.service <<EOF
+    cat > /etc/systemd/system/loco-acng-maintenance.service <<EOF
 [Unit]
-Description=Expiration du cache APT local-repo
+Description=Expiration du cache APT loco
 After=apt-cacher-ng.service
 [Service]
 Type=oneshot
@@ -155,9 +155,9 @@ ExecStart=$deps/lib/apt-cacher-ng/acngtool maint -c /etc/apt-cacher-ng SocketPat
 NoNewPrivileges=yes
 ProtectHome=yes
 EOF
-    cat > /etc/systemd/system/local-repo-acng-maintenance.timer <<'EOF'
+    cat > /etc/systemd/system/loco-acng-maintenance.timer <<'EOF'
 [Unit]
-Description=Maintenance quotidienne du cache APT local-repo
+Description=Maintenance quotidienne du cache APT loco
 [Timer]
 OnCalendar=daily
 RandomizedDelaySec=1h
@@ -165,7 +165,7 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 EOF
-    cat > /etc/logrotate.d/local-repo-acng <<'EOF'
+    cat > /etc/logrotate.d/loco-acng <<'EOF'
 /var/log/apt-cacher-ng/apt-cacher.log /var/log/apt-cacher-ng/apt-cacher.err {
     daily
     rotate 7
@@ -184,7 +184,7 @@ EOF
 rocky_nginx() {
     # Les fichiers du portail utilisent la disposition commune ; conf.d les inclut dans http{}.
     install -d /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/nginx/modules-enabled
-    echo 'include /etc/nginx/sites-enabled/*.conf;' > /etc/nginx/conf.d/local-repo.conf
+    echo 'include /etc/nginx/sites-enabled/*.conf;' > /etc/nginx/conf.d/loco.conf
     if [ ! -f "$ROCKY_STATE/nginx-rocky-original.conf" ]; then cp -p /etc/nginx/nginx.conf "$ROCKY_STATE/nginx-rocky-original.conf"; fi
     python3 - "$WU_ENABLED" <<'PY'
 from pathlib import Path
@@ -202,7 +202,7 @@ if sys.argv[1]=='1':
         block=s[m.start():end]
         if re.search(r'root\s+/usr/share/nginx/html\s*;',block):
             s=s[:m.start()]+s[end:]
-line='include /etc/nginx/local-repo-stream.conf; # local-repo\n'
+line='include /etc/nginx/loco-stream.conf; # loco\n'
 s=s.replace(line,'')
 s=s.rstrip()+'\n'+line
 p.write_text(s)
@@ -217,16 +217,16 @@ PY
     server {
         listen 3142;
         listen [::]:3142;
-        include /etc/nginx/snippets/local-repo-clients.conf;
+        include /etc/nginx/snippets/loco-clients.conf;
         proxy_connect_timeout 10s;
         proxy_timeout 1h;
         proxy_pass 127.0.0.1:23142;
     }
 }
 EOF
-    } > /etc/nginx/local-repo-stream.conf
+    } > /etc/nginx/loco-stream.conf
     # Le module stream est chargé par le paquet nginx-mod-stream dans la configuration Rocky.
-    rm -f /etc/nginx/modules-enabled/99-local-repo-stream.conf
+    rm -f /etc/nginx/modules-enabled/99-loco-stream.conf
 }
 
 rocky_access() {
@@ -241,13 +241,13 @@ rocky_access() {
         restorecon "$GUNICORN"
         if [ "$OS_MAJOR" = 10 ]; then
             # Un exécutable placé sous lib/ hérite sinon du domaine init_t, impropre au cache.
-            rocky_context /usr/local/lib/local-repo/acng/sbin/apt-cacher-ng bin_t /usr/local/lib/local-repo/acng/sbin/apt-cacher-ng
-            restorecon /usr/local/lib/local-repo/acng/sbin/apt-cacher-ng
-            rocky_context /usr/local/lib/local-repo/acng/lib/apt-cacher-ng/acngtool bin_t /usr/local/lib/local-repo/acng/lib/apt-cacher-ng/acngtool
-            restorecon /usr/local/lib/local-repo/acng/lib/apt-cacher-ng/acngtool
+            rocky_context /usr/local/lib/loco/acng/sbin/apt-cacher-ng bin_t /usr/local/lib/loco/acng/sbin/apt-cacher-ng
+            restorecon /usr/local/lib/loco/acng/sbin/apt-cacher-ng
+            rocky_context /usr/local/lib/loco/acng/lib/apt-cacher-ng/acngtool bin_t /usr/local/lib/loco/acng/lib/apt-cacher-ng/acngtool
+            restorecon /usr/local/lib/loco/acng/lib/apt-cacher-ng/acngtool
         fi
         # Le runtime moderne garde les mêmes regex sur toutes les versions Rocky.
-        for path in "$DATA" "$STATE/nginx" /opt/local-repo/portal/static; do
+        for path in "$DATA" "$STATE/nginx" /opt/loco/portal/static; do
             pattern=$("$PYTHON" -c 'import re,sys; print(re.escape(sys.argv[1])+"(/.*)?")' "$path")
             rocky_context "$pattern" httpd_sys_content_t "$path"
             restorecon -R "$path"
@@ -267,16 +267,16 @@ rocky_access() {
     if systemctl is-active -q firewalld; then
         local zone
         {
-            echo '<?xml version="1.0" encoding="utf-8"?><service><short>local-repo</short>'
+            echo '<?xml version="1.0" encoding="utf-8"?><service><short>loco</short>'
             echo "<port protocol=\"tcp\" port=\"$HTTPS_PORT\"/><port protocol=\"tcp\" port=\"3142\"/>"
             if [ "$HTTP_ENABLED" = 1 ]; then echo "<port protocol=\"tcp\" port=\"$PORTAL_PORT\"/>"; fi
             if [ "$WU_ENABLED" = 1 ]; then echo '<port protocol="tcp" port="80"/><port protocol="tcp" port="443"/>'; fi
             echo '</service>'
-        } > /etc/firewalld/services/local-repo.xml
+        } > /etc/firewalld/services/loco.xml
         firewall-cmd --reload >> "$LOG"
         while read -r zone; do
-            if ! firewall-cmd --permanent --zone="$zone" --query-service=local-repo >/dev/null; then
-                firewall-cmd --permanent --zone="$zone" --add-service=local-repo >> "$LOG"
+            if ! firewall-cmd --permanent --zone="$zone" --query-service=loco >/dev/null; then
+                firewall-cmd --permanent --zone="$zone" --add-service=loco >> "$LOG"
                 echo "$zone" >> "$ROCKY_STATE/rocky-firewall-zones"
             fi
         done < <(firewall-cmd --get-active-zones | awk '/^[^ ]/{print $1}')
@@ -301,8 +301,8 @@ rocky_context() {
 rocky_remove() {
     local port pattern zone
     if [ -f "$ROCKY_STATE/rocky-firewall-zones" ] && systemctl is-active -q firewalld; then
-        while read -r zone; do firewall-cmd --permanent --zone="$zone" --remove-service=local-repo >/dev/null; done < "$ROCKY_STATE/rocky-firewall-zones"
-        rm -f /etc/firewalld/services/local-repo.xml
+        while read -r zone; do firewall-cmd --permanent --zone="$zone" --remove-service=loco >/dev/null; done < "$ROCKY_STATE/rocky-firewall-zones"
+        rm -f /etc/firewalld/services/loco.xml
         firewall-cmd --reload >/dev/null
     fi
     if [ -f "$ROCKY_STATE/rocky-selinux-ports" ]; then
@@ -310,7 +310,7 @@ rocky_remove() {
     fi
     if [ -f "$ROCKY_STATE/rocky-selinux-contexts" ]; then
         while read -r pattern; do semanage fcontext -d "$pattern"; done < "$ROCKY_STATE/rocky-selinux-contexts"
-        restorecon -R "$DATA" "$STATE/nginx" /opt/local-repo/portal/static
+        restorecon -R "$DATA" "$STATE/nginx" /opt/loco/portal/static
     fi
     if [ -f "$ROCKY_STATE/rocky-selinux-connect" ]; then
         setsebool -P httpd_can_network_connect "$(cat "$ROCKY_STATE/rocky-selinux-connect")"
@@ -318,9 +318,9 @@ rocky_remove() {
     if [ -f "$ROCKY_STATE/nginx-rocky-managed.sha256" ] && [ "$(sha256sum /etc/nginx/nginx.conf | cut -d' ' -f1)" = "$(cat "$ROCKY_STATE/nginx-rocky-managed.sha256")" ]; then
         cp -p "$ROCKY_STATE/nginx-rocky-original.conf" /etc/nginx/nginx.conf
     else
-        sed -i '/# local-repo$/d' /etc/nginx/nginx.conf
+        sed -i '/# loco$/d' /etc/nginx/nginx.conf
     fi
-    rm -f /etc/nginx/conf.d/local-repo.conf /etc/nginx/local-repo-stream.conf
+    rm -f /etc/nginx/conf.d/loco.conf /etc/nginx/loco-stream.conf
     # Compatibilité avec les installations 1.6.0 qui utilisaient un marqueur CRB fixe.
     if [ -f "$ROCKY_STATE/rocky-crb-enabled" ]; then dnf config-manager --set-disabled crb >/dev/null; fi
     if [ -f "$ROCKY_STATE/rocky-builder-enabled" ]; then
@@ -328,15 +328,15 @@ rocky_remove() {
             crb|powertools) dnf config-manager --set-disabled "$(cat "$ROCKY_STATE/rocky-builder-enabled")" >/dev/null ;;
         esac
     fi
-    if [ -d /usr/local/lib/local-repo/acng ]; then
-        systemctl disable --now local-repo-acng-maintenance.timer >/dev/null 2>&1 || true
+    if [ -d /usr/local/lib/loco/acng ]; then
+        systemctl disable --now loco-acng-maintenance.timer >/dev/null 2>&1 || true
         systemctl disable --now apt-cacher-ng >/dev/null 2>&1 || true
-        rm -f /etc/systemd/system/apt-cacher-ng.service /etc/systemd/system/local-repo-acng-maintenance.service /etc/systemd/system/local-repo-acng-maintenance.timer /etc/logrotate.d/local-repo-acng
-        rm -rf /usr/local/lib/local-repo/acng
+        rm -f /etc/systemd/system/apt-cacher-ng.service /etc/systemd/system/loco-acng-maintenance.service /etc/systemd/system/loco-acng-maintenance.timer /etc/logrotate.d/loco-acng
+        rm -rf /usr/local/lib/loco/acng
         systemctl daemon-reload
     fi
     # Les nginx préexistants restent sur le flux correspondant à leur mise à jour.
-    # Pour un nginx ajouté par local-repo, restaurer le choix de module initial.
+    # Pour un nginx ajouté par loco, restaurer le choix de module initial.
     if [ -f "$ROCKY_STATE/rocky-nginx-module-managed.sha256" ] && grep -qx nginx "$ROCKY_STATE/installed-packages" &&
        [ "$(sha256sum /etc/dnf/modules.d/nginx.module | cut -d' ' -f1)" = "$(cat "$ROCKY_STATE/rocky-nginx-module-managed.sha256")" ]; then
         if [ -f "$ROCKY_STATE/rocky-nginx-module-original" ]; then
@@ -344,6 +344,6 @@ rocky_remove() {
         else rm -f /etc/dnf/modules.d/nginx.module; fi
     fi
     rm -f "$ROCKY_STATE"/rocky-nginx-module-*
-    rm -rf /usr/local/lib/local-repo/venv /usr/local/lib/local-repo/apt
+    rm -rf /usr/local/lib/loco/venv /usr/local/lib/loco/apt
     rm -f "$ROCKY_STATE"/rocky-selinux-* "$ROCKY_STATE/rocky-firewall-zones" "$ROCKY_STATE/rocky-crb-enabled" "$ROCKY_STATE/rocky-builder-enabled" "$ROCKY_STATE/nginx-rocky-managed.sha256" "$ROCKY_STATE/nginx-rocky-original.conf"
 }

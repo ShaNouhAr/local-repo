@@ -1,4 +1,4 @@
-/* local-repo — interactions du portail, sans dépendance. */
+/* loco — interactions du portail, sans dépendance. */
 (function () {
   "use strict";
 

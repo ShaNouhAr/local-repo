@@ -1,0 +1,13 @@
+#!/bin/bash
+# loco : gestion des comptes du portail en ligne de commande (root).
+#   loco-user list
+#   loco-user add NOM [admin|viewer]
+#   loco-user passwd NOM          mot de passe temporaire (accès perdu)
+#   loco-user enable|disable NOM
+set -euo pipefail
+[ "$(id -u)" -eq 0 ] || { echo "Lancez cette commande en root (sudo)." >&2; exit 1; }
+# shellcheck disable=SC1091
+. /etc/loco/loco.conf
+cd /opt/loco/portal
+exec runuser -u loco -- env LOCO_DATA="$DATA" LOCO_STATE=/var/lib/loco LOCO_ETC=/etc/loco \
+    "${PYTHON:-python3}" -m loco.cli user "$@"

@@ -2,19 +2,18 @@
 #Requires -RunAsAdministrator
 # Machine Windows JETABLE : installation, requêtes réelles, sauvegarde, relance et désinstallation.
 [CmdletBinding()]
-# -Source : arbre à installer (défaut : ce dépôt ; la CI passe la branche « windows » générée).
-param([Parameter(Mandatory = $true)][string]$Fixtures, [string]$Source = (Split-Path -Parent $PSScriptRoot))
+param([Parameter(Mandatory = $true)][string]$Fixtures, [string]$Source = (Split-Path -Parent $PSScriptRoot), [string]$LegacySource)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $tests = $PSScriptRoot
-$program = Join-Path $env:ProgramFiles 'local-repo'
-$root = Join-Path $env:ProgramData 'local-repo'
-if (Test-Path "$root\etc\local-repo.json") { throw 'Test réservé à une machine sans installation existante.' }
-$env:LR_E2E_PASSWORD = 'Native-E2e-' + [guid]::NewGuid().ToString()
-$password = ConvertTo-SecureString $env:LR_E2E_PASSWORD -AsPlainText -Force
+$program = Join-Path $env:ProgramFiles 'loco'
+$root = Join-Path $env:ProgramData 'loco'
+if (Test-Path "$root\etc\loco.json") { throw 'Test réservé à une machine sans installation existante.' }
+$env:LOCO_E2E_PASSWORD = 'Native-E2e-' + [guid]::NewGuid().ToString()
+$password = ConvertTo-SecureString $env:LOCO_E2E_PASSWORD -AsPlainText -Force
 function Install {
     & "$Source\windows\install.ps1" -HostAddress 127.0.0.1 -Password $password
-    if ((Get-Service local-repo).Status -ne 'Running') { throw 'Service non démarré.' }
+    if ((Get-Service loco).Status -ne 'Running') { throw 'Service non démarré.' }
 }
 function Python {
     & "$program\python\python.exe" @args
@@ -28,23 +27,40 @@ function Ready {
     }
     throw 'Portail indisponible.'
 }
+if ($LegacySource) {
+    & "$LegacySource\windows\install.ps1" -HostAddress 127.0.0.1 -Password $password
+    if ((Get-Service local-repo).Status -ne 'Running') { throw 'Installation historique en échec.' }
+    $legacyProgram = Join-Path $env:ProgramFiles 'local-repo'
+    $legacyRoot = Join-Path $env:ProgramData 'local-repo'
+    $env:LR_E2E_PASSWORD = $env:LOCO_E2E_PASSWORD
+    & "$legacyProgram\python\python.exe" "$LegacySource\tests\windows_probe.py" $Fixtures
+    if ($LASTEXITCODE -ne 0) { throw 'Sonde historique en échec.' }
+    $oldCa = (Get-FileHash "$legacyRoot\etc\tls\ca.crt").Hash
+    $oldSecret = (Get-FileHash "$legacyRoot\etc\portal.secret").Hash
+}
 Install
-$env:LR_CONFIG = "$root\etc\local-repo.json"
+if ($LegacySource) {
+    if ((Get-Service local-repo -ErrorAction SilentlyContinue) -or (Test-Path $legacyRoot)) { throw 'Ancienne installation encore présente.' }
+    if ((Get-FileHash "$root\etc\tls\ca.crt").Hash -ne $oldCa -or (Get-FileHash "$root\etc\portal.secret").Hash -ne $oldSecret) {
+        throw 'La migration a changé les clés.'
+    }
+}
+$env:LOCO_CONFIG = "$root\etc\loco.json"
 Python -m unittest discover -s $tests -p test_windows_runtime.py -v
 Python "$tests\windows_probe.py" $Fixtures
 $ca = (Get-FileHash "$root\etc\tls\ca.crt").Hash
 $secret = (Get-FileHash "$root\etc\portal.secret").Hash
-$configAcl = Get-Acl "$root\etc\local-repo.json"
-$svcRules = @($configAcl.Access | Where-Object { $_.IdentityReference -like '*\local-repo' })
+$configAcl = Get-Acl "$root\etc\loco.json"
+$svcRules = @($configAcl.Access | Where-Object { $_.IdentityReference -like '*\loco' })
 if (-not $svcRules.Count -or @($svcRules | Where-Object { $_.FileSystemRights -band [Security.AccessControl.FileSystemRights]::Write }).Count) {
     throw 'La configuration de l''installateur doit rester en lecture seule pour le service.'
 }
-Python -m lrwin backup create
+Python -m locowin backup create
 $archive = (Get-ChildItem "$root\backups\*.tar.gz" | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
 $package = Get-ChildItem "$root\data\apt\repositories\debian\native-xz\pool\*.deb" | Select-Object -First 1
 $digest = (Get-FileHash $package.FullName).Hash
 Remove-Item $package.FullName
-& "$program\local-repo.cmd" backup restore $archive
+& "$program\loco.cmd" backup restore $archive
 if ($LASTEXITCODE -ne 0) { throw 'Restauration en échec.' }
 Ready
 if ((Get-FileHash $package.FullName).Hash -ne $digest) { throw 'Paquet non restauré.' }
@@ -52,16 +68,16 @@ Install
 if ((Get-FileHash "$root\etc\tls\ca.crt").Hash -ne $ca -or (Get-FileHash "$root\etc\portal.secret").Hash -ne $secret) {
     throw 'Une relance a changé les clés.'
 }
-& "$program\local-repo.cmd" restart
+& "$program\loco.cmd" restart
 if ($LASTEXITCODE -ne 0) { throw 'Redémarrage en échec.' }
 Ready
 & "$Source\windows\remove.ps1" -Yes
-if (Get-Service local-repo -ErrorAction SilentlyContinue) { throw 'Service non désinstallé.' }
+if (Get-Service loco -ErrorAction SilentlyContinue) { throw 'Service non désinstallé.' }
 if (-not (Test-Path $package.FullName)) { throw 'La désinstallation simple a effacé les données.' }
 Install
 if ((Get-FileHash "$root\etc\tls\ca.crt").Hash -ne $ca) { throw 'La réinstallation a changé la CA.' }
 & "$Source\windows\remove.ps1" -Purge -Yes
 if ((Test-Path $root) -or (Test-Path $program)) { throw 'Purge incomplète.' }
-if (Get-NetFirewallRule -Group local-repo -ErrorAction SilentlyContinue) { throw 'Règles pare-feu restantes.' }
-Remove-Item Env:\LR_E2E_PASSWORD
+if (Get-NetFirewallRule -Group loco -ErrorAction SilentlyContinue) { throw 'Règles pare-feu restantes.' }
+Remove-Item Env:\LOCO_E2E_PASSWORD
 Write-Host 'Windows natif : installation, portail, APT/RPM, cache, sauvegarde, mise à jour, retrait et purge OK.'

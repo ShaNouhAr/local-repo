@@ -1,5 +1,5 @@
 #!/bin/bash
-# local-repo : installe le dépôt local (paquets Linux, Windows Update, logiciels Windows)
+# loco : installe le dépôt local (paquets Linux, Windows Update, logiciels Windows)
 # sur Debian / Ubuntu / Rocky Linux (versions validées : README). Relançable sans risque pour mettre à jour ou reconfigurer.
 # L'image Docker l'utilise aussi, avec --container (voir linux/docker/).
 #
@@ -12,13 +12,13 @@
 #   --allow "CIDR ..."       réseaux autorisés à utiliser les dépôts et caches (défaut : réseaux privés)
 #   --admin-allow "CIDR ..." réseaux autorisés à ouvrir l'interface (défaut : comme --allow)
 #   --proxy URL / --no-proxy proxy HTTP d'entreprise pour sortir sur Internet (apt-cacher-ng, téléchargements)
-#   --data DIR               dossier des données et des caches (défaut : /srv/local-repo)
+#   --data DIR               dossier des données et des caches (défaut : /srv/loco)
 #   --wu-cache-size T        taille max du cache Windows Update, ex. 50g (défaut : moitié de l'espace libre, max 200g)
 #   --resolvers "A B"        DNS utilisés par le cache Windows Update (défaut : "1.1.1.1 9.9.9.9") ;
 #                            ne pas mettre un DNS qui redirige lui-même les domaines Windows Update
 #   --max-upload T           taille max d'un fichier envoyé au portail (défaut : 8g)
 #   --backup-keep N          sauvegardes quotidiennes conservées (défaut : 3 ; 0 = désactivées)
-#   --backup-dir DIR         dossier des sauvegardes (défaut : /var/backups/local-repo)
+#   --backup-dir DIR         dossier des sauvegardes (défaut : /var/backups/loco)
 #   --password MDP           définit le mot de passe du compte « admin »
 #   --tls-cert F --tls-key F certificat fourni au lieu de l'autorité locale
 #   --no-wu / --wu           sans / avec le cache Windows Update (ports 80 et 443)
@@ -32,9 +32,9 @@ set -euo pipefail
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SRC/.." && pwd)"
 cd /
-PREFIX=/opt/local-repo
-ETC=/etc/local-repo
-STATE=/var/lib/local-repo
+PREFIX=/opt/loco
+ETC=/etc/loco
+STATE=/var/lib/loco
 APP_PORT=8089
 PACKAGE_RECORD="$STATE/installed-packages"
 PACKAGES=(nginx libnginx-mod-stream apt-cacher-ng apt-utils gnupg python3-flask gunicorn curl openssl ca-certificates)
@@ -44,7 +44,7 @@ say()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31mErreur :\033[0m %s\n' "$*" >&2; exit 1; }
 trap 'die "échec inattendu ligne $LINENO : $BASH_COMMAND"' ERR
-LOG=/var/log/local-repo-install.log
+LOG=/var/log/loco-install.log
 
 [ "$(id -u)" -eq 0 ] || die "lancez ce script en root (sudo ./install.sh)."
 # La présence éventuelle d'APT sur Rocky ne doit pas sélectionner le mauvais gestionnaire.
@@ -63,8 +63,8 @@ case "$ID" in
         case "$OS_MAJOR" in 8|9|10) ;; *) die "Serveur Rocky Linux 8, 9 ou 10 requis." ;; esac
         PLATFORM=rocky
         PACKAGE_RECORD="$ETC/install-state/installed-packages"
-        PYTHON=/usr/local/lib/local-repo/venv/bin/python
-        GUNICORN=/usr/local/lib/local-repo/venv/bin/gunicorn
+        PYTHON=/usr/local/lib/loco/venv/bin/python
+        GUNICORN=/usr/local/lib/loco/venv/bin/gunicorn
         NGINX_USER=nginx
         LOG_GROUP=nginx
         CA_BUNDLE=/etc/pki/tls/certs/ca-bundle.crt
@@ -80,7 +80,7 @@ umask 022
 CONTAINER=0
 for arg in "$@"; do if [ "$arg" = "--container" ]; then CONTAINER=1; fi; done
 if [ "$CONTAINER" = 1 ]; then
-    [ "${LR_RUNTIME:-}" = container ] || die "--container est réservé à l'image Docker (docker compose up -d)."
+    [ "${LOCO_RUNTIME:-}" = container ] || die "--container est réservé à l'image Docker (docker compose up -d)."
 else
     command -v systemctl >/dev/null || die "systemd requis."
 fi
@@ -99,13 +99,16 @@ if ! command -v python3 >/dev/null; then
 fi
 
 # ---------------------------------------------------------------- réglages
+# shellcheck source=linux/lib/migrate.sh
+. "$SRC/lib/migrate.sh"
+if [[ " $* " != *" --help "* && " $* " != *" -h "* ]]; then migrate_local_repo; fi
 # Valeurs par défaut, puis celles de l'installation précédente, puis les options.
-PORTAL_PORT=8088 HTTPS_PORT=8443 HTTP_ENABLED=1 HOST="" DATA=/srv/local-repo WU_CACHE_SIZE=""
+PORTAL_PORT=8088 HTTPS_PORT=8443 HTTP_ENABLED=1 HOST="" DATA=/srv/loco WU_CACHE_SIZE=""
 RESOLVERS="1.1.1.1 9.9.9.9" WU_ENABLED=1 ALLOW="$PRIVATE_NETS" ADMIN_ALLOW="" UPSTREAM_PROXY=""
-MAX_UPLOAD=8g BACKUP_KEEP=3 BACKUP_DIR=/var/backups/local-repo FLATPAK_ENABLED=1 FLATPAK_CACHE_SIZE=""
+MAX_UPLOAD=8g BACKUP_KEEP=3 BACKUP_DIR=/var/backups/loco FLATPAK_ENABLED=1 FLATPAK_CACHE_SIZE=""
 RPM_ENABLED=1 RPM_CACHE_SIZE=""
 # shellcheck disable=SC1091
-[ -f "$ETC/local-repo.conf" ] && . "$ETC/local-repo.conf"
+[ -f "$ETC/loco.conf" ] && . "$ETC/loco.conf"
 PASSWORD="" TLS_CERT="" TLS_KEY=""
 need() { [ $# -ge 2 ] || die "l'option $1 attend une valeur."; }
 while [ $# -gt 0 ]; do
@@ -191,7 +194,7 @@ check_port() {
     if [ "$CONTAINER" = 1 ]; then
         # Réseau de l'hôte, rien n'est encore lancé dans le conteneur : tout port ouvert est pris par l'hôte.
         if ss -Hltn "sport = :$1" 2>/dev/null | grep -q .; then
-            die "le port $1 est déjà utilisé sur l'hôte (installation native de local-repo, autre service ?)."
+            die "le port $1 est déjà utilisé sur l'hôte (installation native de loco, autre service ?)."
         fi
         return 0
     fi
@@ -237,15 +240,15 @@ fi
 
 # ---------------------------------------------------------------- utilisateur et dossiers
 say "Utilisateur et dossiers"
-id localrepo >/dev/null 2>&1 || useradd --system --home-dir "$STATE" --shell /usr/sbin/nologin localrepo
-install -d -m 755 -o localrepo -g localrepo "$DATA" "$DATA/apt" "$DATA/apt/pool" "$DATA/win"
-install -d -m 700 -o localrepo -g localrepo "$DATA/.tmp" "$STATE/gnupg"
-install -d -m 755 -o localrepo -g localrepo "$STATE" "$STATE/nginx"
+id loco >/dev/null 2>&1 || useradd --system --home-dir "$STATE" --shell /usr/sbin/nologin loco
+install -d -m 755 -o loco -g loco "$DATA" "$DATA/apt" "$DATA/apt/pool" "$DATA/win"
+install -d -m 700 -o loco -g loco "$DATA/.tmp" "$STATE/gnupg"
+install -d -m 755 -o loco -g loco "$STATE" "$STATE/nginx"
 install -d -m 700 -o "$NGINX_USER" -g "$NGINX_USER" "$DATA/wucache" "$DATA/flatpakcache" "$DATA/rpmcache"
-install -d -m 755 -o localrepo -g localrepo "$DATA/flatpak" "$DATA/rpm"
-chown -R localrepo:localrepo "$DATA/apt" "$DATA/win" "$STATE"
+install -d -m 755 -o loco -g loco "$DATA/flatpak" "$DATA/rpm"
+chown -R loco:loco "$DATA/apt" "$DATA/win" "$STATE"
 install -d -m 755 "$ETC"
-install -d -m 750 -o root -g localrepo "$BACKUP_DIR"
+install -d -m 750 -o root -g loco "$BACKUP_DIR"
 
 if [ -z "$WU_CACHE_SIZE" ]; then
     free_g=$(df -BG --output=avail "$DATA" | tail -1 | tr -dc '0-9')
@@ -264,7 +267,7 @@ if [ -z "$FLATPAK_CACHE_SIZE" ]; then
     FLATPAK_CACHE_SIZE="$(( free_g / 4 > 100 ? 100 : (free_g / 4 < 2 ? 2 : free_g / 4) ))g"
 fi
 
-cat > "$ETC/local-repo.conf" <<EOF
+cat > "$ETC/loco.conf" <<EOF
 # Généré par install.sh : modifiez puis relancez sudo ./install.sh pour appliquer.
 HOST=$HOST
 HTTPS_PORT=$HTTPS_PORT
@@ -286,7 +289,7 @@ MAX_UPLOAD=$MAX_UPLOAD
 BACKUP_KEEP=$BACKUP_KEEP
 BACKUP_DIR=$BACKUP_DIR
 EOF
-chmod 644 "$ETC/local-repo.conf"
+chmod 644 "$ETC/loco.conf"
 
 # ---------------------------------------------------------------- code
 say "Copie du portail dans $PREFIX"
@@ -298,13 +301,13 @@ find "$PREFIX.new" -name __pycache__ -prune -exec rm -rf {} +
 chmod 755 "$PREFIX.new/bin/"* "$PREFIX.new/remove.sh"
 rm -rf "$PREFIX"
 mv "$PREFIX.new" "$PREFIX"
-ln -sf "$PREFIX/bin/local-repo-user" /usr/local/sbin/local-repo-user
-ln -sf "$PREFIX/bin/local-repo-backup" /usr/local/sbin/local-repo-backup
-ln -sf "$PREFIX/bin/local-repo-apt" /usr/local/sbin/local-repo-apt
+ln -sf "$PREFIX/bin/loco-user" /usr/local/sbin/loco-user
+ln -sf "$PREFIX/bin/loco-backup" /usr/local/sbin/loco-backup
+ln -sf "$PREFIX/bin/loco-apt" /usr/local/sbin/loco-apt
 
 cli() {
-    (cd "$PREFIX/portal" && runuser -u localrepo -- env LR_DATA="$DATA" LR_STATE="$STATE" LR_ETC="$ETC" \
-        LR_PASSWORD="${LR_PASSWORD:-}" LR_MUST_CHANGE="${LR_MUST_CHANGE:-0}" "$PYTHON" -m localrepo.cli "$@")
+    (cd "$PREFIX/portal" && runuser -u loco -- env LOCO_DATA="$DATA" LOCO_STATE="$STATE" LOCO_ETC="$ETC" \
+        LOCO_PASSWORD="${LOCO_PASSWORD:-}" LOCO_MUST_CHANGE="${LOCO_MUST_CHANGE:-0}" "$PYTHON" -m loco.cli "$@")
 }
 
 # ---------------------------------------------------------------- secrets et comptes
@@ -321,7 +324,7 @@ data.setdefault("secret_key", secrets.token_hex(32))
 json.dump(data, open(path, "w"))
 EOF
 )
-chown root:localrepo "$ETC/portal.secret"
+chown root:loco "$ETC/portal.secret"
 chmod 640 "$ETC/portal.secret"
 cli init    # migrations ; une ancienne installation à mot de passe unique devient le compte « admin »
 python3 - "$ETC/portal.secret" <<'EOF'
@@ -334,33 +337,33 @@ EOF
 rm -f "$ETC/admin-password"    # plus de mot de passe en clair sur le disque
 ISSUED=""
 if [ -n "$PASSWORD" ]; then
-    LR_PASSWORD="$PASSWORD" cli ensure-admin >/dev/null
-    LR_PASSWORD="$PASSWORD" cli user set-password admin
+    LOCO_PASSWORD="$PASSWORD" cli ensure-admin >/dev/null
+    LOCO_PASSWORD="$PASSWORD" cli user set-password admin
 else
     ISSUED=$(python3 -c 'import secrets, string; a = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"; print("-".join("".join(secrets.choice(a) for _ in range(5)) for _ in range(4)))')
-    if [ "$(LR_PASSWORD="$ISSUED" LR_MUST_CHANGE=1 cli ensure-admin)" != "created" ]; then
+    if [ "$(LOCO_PASSWORD="$ISSUED" LOCO_MUST_CHANGE=1 cli ensure-admin)" != "created" ]; then
         ISSUED=""
     fi
 fi
 
 # ---------------------------------------------------------------- clé de signature APT
-if ! runuser -u localrepo -- env GNUPGHOME="$STATE/gnupg" gpg --list-secret-keys 2>/dev/null | grep -q sec; then
+if ! runuser -u loco -- env GNUPGHOME="$STATE/gnupg" gpg --list-secret-keys 2>/dev/null | grep -q sec; then
     say "Création de la clé de signature du dépôt APT"
-    runuser -u localrepo -- env GNUPGHOME="$STATE/gnupg" gpg --batch --quiet --pinentry-mode loopback --passphrase '' \
-        --quick-gen-key "local-repo ($(hostname)) <localrepo@$(hostname)>" rsa4096 sign never
+    runuser -u loco -- env GNUPGHOME="$STATE/gnupg" gpg --batch --quiet --pinentry-mode loopback --passphrase '' \
+        --quick-gen-key "loco ($(hostname)) <loco@$(hostname)>" rsa4096 sign never
 fi
-runuser -u localrepo -- env GNUPGHOME="$STATE/gnupg" gpg --batch --yes --export -o "$DATA/apt/local-repo.gpg"
-chmod 644 "$DATA/apt/local-repo.gpg"
+runuser -u loco -- env GNUPGHOME="$STATE/gnupg" gpg --batch --yes --export -o "$DATA/apt/loco.gpg"
+chmod 644 "$DATA/apt/loco.gpg"
 cli rebuild-apt >/dev/null
-runuser -u localrepo -- gpgconf --homedir "$STATE/gnupg" --kill gpg-agent 2>/dev/null || true
+runuser -u loco -- gpgconf --homedir "$STATE/gnupg" --kill gpg-agent 2>/dev/null || true
 cli write-maps
 if [ "$FLATPAK_ENABLED" = 1 ]; then
     cli flatpak-init
-    runuser -u localrepo -- gpgconf --homedir "$STATE/gnupg" --kill gpg-agent 2>/dev/null || true
+    runuser -u loco -- gpgconf --homedir "$STATE/gnupg" --kill gpg-agent 2>/dev/null || true
 fi
 if [ "$RPM_ENABLED" = 1 ]; then
     cli rpm-init
-    runuser -u localrepo -- gpgconf --homedir "$STATE/gnupg" --kill gpg-agent 2>/dev/null || true
+    runuser -u loco -- gpgconf --homedir "$STATE/gnupg" --kill gpg-agent 2>/dev/null || true
 fi
 
 # ---------------------------------------------------------------- certificats HTTPS
@@ -378,7 +381,7 @@ elif [ ! -f "$TLS/custom" ]; then
         # Une configuration minimale évite une CA invalide avec deux basicConstraints.
         openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 \
             -config <(printf '[req]\ndistinguished_name=dn\n[dn]\n') \
-            -subj "/O=local-repo/CN=local-repo CA ($(hostname))" \
+            -subj "/O=loco/CN=loco CA ($(hostname))" \
             -addext "basicConstraints=critical,CA:TRUE,pathlen:0" -addext "keyUsage=critical,keyCertSign,cRLSign" \
             -keyout "$TLS/ca.key" -out "$TLS/ca.crt" 2>>"$LOG"
         chmod 600 "$TLS/ca.key"; chmod 644 "$TLS/ca.crt"
@@ -391,7 +394,7 @@ elif [ ! -f "$TLS/custom" ]; then
     if [ ! -f "$TLS/server.crt" ] || ! openssl x509 -in "$TLS/server.crt" -noout -checkend 2592000 >/dev/null 2>&1 \
        || ! openssl x509 -in "$TLS/server.crt" -noout -ext subjectAltName 2>/dev/null | grep -q "IP Address:$HOST\b"; then
         openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
-            -subj "/O=local-repo/CN=$(hostname)" -keyout "$TLS/server.key" -out "$TLS/server.csr" 2>>"$LOG"
+            -subj "/O=loco/CN=$(hostname)" -keyout "$TLS/server.key" -out "$TLS/server.csr" 2>>"$LOG"
         openssl x509 -req -in "$TLS/server.csr" -CA "$TLS/ca.crt" -CAkey "$TLS/ca.key" \
             -set_serial "0x$(openssl rand -hex 16)" -days 825 -out "$TLS/server.crt" \
             -extfile <(printf 'subjectAltName=%s\nbasicConstraints=CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\n' "$SAN") 2>>"$LOG"
@@ -441,19 +444,19 @@ export LRT_RPM_LOCATIONS
 # ---------------------------------------------------------------- nginx
 say "Configuration de nginx"
 install -d /etc/nginx/snippets /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/nginx/modules-enabled
-{ echo "# local-repo : réseaux autorisés pour les postes (--allow)."; acl "$ALLOW_LIST"; } > /etc/nginx/snippets/local-repo-clients.conf
-{ echo "# local-repo : réseaux autorisés pour l'interface (--admin-allow)."; acl "$ADMIN_LIST"; } > /etc/nginx/snippets/local-repo-admin.conf
-render "$PREFIX/conf/nginx-proxy-snippet.conf" > /etc/nginx/snippets/local-repo-proxy.conf
-render "$PREFIX/conf/nginx-flathub-proxy-snippet.conf" > /etc/nginx/snippets/local-repo-flathub-proxy.conf
-render "$PREFIX/conf/nginx-rpm-proxy-snippet.conf" > /etc/nginx/snippets/local-repo-rpm-proxy.conf
+{ echo "# loco : réseaux autorisés pour les postes (--allow)."; acl "$ALLOW_LIST"; } > /etc/nginx/snippets/loco-clients.conf
+{ echo "# loco : réseaux autorisés pour l'interface (--admin-allow)."; acl "$ADMIN_LIST"; } > /etc/nginx/snippets/loco-admin.conf
+render "$PREFIX/conf/nginx-proxy-snippet.conf" > /etc/nginx/snippets/loco-proxy.conf
+render "$PREFIX/conf/nginx-flathub-proxy-snippet.conf" > /etc/nginx/snippets/loco-flathub-proxy.conf
+render "$PREFIX/conf/nginx-rpm-proxy-snippet.conf" > /etc/nginx/snippets/loco-rpm-proxy.conf
 {
     if [ "$FLATPAK_ENABLED" = 1 ]; then render "$PREFIX/conf/nginx-flatpak-cache.conf"; fi
     if [ "$RPM_ENABLED" = 1 ]; then render "$PREFIX/conf/nginx-rpm-cache.conf"; fi
     render "$PREFIX/conf/nginx-portal.conf"
     if [ "$HTTP_ENABLED" = 1 ]; then render "$PREFIX/conf/nginx-portal-http.conf"; fi
-} > /etc/nginx/sites-available/local-repo-portal.conf
-ln -sf ../sites-available/local-repo-portal.conf /etc/nginx/sites-enabled/local-repo-portal.conf
-# Site nginx par défaut (port 80) : désactivé si nginx a été installé par local-repo,
+} > /etc/nginx/sites-available/loco-portal.conf
+ln -sf ../sites-available/loco-portal.conf /etc/nginx/sites-enabled/loco-portal.conf
+# Site nginx par défaut (port 80) : désactivé si nginx a été installé par loco,
 # ou si le cache Windows Update a besoin du port 80 ; sinon on le laisse (ou le remet) en place.
 if [ "$WU_ENABLED" = 1 ] || [ "$CONTAINER" = 1 ] || grep -qx nginx "$PACKAGE_RECORD"; then
     if [ -L /etc/nginx/sites-enabled/default ]; then
@@ -465,19 +468,19 @@ elif [ -f "$STATE/nginx-default-disabled" ] && [ -e /etc/nginx/sites-available/d
     rm -f "$STATE/nginx-default-disabled"
 fi
 if [ "$WU_ENABLED" = 1 ]; then
-    render "$PREFIX/conf/nginx-wucache.conf" > /etc/nginx/sites-available/local-repo-wucache.conf
-    ln -sf ../sites-available/local-repo-wucache.conf /etc/nginx/sites-enabled/local-repo-wucache.conf
-    render "$PREFIX/conf/nginx-stream.conf" > /etc/nginx/modules-enabled/99-local-repo-stream.conf
+    render "$PREFIX/conf/nginx-wucache.conf" > /etc/nginx/sites-available/loco-wucache.conf
+    ln -sf ../sites-available/loco-wucache.conf /etc/nginx/sites-enabled/loco-wucache.conf
+    render "$PREFIX/conf/nginx-stream.conf" > /etc/nginx/modules-enabled/99-loco-stream.conf
 else
-    rm -f /etc/nginx/sites-enabled/local-repo-wucache.conf /etc/nginx/sites-available/local-repo-wucache.conf \
-          /etc/nginx/modules-enabled/99-local-repo-stream.conf
+    rm -f /etc/nginx/sites-enabled/loco-wucache.conf /etc/nginx/sites-available/loco-wucache.conf \
+          /etc/nginx/modules-enabled/99-loco-stream.conf
 fi
 if [ "$PLATFORM" = rocky ]; then rocky_nginx; rocky_access; fi
 if ! nginx -t >/dev/null 2>&1; then
     nginx -t 2>&1 | grep -v -e "syntax is ok" -e "test is successful" || true
     # On retire notre configuration pour ne pas laisser nginx dans un état cassé.
-    rm -f /etc/nginx/sites-enabled/local-repo-portal.conf /etc/nginx/sites-enabled/local-repo-wucache.conf \
-          /etc/nginx/modules-enabled/99-local-repo-stream.conf
+    rm -f /etc/nginx/sites-enabled/loco-portal.conf /etc/nginx/sites-enabled/loco-wucache.conf \
+          /etc/nginx/modules-enabled/99-loco-stream.conf
     if [ -f "$STATE/nginx-default-disabled" ] && [ -e /etc/nginx/sites-available/default ]; then
         ln -sf ../sites-available/default /etc/nginx/sites-enabled/default
         rm -f "$STATE/nginx-default-disabled"
@@ -494,7 +497,7 @@ if [ ! -s "$ETC/acng-admin" ]; then
     (umask 077; echo "admin:$(python3 -c 'import secrets; print(secrets.token_urlsafe(18))')" > "$ETC/acng-admin")
 fi
 {
-    echo "# Géré par local-repo (install.sh) : ne pas modifier."
+    echo "# Géré par loco (install.sh) : ne pas modifier."
     echo "AdminAuth: $(cat "$ETC/acng-admin")"
     if [ "$PLATFORM" = rocky ]; then
         echo "UseWrap: 0"
@@ -502,7 +505,7 @@ fi
         echo "Port: 23142"
     else echo "UseWrap: 1"; fi
     if [ -n "$UPSTREAM_PROXY" ]; then echo "Proxy: $UPSTREAM_PROXY"; fi
-} > /etc/apt-cacher-ng/zz-local-repo.conf
+} > /etc/apt-cacher-ng/zz-loco.conf
 if [ "$PLATFORM" = debian ]; then
 # Filtrage par apt-cacher-ng lui-même (tcpwrappers) : fonctionne aussi là où systemd ne peut pas filtrer (LXC).
 WRAP_NETS=$(python3 -c '
@@ -514,16 +517,16 @@ for item in sys.argv[1].split():
 print(" ".join(out))' "$ALLOW_LIST")
 for f in /etc/hosts.allow /etc/hosts.deny; do
     touch "$f"
-    sed -i '/# local-repo$/d' "$f"
+    sed -i '/# loco$/d' "$f"
 done
-echo "apt-cacher-ng: $WRAP_NETS # local-repo" >> /etc/hosts.allow
-echo "apt-cacher-ng: ALL # local-repo" >> /etc/hosts.deny
+echo "apt-cacher-ng: $WRAP_NETS # loco" >> /etc/hosts.allow
+echo "apt-cacher-ng: ALL # loco" >> /etc/hosts.deny
 fi
-chown root:apt-cacher-ng /etc/apt-cacher-ng/zz-local-repo.conf
-chmod 640 /etc/apt-cacher-ng/zz-local-repo.conf
+chown root:apt-cacher-ng /etc/apt-cacher-ng/zz-loco.conf
+chmod 640 /etc/apt-cacher-ng/zz-loco.conf
 if [ "$CONTAINER" = 0 ]; then
     install -d /etc/systemd/system/apt-cacher-ng.service.d
-    render "$PREFIX/conf/apt-cacher-ng-override.conf" > /etc/systemd/system/apt-cacher-ng.service.d/local-repo.conf
+    render "$PREFIX/conf/apt-cacher-ng-override.conf" > /etc/systemd/system/apt-cacher-ng.service.d/loco.conf
 fi
 
 # ---------------------------------------------------------------- services
@@ -538,16 +541,16 @@ if [ "$CONTAINER" = 1 ]; then
         SUP_PROXY_ENV=",http_proxy=\"$sup_proxy\",https_proxy=\"$sup_proxy\",no_proxy=\"localhost,127.0.0.1,$HOST\""
     fi
     LRT_SUP_PROXY_ENV="$SUP_PROXY_ENV" LRT_SUP_PASSWORD=$(openssl rand -hex 24) \
-        render "$SRC/docker/supervisord.conf" > /etc/supervisor/local-repo.conf
-    chmod 600 /etc/supervisor/local-repo.conf
+        render "$SRC/docker/supervisord.conf" > /etc/supervisor/loco.conf
+    chmod 600 /etc/supervisor/loco.conf
 else
-render "$PREFIX/conf/local-repo-portal.service" > /etc/systemd/system/local-repo-portal.service
-cp "$PREFIX/conf/local-repo-stats.service" "$PREFIX/conf/local-repo-stats.timer" \
-   "$PREFIX/conf/local-repo-nginx.service" "$PREFIX/conf/local-repo-nginx.path" \
-   "$PREFIX/conf/local-repo-backup.service" "$PREFIX/conf/local-repo-backup.timer" /etc/systemd/system/
+render "$PREFIX/conf/loco-portal.service" > /etc/systemd/system/loco-portal.service
+cp "$PREFIX/conf/loco-stats.service" "$PREFIX/conf/loco-stats.timer" \
+   "$PREFIX/conf/loco-nginx.service" "$PREFIX/conf/loco-nginx.path" \
+   "$PREFIX/conf/loco-backup.service" "$PREFIX/conf/loco-backup.timer" /etc/systemd/system/
 systemctl daemon-reload
 if [ "$PLATFORM" = rocky ] && [ "$OS_MAJOR" = 10 ]; then
-    systemctl enable --now local-repo-acng-maintenance.timer >/dev/null 2>&1
+    systemctl enable --now loco-acng-maintenance.timer >/dev/null 2>&1
 fi
 systemctl enable apt-cacher-ng nginx >/dev/null 2>&1
 systemctl restart apt-cacher-ng || die "apt-cacher-ng ne démarre pas (journalctl -u apt-cacher-ng)."
@@ -556,37 +559,37 @@ if systemctl is-active -q nginx; then
 else
     systemctl start nginx || die "nginx ne démarre pas (journalctl -u nginx)."
 fi
-systemctl enable local-repo-portal local-repo-stats.timer local-repo-nginx.path >/dev/null 2>&1
-systemctl start local-repo-nginx.path
-systemctl restart local-repo-portal
-systemctl start local-repo-stats.timer local-repo-stats.service
+systemctl enable loco-portal loco-stats.timer loco-nginx.path >/dev/null 2>&1
+systemctl start loco-nginx.path
+systemctl restart loco-portal
+systemctl start loco-stats.timer loco-stats.service
 if [ "$BACKUP_KEEP" -gt 0 ]; then
-    systemctl enable --now local-repo-backup.timer >/dev/null 2>&1
+    systemctl enable --now loco-backup.timer >/dev/null 2>&1
 else
-    systemctl disable --now local-repo-backup.timer >/dev/null 2>&1 || true
+    systemctl disable --now loco-backup.timer >/dev/null 2>&1 || true
 fi
 
 for _ in $(seq 1 30); do
     curl -fsk --connect-timeout 2 --max-time 5 "https://127.0.0.1:$HTTPS_PORT/healthz" >/dev/null 2>&1 && break
     sleep 0.5
 done
-curl -fsk --connect-timeout 2 --max-time 5 "https://127.0.0.1:$HTTPS_PORT/healthz" >/dev/null || die "le portail ne répond pas (journalctl -u local-repo-portal)."
-systemctl is-active --quiet apt-cacher-ng nginx local-repo-portal || die "un service ne reste pas actif (journalctl -u apt-cacher-ng -u nginx -u local-repo-portal)."
+curl -fsk --connect-timeout 2 --max-time 5 "https://127.0.0.1:$HTTPS_PORT/healthz" >/dev/null || die "le portail ne répond pas (journalctl -u loco-portal)."
+systemctl is-active --quiet apt-cacher-ng nginx loco-portal || die "un service ne reste pas actif (journalctl -u apt-cacher-ng -u nginx -u loco-portal)."
 cache_status=$(curl -s --connect-timeout 2 --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:3142/acng-report.html) || die "le cache APT ne répond pas."
 case "$cache_status" in 200|401) ;; *) die "le cache APT ne répond pas correctement (HTTP $cache_status)." ;; esac
 fi
 
 # ---------------------------------------------------------------- résumé
 echo
-say "local-repo est installé"
+say "loco est installé"
 echo "    Interface          : $ADMIN_URL"
 if [ -n "$ISSUED" ]; then
     echo "    Compte initial     : admin / $ISSUED   (à changer à la première connexion ; affiché une seule fois)"
 fi
 if [ "$CONTAINER" = 1 ]; then
-    echo "    Accès perdu        : docker compose exec local-repo local-repo-user passwd admin"
+    echo "    Accès perdu        : docker compose exec loco loco-user passwd admin"
 else
-    echo "    Accès perdu        : sudo local-repo-user passwd admin"
+    echo "    Accès perdu        : sudo loco-user passwd admin"
 fi
 if [ ! -f "$TLS/custom" ]; then
     echo "    Autorité HTTPS     : $ETC/tls/ca.crt (à déployer sur les postes, par GPO par exemple)"

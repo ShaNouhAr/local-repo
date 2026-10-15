@@ -185,7 +185,7 @@ def account():
             session["pwv"] = g.user["pw_version"] + 1
             audit("compte.mot_de_passe")
             if g.user["must_change"]:
-                flash("Mot de passe enregistré. Bienvenue sur local-repo.", "ok")
+                flash("Mot de passe enregistré. Bienvenue sur loco.", "ok")
             else:
                 flash("Mot de passe changé. Les autres sessions de ce compte sont fermées.", "ok")
             return redirect(url_for("index"))

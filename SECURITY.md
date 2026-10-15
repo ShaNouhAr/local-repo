@@ -3,12 +3,12 @@
 ## Signaler une vulnérabilité
 
 Ouvrez un avis privé sur GitHub (onglet *Security › Report a vulnerability*) plutôt qu'une issue publique.
-Merci d'indiquer la version (`local-repo` en bas de la page de connexion), la distribution et les étapes
+Merci d'indiquer la version (`loco` en bas de la page de connexion), la distribution et les étapes
 pour reproduire.
 
 ## Modèle de menace
 
-local-repo est conçu pour un **réseau d'entreprise interne**. Il n'est pas prévu pour être exposé sur Internet.
+loco est conçu pour un **réseau d'entreprise interne**. Il n'est pas prévu pour être exposé sur Internet.
 
 | Élément | Mesures |
 |---|---|

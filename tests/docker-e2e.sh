@@ -12,56 +12,74 @@ dc() { sudo docker compose --project-directory linux/docker -f linux/docker/dock
 healthy() {
     local i
     for (( i=0; i<90; i++ )); do
-        [ "$(sudo docker inspect -f '{{.State.Health.Status}}' "$(dc ps -q local-repo)")" = healthy ] && return 0
+        [ "$(sudo docker inspect -f '{{.State.Health.Status}}' "$(dc ps -q loco)")" = healthy ] && return 0
         sleep 4
     done
-    dc logs --tail 80 local-repo >&2
+    dc logs --tail 80 loco >&2
     return 1
 }
 fail() { echo "ÉCHEC : $*" >&2; exit 1; }
 
 mkdir -p "$work/deb/DEBIAN" "$work/deb/usr/bin"
-printf '#!/bin/sh\necho local-repo-docker-ok\n' > "$work/deb/usr/bin/lr-e2e"
+printf '#!/bin/sh\necho loco-docker-ok\n' > "$work/deb/usr/bin/lr-e2e"
 chmod 755 "$work/deb/usr/bin/lr-e2e"
 printf 'Package: lr-e2e\nVersion: 1.0\nArchitecture: all\nMaintainer: ci <ci@example.invalid>\nDescription: test\n' > "$work/deb/DEBIAN/control"
 dpkg-deb --root-owner-group -b "$work/deb" "$work/lr-e2e.deb" >/dev/null
 
 step "Construction et premier démarrage"
-printf 'LR_BACKUP_KEEP=2\nTZ=Europe/Paris\n' > linux/docker/.env
-dc up -d --build
+printf 'LOCO_BACKUP_KEEP=2\nTZ=Europe/Paris\n' > linux/docker/.env
+if [ -n "${LOCO_E2E_LEGACY_SRC:-}" ]; then
+    oldc() { sudo docker compose --project-directory "$LOCO_E2E_LEGACY_SRC/linux/docker" -f "$LOCO_E2E_LEGACY_SRC/linux/docker/docker-compose.yml" "$@"; }
+    printf 'LR_BACKUP_KEEP=2\nTZ=Europe/Paris\n' > "$LOCO_E2E_LEGACY_SRC/linux/docker/.env"
+    oldc up -d --build
+    for (( i=0; i<90; i++ )); do
+        [ "$(sudo docker inspect -f '{{.State.Health.Status}}' "$(oldc ps -q local-repo)")" = healthy ] && break
+        sleep 4
+    done
+    old_ca=$(curl -fsS http://127.0.0.1:8088/ca.crt | sha256sum | cut -d' ' -f1)
+    # shellcheck disable=SC2016 # Interpolation volontaire dans l'ancien conteneur.
+    oldc exec -T -e LR_PASSWORD="$PW" local-repo sh -c 'cd /opt/local-repo/portal && runuser -u localrepo -- env LR_DATA=/srv/local-repo LR_STATE=/var/lib/local-repo LR_ETC=/etc/local-repo LR_PASSWORD="$LR_PASSWORD" python3 -m localrepo.cli user set-password admin'
+    python3 tests/e2e_portal.py https://127.0.0.1:8443 "$PW" "$work/lr-e2e.deb" linux legacy
+    cp "$LOCO_E2E_LEGACY_SRC/linux/docker/.env" linux/docker/.env
+fi
+sudo linux/docker/up.sh
 healthy
-dc logs local-repo > "$work/first.log"
-grep -q "Compte initial     : admin / " "$work/first.log" || fail "mot de passe initial absent du journal"
+if [ -n "${old_ca:-}" ]; then
+    [ "$(curl -fsS http://127.0.0.1:8088/ca.crt | sha256sum | cut -d' ' -f1)" = "$old_ca" ] || fail 'CA changée par la migration'
+    dc exec -T loco test -f /srv/loco/apt/pool/lr-e2e_1.0_all.deb
+fi
+dc logs loco > "$work/first.log"
+if [ -z "${old_ca:-}" ]; then grep -q "Compte initial     : admin / " "$work/first.log" || fail "mot de passe initial absent du journal"; fi
 # shellcheck disable=SC2016  # expansions faites dans le conteneur
-HOST=$(dc exec -T local-repo sh -c '. /etc/local-repo/local-repo.conf && echo "$HOST"')
+HOST=$(dc exec -T loco sh -c '. /etc/loco/loco.conf && echo "$HOST"')
 [ -n "$HOST" ] || fail "adresse non détectée"
 # shellcheck disable=SC2016
-dc exec -T -e LR_PASSWORD="$PW" local-repo sh -c 'cd /opt/local-repo/portal && runuser -u localrepo -- env LR_DATA=/srv/local-repo LR_STATE=/var/lib/local-repo LR_ETC=/etc/local-repo LR_PASSWORD="$LR_PASSWORD" python3 -m localrepo.cli user set-password admin'
+dc exec -T -e LOCO_PASSWORD="$PW" loco sh -c 'cd /opt/loco/portal && runuser -u loco -- env LOCO_DATA=/srv/loco LOCO_STATE=/var/lib/loco LOCO_ETC=/etc/loco LOCO_PASSWORD="$LOCO_PASSWORD" python3 -m loco.cli user set-password admin'
 
 step "Processus, comptes et services"
-dc exec -T local-repo ps -eo user:16,args > "$work/ps"
-grep -E '^localrepo .*gunicorn' "$work/ps" >/dev/null || fail "portail pas lancé sous localrepo"
+dc exec -T loco ps -eo user:16,args > "$work/ps"
+grep -E '^loco .*gunicorn' "$work/ps" >/dev/null || fail "portail pas lancé sous loco"
 grep -E '^apt-cacher-ng .*apt-cacher-ng' "$work/ps" >/dev/null || fail "apt-cacher-ng pas lancé sous son compte"
 curl -fsk https://127.0.0.1:8443/metrics > "$work/metrics"
-for unit in local-repo-portal nginx apt-cacher-ng local-repo-cron; do
-    grep -qx "local_repo_service_up{unit=\"$unit\"} 1" "$work/metrics" || fail "service inactif : $unit"
+for unit in loco-portal nginx apt-cacher-ng loco-cron; do
+    grep -qx "loco_service_up{unit=\"$unit\"} 1" "$work/metrics" || fail "service inactif : $unit"
 done
-for (( i=0; i<20; i++ )); do dc exec -T local-repo test -s /var/lib/local-repo/stats.json && break; sleep 2; done
-dc exec -T local-repo test -s /var/lib/local-repo/stats.json || fail "tâches périodiques inactives"
+for (( i=0; i<20; i++ )); do dc exec -T loco test -s /var/lib/loco/stats.json && break; sleep 2; done
+dc exec -T loco test -s /var/lib/loco/stats.json || fail "tâches périodiques inactives"
 
 step "Dépôt APT, poste client via le cache"
 # shellcheck disable=SC1091
 . /etc/os-release
-dc exec -T local-repo local-repo-apt add "$ID" "$VERSION_CODENAME" "$VERSION_ID"
+dc exec -T loco loco-apt add "$ID" "$VERSION_CODENAME" "$VERSION_ID"
 python3 tests/e2e_portal.py https://127.0.0.1:8443 "$PW" "$work/lr-e2e.deb" linux "$ID/$VERSION_CODENAME"
 curl -fsSL "http://$HOST:8088/linux/setup.sh" | sudo sh -s -- --trust-ca
 sudo apt-get install -y -q lr-e2e >/dev/null
-[ "$(lr-e2e)" = local-repo-docker-ok ] || fail "paquet du dépôt local"
-grep -q "https://$HOST:8443/apt/repositories/$ID/$VERSION_CODENAME/" /etc/apt/sources.list.d/local-repo.sources
+[ "$(lr-e2e)" = loco-docker-ok ] || fail "paquet du dépôt local"
+grep -q "https://$HOST:8443/apt/repositories/$ID/$VERSION_CODENAME/" /etc/apt/sources.list.d/loco.sources
 
 step "Famille Red Hat, Flatpak, Windows Update, sécurité"
 curl -fsS "https://$HOST:8443/rpm/el9/repodata/repomd.xml.asc" -o /dev/null
-curl -fsS "https://$HOST:8443/rpm/local-repo.asc" | grep "BEGIN PGP PUBLIC KEY BLOCK" > /dev/null
+curl -fsS "https://$HOST:8443/rpm/loco.asc" | grep "BEGIN PGP PUBLIC KEY BLOCK" > /dev/null
 curl -fsS "https://$HOST:8443/rpmcache/rocky/9/BaseOS/x86_64/os/repodata/repomd.xml" -o /dev/null
 curl -fsS "https://$HOST:8443/flatpak/repo/config" -o /dev/null
 curl -fsS "https://$HOST:8443/flathub/repo/summary.idx" -o /dev/null
@@ -71,8 +89,8 @@ curl -fsS "https://$HOST:8443/flathub/repo/summary.idx" -o /dev/null
 curl -sk -D - -o /dev/null https://127.0.0.1:8443/login | grep -i "content-security-policy: default-src 'none'" > /dev/null
 
 step "Sauvegarde"
-dc exec -T local-repo local-repo-backup create | tee "$work/backup"
-dc exec -T local-repo local-repo-backup list | grep -q "local-repo-.*\.tar\.gz"
+dc exec -T loco loco-backup create | tee "$work/backup"
+dc exec -T loco loco-backup list | grep -q "loco-.*\.tar\.gz"
 
 step "Recréation du conteneur : données, comptes et autorité conservés"
 CA_BEFORE=$(curl -fsS "http://$HOST:8088/ca.crt" | sha256sum | cut -d' ' -f1)
@@ -80,18 +98,18 @@ dc down
 dc up -d
 healthy
 [ "$(curl -fsS "http://$HOST:8088/ca.crt" | sha256sum | cut -d' ' -f1)" = "$CA_BEFORE" ] || fail "autorité HTTPS régénérée"
-if dc logs local-repo | grep -q "Compte initial"; then fail "nouveau compte initial après recréation"; fi
+if dc logs loco | grep -q "Compte initial"; then fail "nouveau compte initial après recréation"; fi
 python3 tests/e2e_portal.py https://127.0.0.1:8443 "$PW" "$work/lr-e2e.deb" linux "$ID/$VERSION_CODENAME"
 sudo apt-get update -q >/dev/null
 sudo apt-get install -y -q --reinstall lr-e2e >/dev/null
 
 step "Réglages par variables : sans Windows Update ni HTTP"
-printf 'LR_BACKUP_KEEP=2\nLR_WU=0\nLR_HTTP=0\n' > linux/docker/.env
+printf 'LOCO_BACKUP_KEEP=2\nLOCO_WU=0\nLOCO_HTTP=0\n' > linux/docker/.env
 dc up -d
 healthy
 if ss -Hltn | grep -qE ':(80|443|8088) '; then fail "ports 80, 443 ou 8088 encore ouverts"; fi
-grep -q "WU_ENABLED=0" <(dc exec -T local-repo cat /etc/local-repo/local-repo.conf)
-printf 'LR_BACKUP_KEEP=2\n' > linux/docker/.env
+grep -q "WU_ENABLED=0" <(dc exec -T loco cat /etc/loco/loco.conf)
+printf 'LOCO_BACKUP_KEEP=2\n' > linux/docker/.env
 dc up -d
 healthy
 ss -Hltn | grep -qE ':80 ' || fail "Windows Update non réactivé quand la variable est retirée"

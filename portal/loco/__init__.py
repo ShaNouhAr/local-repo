@@ -1,4 +1,4 @@
-"""local-repo : portail du dépôt local (paquets Linux, Windows Update, logiciels Windows)."""
+"""loco : portail du dépôt local (paquets Linux, Windows Update, logiciels Windows)."""
 
 import datetime
 import hmac
@@ -31,10 +31,10 @@ app = Flask(__name__, template_folder=os.path.join(ROOT, "templates"), static_fo
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 app.secret_key = SECRETS.get("secret_key") or secrets.token_hex(32)
 app.config.update(
-    SESSION_COOKIE_NAME="local_repo_session",
+    SESSION_COOKIE_NAME="loco_session",
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Strict",
-    SESSION_COOKIE_SECURE=os.environ.get("LR_SECURE_COOKIE", "1") == "1",
+    SESSION_COOKIE_SECURE=os.environ.get("LOCO_SECURE_COOKIE", "1") == "1",
     PERMANENT_SESSION_LIFETIME=datetime.timedelta(hours=config.SESSION_IDLE_HOURS),  # inactivité
     SESSION_REFRESH_EACH_REQUEST=True,
     MAX_CONTENT_LENGTH=None,

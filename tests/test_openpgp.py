@@ -10,11 +10,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "portal"))
 try:
-    from localrepo import openpgp  # noqa: E402
+    from loco import openpgp  # noqa: E402
 except ImportError:   # cryptography absente : module propre au serveur Windows
     openpgp = None
 
-TEXT = ("Origin: local-repo\nLabel: local-repo debian/trixie\nSuite: trixie\n"
+TEXT = ("Origin: loco\nLabel: loco debian/trixie\nSuite: trixie\n"
         "- ligne commençant par un tiret\n-----BEGIN PGP piège\nespaces en fin de ligne   \n\n"
         "SHA256:\n 0123456789abcdef 1234 Packages\n")
 
@@ -28,10 +28,10 @@ class TestOpenPGP(unittest.TestCase):
             if shutil.which(command) is None:
                 raise RuntimeError("Installez gnupg (gpg, gpgv) pour vérifier les signatures.")
         cls.work = tempfile.mkdtemp(prefix="lr-openpgp-")
-        cls.key = openpgp.Key.generate("local-repo (tests) <localrepo@tests>", bits=3072)
+        cls.key = openpgp.Key.generate("loco (tests) <loco@tests>", bits=3072)
         cls.path = os.path.join(cls.work, "key.json")
         cls.key.save(cls.path)
-        cls.keyring = os.path.join(cls.work, "local-repo.gpg")
+        cls.keyring = os.path.join(cls.work, "loco.gpg")
         Path(cls.keyring).write_bytes(openpgp.Key.load(cls.path).public_key())
 
     @classmethod
@@ -49,7 +49,7 @@ class TestOpenPGP(unittest.TestCase):
         fpr = next(line.split(":")[9] for line in listing.splitlines() if line.startswith("fpr:"))
         self.assertEqual(fpr, self.key.fingerprint.hex().upper())
         self.assertRegex(listing, r"(?m)^sig:!:")          # auto-certification vérifiée
-        self.assertIn("local-repo (tests) <localrepo@tests>", listing)
+        self.assertIn("loco (tests) <loco@tests>", listing)
         armored = openpgp.armor("PUBLIC KEY BLOCK", self.key.public_key())
         other = tempfile.mkdtemp(dir=self.work)
         os.chmod(other, 0o700)

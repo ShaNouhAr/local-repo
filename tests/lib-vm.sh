@@ -1,6 +1,6 @@
 #!/bin/bash
 # Fonctions communes des tests en VM QEMU jetables (sans Docker). À sourcer depuis un script de test.
-# Variables : WORK (dossier de travail), LOG_DIR (journaux), LR_VM_IMAGE_CACHE (cache d'images, facultatif).
+# Variables : WORK (dossier de travail), LOG_DIR (journaux), LOCO_VM_IMAGE_CACHE (cache d'images, facultatif).
 
 LIB_VM_HOSTS="cloud.debian.org cloud-images.ubuntu.com dl.rockylinux.org repo.almalinux.org"
 
@@ -22,7 +22,7 @@ PY
 ) || return 1
     local url=${row%%$'\n'*} sums=${row#*$'\n'} name cache image expected
     name=${url##*/}
-    cache=${LR_VM_IMAGE_CACHE:-$WORK/images}
+    cache=${LOCO_VM_IMAGE_CACHE:-$WORK/images}
     mkdir -p "$cache"
     curl -fsSL --retry 3 "$sums" -o "$WORK/$2.sums"
     # Formats GNU (« empreinte  fichier ») et BSD (« SHA256 (fichier) = empreinte »).
@@ -61,7 +61,7 @@ vm_start() {
     ssh-keygen -q -t ed25519 -N '' -f "$dir/key"
     printf '#cloud-config\nusers:\n  - name: ci\n    sudo: "ALL=(ALL) NOPASSWD:ALL"\n    shell: /bin/bash\n    ssh_authorized_keys:\n      - %s\nssh_pwauth: false\n' \
         "$(cat "$dir/key.pub")" > "$dir/user-data"
-    printf 'instance-id: local-repo-%s\nlocal-hostname: %s\n' "$name" "$name" > "$dir/meta-data"
+    printf 'instance-id: loco-%s\nlocal-hostname: %s\n' "$name" "$name" > "$dir/meta-data"
     (cd "$dir" && genisoimage -quiet -output seed.iso -volid cidata -joliet -rock user-data meta-data)
     if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then accel=(-accel kvm -cpu host); fi
     qemu-system-x86_64 "${accel[@]}" -m 2048 -smp 2 -display none -monitor none \

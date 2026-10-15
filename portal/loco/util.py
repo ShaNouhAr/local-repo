@@ -81,7 +81,7 @@ def sha256_of(path):
 
 # Conteneur : processus lancés par supervisord, reconnus à leur ligne de commande.
 CONTAINER_PROCESSES = {"nginx": "nginx: master", "apt-cacher-ng": "/usr/sbin/apt-cacher-ng",
-                       "local-repo-cron": "local-repo-cron"}
+                       "loco-cron": "loco-cron"}
 
 
 def process_running(marker):
@@ -99,7 +99,7 @@ def process_running(marker):
 
 
 def windows_status():
-    """État publié toutes les quelques secondes par le service Windows (lrwin.py)."""
+    """État publié toutes les quelques secondes par le service Windows (locowin.py)."""
     try:
         with open(os.path.join(config.STATE, "service-status.json")) as f:
             status = json.load(f)
@@ -110,13 +110,13 @@ def windows_status():
 
 def service_active(name):
     if config.WINDOWS:
-        if name == "local-repo-portal":
+        if name == "loco-portal":
             return True
         # Sous Windows, le cache APT est assuré par nginx (proxy sur le port 3142).
         name = "nginx" if name == "apt-cacher-ng" else name
         return bool(windows_status().get("services", {}).get(name))
     if config.CONTAINER:
-        if name == "local-repo-portal":
+        if name == "loco-portal":
             return True
         return name in CONTAINER_PROCESSES and process_running(CONTAINER_PROCESSES[name])
     try:

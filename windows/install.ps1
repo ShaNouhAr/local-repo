@@ -2,11 +2,11 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    Installe local-repo nativement sous Windows (Windows 11, Windows Server 2022 et 2025), sans Linux.
+    Installe loco nativement sous Windows (Windows 11, Windows Server 2022 et 2025), sans Linux.
     Relançable : met à jour le programme et applique les réglages ; les données sont conservées.
 
 .DESCRIPTION
-    Service Windows « local-repo » (compte de service virtuel NT SERVICE\local-repo) : nginx (portail HTTPS,
+    Service Windows « loco » (compte de service virtuel NT SERVICE\loco) : nginx (portail HTTPS,
     caches APT, RPM, Flathub et Windows Update) et portail Python (waitress). Composants téléchargés depuis
     leurs sources officielles et vérifiés (SHA-256 de windows\components.json). Règles du pare-feu Windows
     limitées aux réseaux autorisés.
@@ -14,7 +14,7 @@
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\windows\install.ps1
 .EXAMPLE
-    .\windows\install.ps1 -HostAddress 10.20.0.15 -Allow 10.20.0.0/16 -AdminAllow 10.20.99.0/24 -DataPath D:\local-repo
+    .\windows\install.ps1 -HostAddress 10.20.0.15 -Allow 10.20.0.0/16 -AdminAllow 10.20.99.0/24 -DataPath D:\loco
 #>
 [CmdletBinding()]
 param(
@@ -30,7 +30,7 @@ param(
     # Proxy HTTP d'entreprise pour sortir sur Internet, ex. http://proxy.exemple.lan:3128 ; -NoProxy le retire.
     [string]$Proxy,
     [switch]$NoProxy,
-    # Dossier des données et des caches (défaut : C:\ProgramData\local-repo\data).
+    # Dossier des données et des caches (défaut : C:\ProgramData\loco\data).
     [string]$DataPath,
     [string]$BackupPath,
     [switch]$NoWU,
@@ -53,11 +53,11 @@ $ProgressPreference = 'SilentlyContinue'
 Set-StrictMode -Version Latest
 
 $Source = Split-Path -Parent $PSScriptRoot
-$Program = Join-Path $env:ProgramFiles 'local-repo'
-$Root = Join-Path $env:ProgramData 'local-repo'
+$Program = Join-Path $env:ProgramFiles 'loco'
+$Root = Join-Path $env:ProgramData 'loco'
 $Etc = Join-Path $Root 'etc'
-$ConfigPath = Join-Path $Etc 'local-repo.json'
-$ServiceName = 'local-repo'
+$ConfigPath = Join-Path $Etc 'loco.json'
+$ServiceName = 'loco'
 $ServiceAccount = "NT SERVICE\$ServiceName"
 $PrivateNets = @('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', 'fc00::/7', 'fe80::/10')
 
@@ -70,10 +70,12 @@ if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { Fail 'Windows 64 bits (x64) requi
 $build = [int]$os.BuildNumber
 if ($os.ProductType -eq 1 -and $build -lt 22000) { Fail 'Windows 11 requis (ou Windows Server 2022 / 2025).' }
 if ($os.ProductType -ne 1 -and $build -lt 20348) { Fail 'Windows Server 2022 ou 2025 requis.' }
-foreach ($f in 'portal\lrwin.py', 'conf\nginx-portal.conf', 'windows\conf\nginx-apt-proxy.conf', 'windows\components.json', 'windows\local-repo.xml') {
+foreach ($f in 'portal\locowin.py', 'conf\nginx-portal.conf', 'windows\conf\nginx-apt-proxy.conf', 'windows\components.json', 'windows\loco.xml') {
     if (-not (Test-Path (Join-Path $Source $f))) { Fail "projet incomplet : $f introuvable dans $Source." }
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+. (Join-Path $PSScriptRoot 'migrate.ps1')
+Move-LegacyInstallation
 
 # ---------------------------------------------------------------- réglages
 # Valeurs par défaut, puis celles de l'installation précédente, puis les paramètres.
@@ -257,7 +259,7 @@ $pth = Get-ChildItem (Join-Path $stage 'python') -Filter 'python3*._pth' | Selec
 $zipName = (Get-ChildItem (Join-Path $stage 'python') -Filter 'python3*.zip' | Select-Object -First 1).Name
 [IO.File]::WriteAllText($pth.FullName, "$zipName`r`n.`r`nLib\site-packages`r`n..\portal`r`n")
 
-$nginxTmp = Join-Path $env:TEMP 'local-repo-nginx'
+$nginxTmp = Join-Path $env:TEMP 'loco-nginx'
 if (Test-Path $nginxTmp) { Remove-Item -Recurse -Force $nginxTmp }
 Expand-Archive -Path $nginxZip -DestinationPath $nginxTmp
 $nginxSrc = (Get-ChildItem $nginxTmp -Directory | Select-Object -First 1).FullName
@@ -274,11 +276,11 @@ foreach ($d in 'portal', 'conf', 'windows') {
 Copy-Item (Join-Path $Source 'windows\conf\*') (Join-Path $stage 'conf')
 Get-ChildItem (Join-Path $stage 'portal') -Recurse -Directory -Filter '__pycache__' | Remove-Item -Recurse -Force
 New-Item -ItemType Directory -Force -Path (Join-Path $stage 'winsw') | Out-Null
-Copy-Item $winsw (Join-Path $stage 'winsw\local-repo.exe')
-$xml = (Get-Content -Raw -Encoding UTF8 (Join-Path $Source 'windows\local-repo.xml')).
+Copy-Item $winsw (Join-Path $stage 'winsw\loco.exe')
+$xml = (Get-Content -Raw -Encoding UTF8 (Join-Path $Source 'windows\loco.xml')).
     Replace('@PROGRAM@', $Program).Replace('@CONFIG@', $ConfigPath).Replace('@LOGS@', (Join-Path $Root 'logs'))
-[IO.File]::WriteAllText((Join-Path $stage 'winsw\local-repo.xml'), $xml, (New-Object Text.UTF8Encoding($false)))
-Copy-Item (Join-Path $Source 'windows\local-repo.cmd') (Join-Path $stage 'local-repo.cmd')
+[IO.File]::WriteAllText((Join-Path $stage 'winsw\loco.xml'), $xml, (New-Object Text.UTF8Encoding($false)))
+Copy-Item (Join-Path $Source 'windows\loco.cmd') (Join-Path $stage 'loco.cmd')
 & (Join-Path $stage 'python\python.exe') -m compileall -q (Join-Path $stage 'portal') | Out-Null
 if ($LASTEXITCODE -ne 0) { Fail 'le nouveau programme contient une erreur Python ; remplacement interrompu.' }
 
@@ -288,13 +290,13 @@ foreach ($d in 'python', 'nginx', 'portal', 'conf', 'windows', 'winsw') {
     if (Test-Path $target) { Remove-Item -Recurse -Force $target }
     Move-Item (Join-Path $stage $d) $target
 }
-Move-Item -Force (Join-Path $stage 'local-repo.cmd') (Join-Path $Program 'local-repo.cmd')
+Move-Item -Force (Join-Path $stage 'loco.cmd') (Join-Path $Program 'loco.cmd')
 Remove-Item -Recurse -Force $stage
 
 # ---------------------------------------------------------------- service et droits
-$exe = Join-Path $Program 'winsw\local-repo.exe'
+$exe = Join-Path $Program 'winsw\loco.exe'
 if (-not $service) {
-    Say 'Création du service Windows local-repo'
+    Say 'Création du service Windows loco'
     & $exe install | Out-Null
     if ($LASTEXITCODE -ne 0) { Fail 'création du service impossible.' }
 }
@@ -342,9 +344,9 @@ New-Item -ItemType Directory -Force -Path $Etc | Out-Null
 
 # ---------------------------------------------------------------- configuration
 Say 'Configuration (comptes, clé de signature, dépôts, certificats, nginx)'
-$env:LR_CONFIG = $ConfigPath
+$env:LOCO_CONFIG = $ConfigPath
 if ($Password) {
-    $env:LR_PASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($Password))
+    $env:LOCO_PASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($Password))
 }
 $python = Join-Path $Program 'python\python.exe'
 $result = $null
@@ -352,14 +354,14 @@ $ErrorActionPreference = 'Continue'
 $env:PYTHONIOENCODING = 'utf-8'
 $consoleEncoding = [Console]::OutputEncoding
 [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
-& $python -m lrwin configure 2>&1 | ForEach-Object {
+& $python -m locowin configure 2>&1 | ForEach-Object {
     $line = "$_"
     if ($line.StartsWith('LOCALREPO-RESULT ')) { $result = $line.Substring(17) | ConvertFrom-Json } else { Write-Host "    $line" }
 }
 $code = $LASTEXITCODE
 [Console]::OutputEncoding = $consoleEncoding
 $ErrorActionPreference = 'Stop'
-Remove-Item Env:\LR_PASSWORD -ErrorAction SilentlyContinue
+Remove-Item Env:\LOCO_PASSWORD -ErrorAction SilentlyContinue
 if ($code -ne 0 -or -not $result) { Fail 'configuration interrompue (voir ci-dessus).' }
 # Fichiers de configuration et d'état (petits) : droits du dossier réappliqués, au cas où.
 # Le parent reste protégé pendant la remise à zéro des anciennes ACL des enfants.
@@ -369,10 +371,10 @@ Protect-Installation
 
 # ---------------------------------------------------------------- pare-feu
 Say 'Pare-feu Windows'
-Get-NetFirewallRule -Group 'local-repo' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+Get-NetFirewallRule -Group 'loco' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 $nginxExe = Join-Path $Program 'nginx\nginx.exe'
 function Add-Rule([string]$Name, [int[]]$Ports, [string[]]$Networks) {
-    New-NetFirewallRule -Group 'local-repo' -DisplayName "local-repo : $Name" -Direction Inbound -Action Allow `
+    New-NetFirewallRule -Group 'loco' -DisplayName "loco : $Name" -Direction Inbound -Action Allow `
         -Protocol TCP -LocalPort $Ports -RemoteAddress $Networks -Program $nginxExe -Profile Any | Out-Null
 }
 $clients = @($cfg.allow)
@@ -395,12 +397,12 @@ if (-not $ok) { Fail "le portail ne répond pas (journaux : $(Join-Path $Root 'l
 
 # ---------------------------------------------------------------- résumé
 Write-Host ''
-Say 'local-repo est installé'
+Say 'loco est installé'
 Write-Host "    Interface          : $($result.admin_url)"
 if ($result.issued) {
     Write-Host "    Compte initial     : admin / $($result.issued)   (à changer à la première connexion ; affiché une seule fois)"
 }
-Write-Host "    Accès perdu        : & '$Program\local-repo.cmd' user passwd admin"
+Write-Host "    Accès perdu        : & '$Program\loco.cmd' user passwd admin"
 Write-Host "    Autorité HTTPS     : $Etc\tls\ca.crt (à déployer sur les postes, par GPO par exemple)"
 Write-Host "                         empreinte $($result.ca_fingerprint)"
 Write-Host "    Postes Linux       : curl -fsSL $($result.admin_url)/linux/setup.sh | sudo sh"

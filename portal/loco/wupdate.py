@@ -75,14 +75,14 @@ def _parse_log(max_bytes, recent):
 
 
 def write_wu_maps(domains=None):
-    """Écrit la liste des domaines autorisés pour nginx (local-repo-nginx.path recharge nginx)."""
+    """Écrit la liste des domaines autorisés pour nginx (loco-nginx.path recharge nginx)."""
     domains = domains or read_wu_domains()
     os.makedirs(config.NGINX_MAP_DIR, exist_ok=True)
     for name, value in (("wu-stream.map", "$ssl_preread_server_name:443"), ("wu-http.map", "1")):
         body = "".join(f".{d} {value};\n" for d in domains if config.DOMAIN_RE.match(d))
         tmp = os.path.join(config.NGINX_MAP_DIR, f".{name}.tmp")
         with open(tmp, "w") as f:
-            f.write("# Généré par le portail local-repo, ne pas modifier.\n" + body)
+            f.write("# Généré par le portail loco, ne pas modifier.\n" + body)
         os.chmod(tmp, 0o644)
         os.replace(tmp, os.path.join(config.NGINX_MAP_DIR, name))
 
@@ -129,4 +129,4 @@ def windows_update_domains():
 def windows_update_dns():
     script = render_template("dns.ps1", domains=read_wu_domains(), host=config.HOST)
     return Response(script.replace("\n", "\r\n"), mimetype="text/plain",
-                    headers={"Content-Disposition": "attachment; filename=local-repo-dns.ps1"})
+                    headers={"Content-Disposition": "attachment; filename=loco-dns.ps1"})

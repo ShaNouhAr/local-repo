@@ -1,4 +1,4 @@
-# local-repo : installation depuis le catalogue {{ base }}
+# loco : installation depuis le catalogue {{ base }}
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
@@ -16,7 +16,7 @@ $apps = @(
 
 # Délai maximal par installeur (secondes) : un installeur qui attend un clic est arrêté.
 $timeout = 1800
-if ($env:LR_TIMEOUT) { $timeout = [int]$env:LR_TIMEOUT }
+if ($env:LOCO_TIMEOUT) { $timeout = [int]$env:LOCO_TIMEOUT }
 
 function Start-Installer($file, $arguments) {
     if ($arguments) { $p = Start-Process $file -ArgumentList $arguments -PassThru }
@@ -29,7 +29,7 @@ function Start-Installer($file, $arguments) {
     return $p
 }
 
-$dir = Join-Path $env:TEMP ('local-repo-' + [guid]::NewGuid().ToString('N'))
+$dir = Join-Path $env:TEMP ('loco-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $dir | Out-Null
 $failed = 0
 

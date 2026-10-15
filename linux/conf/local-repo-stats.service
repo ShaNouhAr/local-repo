@@ -1,8 +1,0 @@
-[Unit]
-Description=local-repo - calcul de la taille des caches
-
-[Service]
-Type=oneshot
-Nice=19
-IOSchedulingClass=idle
-ExecStart=/opt/local-repo/bin/local-repo-stats

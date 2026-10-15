@@ -29,7 +29,7 @@
         <dt>Empreinte SHA-256</dt><dd class="mono small break">{{ cert.sha256 }}</dd>
       </dl>
       {% else %}
-      <div class="panel-b"><p class="note err">Certificat introuvable dans <span class="mono">/etc/local-repo/tls</span> : {% if container %}redémarrez le conteneur{% else %}relancez install.sh{% endif %}.</p></div>
+      <div class="panel-b"><p class="note err">Certificat introuvable dans <span class="mono">/etc/loco/tls</span> : {% if container %}redémarrez le conteneur{% else %}relancez install.sh{% endif %}.</p></div>
       {% endif %}
     </section>
 
@@ -40,11 +40,11 @@
         <p class="muted">Le certificat du portail est signé par cette autorité, créée à l'installation. L'importer une fois sur un poste supprime l'alerte du navigateur, y compris après renouvellement du certificat.</p>
         <div>
           <span class="cmd-label">Windows, PowerShell administrateur</span>
-          {{ cmd('ca-win', "Invoke-WebRequest -UseBasicParsing " ~ (http_url or https_url) ~ "/ca.crt -OutFile $env:TEMP\\local-repo-ca.crt; Import-Certificate -FilePath $env:TEMP\\local-repo-ca.crt -CertStoreLocation Cert:\\LocalMachine\\Root", 'PS>') }}
+          {{ cmd('ca-win', "Invoke-WebRequest -UseBasicParsing " ~ (http_url or https_url) ~ "/ca.crt -OutFile $env:TEMP\\loco-ca.crt; Import-Certificate -FilePath $env:TEMP\\loco-ca.crt -CertStoreLocation Cert:\\LocalMachine\\Root", 'PS>') }}
         </div>
         <div>
           <span class="cmd-label">Debian / Ubuntu</span>
-          {{ cmd('ca-linux', 'curl -fsSL ' ~ (http_url or https_url) ~ '/ca.crt | sudo tee /usr/local/share/ca-certificates/local-repo.crt >/dev/null && sudo update-ca-certificates') }}
+          {{ cmd('ca-linux', 'curl -fsSL ' ~ (http_url or https_url) ~ '/ca.crt | sudo tee /usr/local/share/ca-certificates/loco.crt >/dev/null && sudo update-ca-certificates') }}
         </div>
         <p class="hint">Vérifier l'empreinte avant d'importer : <span class="mono break">{{ ca.sha256 }}</span>. Firefox sous Linux utilise son propre magasin (Paramètres › Certificats › Importer). Sur un domaine, l'autorité peut aussi être déployée par GPO.</p>
       </div>
@@ -94,7 +94,7 @@
     {% else %}
     <div class="empty">Aucune sauvegarde pour l'instant.</div>
     {% endif %}
-    <div class="panel-f">Quotidienne (configuration, comptes, clés, dépôt et catalogue ; hors caches). À la main : <code>sudo local-repo-backup create</code> ; restauration : <code>sudo local-repo-backup restore ARCHIVE</code>.</div>
+    <div class="panel-f">Quotidienne (configuration, comptes, clés, dépôt et catalogue ; hors caches). À la main : <code>sudo loco-backup create</code> ; restauration : <code>sudo loco-backup restore ARCHIVE</code>.</div>
   </section>
 </div>
 {% endblock %}

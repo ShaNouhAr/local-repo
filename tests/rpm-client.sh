@@ -16,7 +16,7 @@ echo "Dépôts actifs avant : $(echo "$before" | tr '\n' ' ')"
 step "Branchement (autorité importée, EPEL)"
 curl -fsSL "http://$SERVER:8088/rpm/setup.sh" | sh -s -- --trust-ca --epel
 now=$(enabled)
-for repo in local-repo local-repo-baseos local-repo-appstream local-repo-epel; do
+for repo in loco loco-baseos loco-appstream loco-epel; do
     echo "$now" | grep -qx "$repo" || fail "dépôt $repo absent"
 done
 if echo "$now" | grep -qx baseos; then fail "baseos d'origine encore actif"; fi
@@ -24,20 +24,20 @@ curl -fsS "https://$SERVER:8443/healthz" >/dev/null || fail "autorité non recon
 
 step "Dépôt local el$MAJOR"
 dnf -y -q install lr-rpm-e2e
-[ "$(cat /usr/share/lr-rpm-e2e/content)" = "local-repo-rpm-el$MAJOR" ] || fail "mauvais paquet local"
+[ "$(cat /usr/share/lr-rpm-e2e/content)" = "loco-rpm-el$MAJOR" ] || fail "mauvais paquet local"
 
 step "Dépôts officiels via le cache"
 if rpm -q tree >/dev/null 2>&1; then dnf -y -q remove tree; fi
 dnf -y -q install tree
-case "$(from_repo tree)" in local-repo-baseos|local-repo-appstream) ;; *) fail "tree installé depuis $(from_repo tree)" ;; esac
+case "$(from_repo tree)" in loco-baseos|loco-appstream) ;; *) fail "tree installé depuis $(from_repo tree)" ;; esac
 url=$(dnf repoquery --location tree 2>/dev/null | grep -m1 "^https://$SERVER:8443/rpmcache/")
 [ -n "$url" ] || fail "tree ne passe pas par le cache"
 curl -fsS -o /dev/null "$url"
-curl -fsS -D - -o /dev/null "$url" | grep -i "x-local-repo-cache: HIT" > /dev/null || fail "paquet non servi par le cache"
+curl -fsS -D - -o /dev/null "$url" | grep -i "x-loco-cache: HIT" > /dev/null || fail "paquet non servi par le cache"
 
 step "EPEL via le cache"
 dnf -y -q install htop
-[ "$(from_repo htop)" = local-repo-epel ] || fail "htop installé depuis $(from_repo htop)"
+[ "$(from_repo htop)" = loco-epel ] || fail "htop installé depuis $(from_repo htop)"
 
 step "Retour à l'état d'origine"
 curl -fsSL "https://$SERVER:8443/rpm/setup.sh" | sh -s -- --remove
@@ -45,8 +45,8 @@ dnf -y -q remove lr-rpm-e2e
 # EPEL reste installé (epel-release) : ses dépôts ne comptent pas dans la comparaison.
 after=$(enabled | grep -vE '^epel($|-)' | sort || true)
 [ "$after" = "$before" ] || fail "dépôts différents après retrait : $(echo "$after" | tr '\n' ' ')"
-if [ -e /etc/yum.repos.d/local-repo.repo ] || [ -e /etc/yum.repos.d/local-repo-cache.repo ]; then fail "fichiers restants"; fi
-[ ! -e /etc/pki/ca-trust/source/anchors/local-repo.crt ] || fail "autorité restante"
+if [ -e /etc/yum.repos.d/loco.repo ] || [ -e /etc/yum.repos.d/loco-cache.repo ]; then fail "fichiers restants"; fi
+[ ! -e /etc/pki/ca-trust/source/anchors/loco.crt ] || fail "autorité restante"
 dnf -y -q makecache >/dev/null || fail "dépôts d'origine inutilisables"
 echo
 echo "Poste $ID $VERSION_ID validé."

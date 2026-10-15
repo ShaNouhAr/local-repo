@@ -1,13 +1,13 @@
 #!/bin/bash
-# local-repo dans un conteneur LXC Proxmox VE (7, 8, 9) : crée un conteneur Debian non privilégié et y fait
+# loco dans un conteneur LXC Proxmox VE (7, 8, 9) : crée un conteneur Debian non privilégié et y fait
 # l'installation native (install.sh). À lancer en root sur n'importe quel hôte Proxmox :
 #
-#   curl -fsSLO https://raw.githubusercontent.com/ShaNouhAr/local-repo/main/linux/lxc/proxmox-lxc.sh
+#   curl -fsSLO https://raw.githubusercontent.com/ShaNouhAr/loco/main/linux/lxc/proxmox-lxc.sh
 #   bash proxmox-lxc.sh [options] [-- options d'install.sh]
 #   bash proxmox-lxc.sh --ctid N --update      met à jour le conteneur N (dernière version publiée)
 #
 #   --ctid N                 numéro du conteneur (défaut : prochain numéro libre)
-#   --hostname NOM           nom du conteneur (défaut : local-repo)
+#   --hostname NOM           nom du conteneur (défaut : loco)
 #   --storage S              stockage du disque (défaut : local-lvm, local-zfs, sinon le premier compatible)
 #   --disk G                 taille du disque en Go, caches compris (défaut : 100)
 #   --cores N                processeurs (défaut : 2)
@@ -17,13 +17,13 @@
 #   --ip CIDR --gw IP        adresse fixe, ex. --ip 192.168.10.20/24 --gw 192.168.10.1 (défaut : DHCP)
 #   --dns IP                 serveur DNS du conteneur (défaut : celui de l'hôte)
 #   --template-storage S     stockage des modèles (défaut : local, sinon le premier compatible)
-#   --version vX.Y.Z         version de local-repo (défaut : la dernière publiée sur GitHub)
+#   --version vX.Y.Z         version de loco (défaut : la dernière publiée sur GitHub)
 #   --source DIR             installer depuis une copie locale du projet plutôt que depuis GitHub
 #
 # Tout ce qui suit « -- » est transmis à install.sh, par exemple : -- --allow "10.0.0.0/8" --no-wu
 set -euo pipefail
 
-REPO=ShaNouhAr/local-repo
+REPO=ShaNouhAr/loco
 say()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31mErreur :\033[0m %s\n' "$*" >&2; exit 1; }
@@ -47,7 +47,7 @@ if [ -f "${BASH_SOURCE[0]:-}" ]; then
     if [ -f "$here/install.sh" ] && [ -f "$here/linux/lxc/proxmox-lxc.sh" ]; then SOURCE=$here; fi
 fi
 
-CTID="" NAME=local-repo STORAGE="" DISK=100 CORES=2 MEMORY=2048 BRIDGE="" VLAN="" IP=dhcp GW="" DNS=""
+CTID="" NAME=loco STORAGE="" DISK=100 CORES=2 MEMORY=2048 BRIDGE="" VLAN="" IP=dhcp GW="" DNS=""
 TEMPLATE_STORAGE="" UPDATE=0 VERSION=""
 need() { [ $# -ge 2 ] || die "l'option $1 attend une valeur."; }
 while [ $# -gt 0 ]; do
@@ -101,36 +101,40 @@ fi
 # Commande dans le conteneur, sans la locale de l'hôte (souvent absente du modèle) ni question d'apt.
 cexec() { pct exec "$CTID" -- env LANG=C.UTF-8 LC_ALL=C.UTF-8 DEBIAN_FRONTEND=noninteractive "$@"; }
 
-# Copie du projet dans le conteneur (/usr/local/src/local-repo), puis install.sh.
+# Copie du projet dans le conteneur (/usr/local/src/loco), puis install.sh.
 run_install() {
-    cexec sh -c 'rm -rf /usr/local/src/local-repo && mkdir -p /usr/local/src/local-repo' || return 1
+    cexec sh -c 'rm -rf /usr/local/src/loco && mkdir -p /usr/local/src/loco' || return 1
     if [ -n "$SOURCE" ]; then
         local archive
         archive=$(mktemp --suffix=.tar.gz)
-        tar --exclude=.git --exclude=./local-repo --exclude=__pycache__ --exclude=./test-results --exclude=./.env \
+        tar --exclude=.git --exclude=./loco --exclude=__pycache__ --exclude=./test-results --exclude=./.env \
             -czf "$archive" -C "$SOURCE" . || return 1
-        pct push "$CTID" "$archive" /root/local-repo.tar.gz || return 1
+        pct push "$CTID" "$archive" /root/loco.tar.gz || return 1
         rm -f "$archive"
         say "Projet copié depuis $SOURCE"
     else
         cexec sh -c 'command -v curl >/dev/null || { apt-get update -q && apt-get install -y -q curl ca-certificates; } >/dev/null' || return 1
-        cexec curl -fsSL --retry 3 -o /root/local-repo.tar.gz "$ARCHIVE_URL" || return 1
-        say "local-repo $VERSION téléchargé depuis GitHub"
+        cexec curl -fsSL --retry 3 -o /root/loco.tar.gz "$ARCHIVE_URL" || return 1
+        say "loco $VERSION téléchargé depuis GitHub"
     fi
-    # Archive GitHub : contenu dans un dossier local-repo-X.Y.Z, ramené à la racine.
+    # Archive GitHub : contenu dans un dossier loco-X.Y.Z, ramené à la racine.
     # shellcheck disable=SC2016  # expansions faites dans le conteneur
-    cexec sh -c 'cd /usr/local/src/local-repo && tar -xzf /root/local-repo.tar.gz && rm -f /root/local-repo.tar.gz &&
-        if [ ! -f install.sh ]; then d=$(echo local-repo-*); [ -f "$d/install.sh" ] &&
+    cexec sh -c 'cd /usr/local/src/loco && tar -xzf /root/loco.tar.gz && rm -f /root/loco.tar.gz &&
+        if [ ! -f install.sh ]; then d=$(echo loco-*); [ -f "$d/install.sh" ] &&
         find "$d" -mindepth 1 -maxdepth 1 -exec mv -t . {} + && rmdir "$d"; fi' || return 1
-    cexec /usr/local/src/local-repo/install.sh "$@"
+    cexec /usr/local/src/loco/install.sh "$@"
 }
 
 if [ "$UPDATE" = 1 ]; then
     [ -n "$CTID" ] || die "--update demande --ctid."
     pct status "$CTID" 2>/dev/null | grep -q running || die "le conteneur $CTID n'existe pas ou n'est pas démarré."
-    cexec test -f /etc/local-repo/local-repo.conf || die "local-repo n'est pas installé dans le conteneur $CTID."
-    say "Mise à jour de local-repo dans le conteneur $CTID"
+    { cexec test -f /etc/loco/loco.conf || cexec test -f /etc/local-repo/local-repo.conf; } || die "loco n'est pas installé dans le conteneur $CTID."
+    say "Mise à jour de loco dans le conteneur $CTID"
     run_install "${INSTALL_ARGS[@]}"
+    if pct config "$CTID" | grep -qx 'hostname: local-repo'; then
+        pct set "$CTID" --hostname loco >/dev/null
+        cexec hostnamectl set-hostname loco
+    fi
     exit 0
 fi
 
@@ -191,7 +195,7 @@ if [ "$IP" = dhcp ]; then net="$net,ip=dhcp"; else net="$net,ip=$IP,gw=$GW"; fi
 if [ -n "$VLAN" ]; then net="$net,tag=$VLAN"; fi
 create=(--hostname "$NAME" --ostype debian --unprivileged 1 --features nesting=1
         --cores "$CORES" --memory "$MEMORY" --swap 512 --rootfs "$STORAGE:$DISK"
-        --net0 "$net" --onboot 1 --description "local-repo : https://github.com/$REPO")
+        --net0 "$net" --onboot 1 --description "loco : https://github.com/$REPO")
 if [ -n "$DNS" ]; then create+=(--nameserver "$DNS"); fi
 pct create "$CTID" "$TEMPLATE_STORAGE:vztmpl/$template" "${create[@]}" >/dev/null
 pct start "$CTID"
@@ -206,12 +210,12 @@ done
 cexec getent hosts deb.debian.org >/dev/null 2>&1 \
     || die "le conteneur $CTID n'a pas d'accès Internet (DHCP, --ip/--gw, --dns ?). Pour le supprimer : pct destroy $CTID --purge"
 
-say "Installation de local-repo dans le conteneur $CTID"
+say "Installation de loco dans le conteneur $CTID"
 run_install "${INSTALL_ARGS[@]}" \
     || die "installation interrompue ; conteneur conservé pour diagnostic (pct enter $CTID). Suppression : pct destroy $CTID --purge"
 echo
 echo "    Conteneur          : $CTID ($NAME), démarré avec l'hôte"
 echo "    Console            : pct enter $CTID"
-echo "    Accès perdu        : pct exec $CTID -- local-repo-user passwd admin"
+echo "    Accès perdu        : pct exec $CTID -- loco-user passwd admin"
 echo "    Mise à jour        : bash proxmox-lxc.sh --ctid $CTID --update"
 echo "    Suppression        : pct destroy $CTID --purge"

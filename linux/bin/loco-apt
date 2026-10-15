@@ -1,0 +1,15 @@
+#!/bin/bash
+# loco : dépôts APT (root).
+#   loco-apt list
+#   loco-apt add debian trixie 13
+#   loco-apt add ubuntu noble 24.04
+#   loco-apt rebuild
+set -euo pipefail
+[ "$(id -u)" -eq 0 ] || { echo 'Lancez cette commande en root (sudo).' >&2; exit 1; }
+# shellcheck disable=SC1091
+. /etc/loco/loco.conf
+cd /opt/loco/portal
+args=(apt-repo "${@:-list}")
+if [ "${1:-}" = rebuild ]; then args=(rebuild-apt); fi
+exec runuser -u loco -- env LOCO_DATA="$DATA" LOCO_STATE=/var/lib/loco LOCO_ETC=/etc/loco \
+    "${PYTHON:-python3}" -m loco.cli "${args[@]}"

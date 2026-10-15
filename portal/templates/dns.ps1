@@ -1,7 +1,7 @@
-# local-repo : redirige les domaines Windows Update vers le cache {{ host }}.
+# loco : redirige les domaines Windows Update vers le cache {{ host }}.
 # A executer en administrateur sur le serveur DNS Active Directory.
-#   .\local-repo-dns.ps1            -> cree les zones
-#   .\local-repo-dns.ps1 -Remove    -> supprime les zones (retour arriere)
+#   .\loco-dns.ps1            -> cree les zones
+#   .\loco-dns.ps1 -Remove    -> supprime les zones (retour arriere)
 param([switch]$Remove)
 $ErrorActionPreference = 'Stop'
 $ip = '{{ host }}'

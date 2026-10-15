@@ -1,5 +1,5 @@
 [Unit]
-Description=local-repo - sauvegarde quotidienne
+Description=loco - sauvegarde quotidienne
 
 [Timer]
 OnCalendar=*-*-* 03:30

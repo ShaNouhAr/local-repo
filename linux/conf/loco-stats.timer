@@ -1,5 +1,5 @@
 [Unit]
-Description=local-repo - calcul périodique de la taille des caches
+Description=loco - calcul périodique de la taille des caches
 
 [Timer]
 OnBootSec=2min

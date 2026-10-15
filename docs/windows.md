@@ -9,21 +9,21 @@ Lancer PowerShell 5.1 ou supérieur **en administrateur**, récupérer le projet
 puis lancer l'installateur du dossier `windows` :
 
 ```powershell
-Invoke-WebRequest https://github.com/ShaNouhAr/local-repo/archive/refs/heads/main.zip -OutFile local-repo.zip
-Expand-Archive local-repo.zip -DestinationPath .
-cd local-repo-main
+Invoke-WebRequest https://github.com/ShaNouhAr/loco/archive/refs/heads/main.zip -OutFile loco.zip
+Expand-Archive loco.zip -DestinationPath .
+cd loco-main
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\windows\install.ps1
 ```
 
 Les archives des composants proviennent de Python, nginx, WinSW et PyPI ; leurs versions
 et SHA-256 sont fixés dans `windows/components.json` et vérifiés avant installation. Aucun autre logiciel
 n'est installé sur le système : ni GnuPG, ni modification du `PATH`. Le Python embarqué
-reste privé à l'application. Le service `local-repo` démarre automatiquement sous le compte virtuel
-`NT SERVICE\local-repo` ; le portail est servi par Waitress et nginx. Les tâches de sauvegarde, de
+reste privé à l'application. Le service `loco` démarre automatiquement sous le compte virtuel
+`NT SERVICE\loco` ; le portail est servi par Waitress et nginx. Les tâches de sauvegarde, de
 renouvellement du certificat et de calcul des statistiques font partie du service.
 
 Le script affiche l'adresse HTTPS, l'empreinte de l'autorité et le mot de passe initial `admin`, à changer
-à la première connexion. Déployer `C:\ProgramData\local-repo\etc\tls\ca.crt` sur les postes pour utiliser
+à la première connexion. Déployer `C:\ProgramData\loco\etc\tls\ca.crt` sur les postes pour utiliser
 HTTPS, par exemple par GPO. L'autorité et les clés existantes sont conservées lors des relances.
 
 Exemple avec des dossiers sur un autre volume et des réseaux explicites :
@@ -31,12 +31,12 @@ Exemple avec des dossiers sur un autre volume et des réseaux explicites :
 ```powershell
 .\windows\install.ps1 -HostAddress 10.20.0.15 `
   -Allow 10.20.0.0/16 -AdminAllow 10.20.99.0/24 `
-  -DataPath D:\local-repo-data -BackupPath D:\local-repo-backups
+  -DataPath D:\loco-data -BackupPath D:\loco-backups
 ```
 
 Les dossiers de données et de sauvegarde doivent être locaux, distincts, non imbriqués et sans espaces.
-Le programme est dans `%ProgramFiles%\local-repo` ; la configuration et l'état sont dans
-`%ProgramData%\local-repo`. Les ACL donnent au service les droits nécessaires sur ses données,
+Le programme est dans `%ProgramFiles%\loco` ; la configuration et l'état sont dans
+`%ProgramData%\loco`. Les ACL donnent au service les droits nécessaires sur ses données,
 ses journaux et ses certificats ; la configuration de l'installateur reste réservée à l'administrateur.
 
 | Paramètre | Effet |
@@ -52,7 +52,7 @@ ses journaux et ses certificats ; la configuration de l'installateur reste rése
 | `-BackupKeep 3` | sauvegardes quotidiennes conservées ; `0` désactive la tâche quotidienne |
 
 Les paramètres omis lors d'une relance reprennent la configuration existante. Les règles de pare-feu
-du groupe `local-repo` sont limitées au programme nginx et aux réseaux configurés. Le portail applicatif
+du groupe `loco` sont limitées au programme nginx et aux réseaux configurés. Le portail applicatif
 8089 reste en boucle locale. Le cache APT écoute sur 3142 ; Windows Update utilise 80 et 443.
 L'installateur refuse les ports déjà occupés, notamment par IIS/HTTP.sys. Libérer ces ports ou utiliser
 `-NoWU` si le cache Windows Update n'est pas nécessaire.
@@ -63,7 +63,7 @@ Les commandes du portail sont communes aux serveurs Windows et Linux. Les dépô
 par distribution et nom de version ; les dépôts RPM par version majeure `el8`, `el9`, `el10`.
 Ajouter une version Debian/Ubuntu dans l'interface ne demande pas de modifier le programme.
 Les nouveaux paquets sont indexés et signés par le programme : signatures OpenPGP (clé RSA 4096,
-`%ProgramData%\local-repo\state\signing-key.json`, lisible par le seul service et les administrateurs),
+`%ProgramData%\loco\state\signing-key.json`, lisible par le seul service et les administrateurs),
 vérifiées par les postes avec gpgv, sqv (apt de Debian 13) ou dnf comme pour un serveur Linux. Les signatures
 des éditeurs sont conservées pour les contenus des caches. Le cache APT Windows est fourni par nginx à la place d'apt-cacher-ng.
 
@@ -72,13 +72,13 @@ sont mis en cache ; le HTTPS est relayé au serveur Microsoft sans déchiffremen
 n'est installé. Le catalogue de logiciels Windows reste disponible séparément.
 
 Le cache Flathub fonctionne pour les postes Linux. La publication d'un **dépôt Flatpak local** demande
-ostree et reste disponible uniquement lorsque le serveur local-repo tourne sous Linux ; l'interface
+ostree et reste disponible uniquement lorsque le serveur loco tourne sous Linux ; l'interface
 Windows affiche cette limite et ne propose pas d'import Flatpak local.
 
 ## Administrer, mettre à jour et restaurer
 
 ```powershell
-$lr = "$env:ProgramFiles\local-repo\local-repo.cmd"
+$lr = "$env:ProgramFiles\loco\loco.cmd"
 & $lr status
 & $lr restart
 & $lr user list
@@ -87,7 +87,7 @@ $lr = "$env:ProgramFiles\local-repo\local-repo.cmd"
 & $lr fingerprint
 & $lr backup create
 & $lr backup list
-& $lr backup restore 'D:\local-repo-backups\local-repo-serveur-AAAAMMJJ-HHMMSS.tar.gz'
+& $lr backup restore 'D:\loco-backups\loco-serveur-AAAAMMJJ-HHMMSS.tar.gz'
 ```
 
 Exécuter ces commandes en administrateur. La restauration arrête le service, restaure les dépôts,
@@ -99,15 +99,15 @@ les clés privées et les comptes.
 
 Pour mettre à jour, récupérer les nouvelles sources puis relancer `windows\install.ps1` en administrateur.
 Avant une mise à jour importante, créer une sauvegarde. Les composants sont téléchargés et vérifiés
-avant l'arrêt du service. Consulter les journaux dans `%ProgramData%\local-repo\logs` et l'état dans
+avant l'arrêt du service. Consulter les journaux dans `%ProgramData%\loco\logs` et l'état dans
 la page *Système* du portail.
 
 ```powershell
 # Retire le service et le programme ; garde les données, comptes, clés et sauvegardes.
-powershell -ExecutionPolicy Bypass -File "$env:ProgramFiles\local-repo\windows\remove.ps1"
+powershell -ExecutionPolicy Bypass -File "$env:ProgramFiles\loco\windows\remove.ps1"
 
 # Effacement complet, avec confirmation.
-powershell -ExecutionPolicy Bypass -File "$env:ProgramFiles\local-repo\windows\remove.ps1" -Purge
+powershell -ExecutionPolicy Bypass -File "$env:ProgramFiles\loco\windows\remove.ps1" -Purge
 ```
 
 Windows 11 bloque par défaut l'exécution des scripts PowerShell : `-ExecutionPolicy Bypass` l'autorise
@@ -130,3 +130,5 @@ Python sont également comparés aux outils Debian/RPM sur Linux, et les signatu
 gpg, gpgv et sqv. Windows 11 (25H2) a été vérifié dans une machine de test distincte, avec de vrais postes :
 Debian 13 (dépôt local HTTPS vérifié par sqv, paquets Debian via le cache APT) et Rocky Linux 9 (dépôt `el9`
 vérifié par dnf, BaseOS via le cache RPM), ainsi qu'une mise à jour Windows de 88 Mo servie par le cache.
+
+Migration depuis local-repo : [guide loco 2.0](migration-loco.md).

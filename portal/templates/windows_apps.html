@@ -74,7 +74,7 @@
   {% else %}
   <div class="empty">Catalogue vide. Ajoutez un installeur par lien ou par fichier.</div>
   {% endif %}
-  <div class="panel-f">Commande en HTTPS : l'autorité local-repo doit être importée sur le poste (GPO).{% if http_url %} Sans elle, remplacer l'adresse par <code>{{ http_url }}</code>.{% endif %} Chaque installeur a 30 minutes pour se terminer (<code>LR_TIMEOUT</code>) et le fichier est vérifié par SHA256 avant installation.</div>
+  <div class="panel-f">Commande en HTTPS : l'autorité loco doit être importée sur le poste (GPO).{% if http_url %} Sans elle, remplacer l'adresse par <code>{{ http_url }}</code>.{% endif %} Chaque installeur a 30 minutes pour se terminer (<code>LOCO_TIMEOUT</code>) et le fichier est vérifié par SHA256 avant installation.</div>
 </section>
 
 <div class="selbar" data-base="{{ client_url }}/win/i/">

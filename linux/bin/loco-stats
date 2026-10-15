@@ -1,9 +1,9 @@
 #!/bin/sh
-# Calcule la taille des caches pour le portail (lancé en root par local-repo-stats.timer).
+# Calcule la taille des caches pour le portail (lancé en root par loco-stats.timer).
 set -eu
 # shellcheck disable=SC1091
-. /etc/local-repo/local-repo.conf
-OUT=/var/lib/local-repo/stats.json
+. /etc/loco/loco.conf
+OUT=/var/lib/loco/stats.json
 
 size() { s=$(du -sb "$1" 2>/dev/null | cut -f1); echo "${s:-0}"; }
 

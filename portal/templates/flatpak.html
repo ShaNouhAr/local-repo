@@ -14,7 +14,7 @@
     <div class="metric"><div class="k">Cache Flathub</div><div class="v">{{ stats.get('flatpakcache', 0)|human }}</div><div class="s">objets immuables gardés 6 mois</div></div>
     {% if local %}
     <div class="metric"><div class="k">Dépôt local</div><div class="v">{{ refs|length }}</div><div class="s">référence(s) · {{ stats.get('flatpak', 0)|human }}</div></div>
-    <div class="metric"><div class="k">Signature</div><div class="v">GPG</div><div class="s">clé du dépôt local-repo</div></div>
+    <div class="metric"><div class="k">Signature</div><div class="v">GPG</div><div class="s">clé du dépôt loco</div></div>
     {% else %}
     <div class="metric"><div class="k">Dépôt local</div><div class="v">—</div><div class="s">indisponible sur un serveur Windows</div></div>
     {% endif %}
@@ -24,15 +24,15 @@
     <div class="panel-h"><h2>Brancher un poste</h2><div class="aside">installe Flatpak si besoin</div></div>
     <div class="panel-b">
       {{ cmd('cmd-flatpak', 'curl -fsSL ' ~ client_url ~ '/flatpak/setup.sh | sudo sh') }}
-      <p class="hint">Flathub reste vérifié avec sa propre clé, ses téléchargements passent par le cache{% if local %} ; le dépôt local s'ajoute sous le nom <code>local-repo</code>
-        (<code>flatpak install local-repo org.exemple.App</code>){% endif %}.{% if http_url %} Sans l'autorité HTTPS : remplacer l'adresse par <code>{{ http_url }}</code>.{% endif %}
+      <p class="hint">Flathub reste vérifié avec sa propre clé, ses téléchargements passent par le cache{% if local %} ; le dépôt local s'ajoute sous le nom <code>loco</code>
+        (<code>flatpak install loco org.exemple.App</code>){% endif %}.{% if http_url %} Sans l'autorité HTTPS : remplacer l'adresse par <code>{{ http_url }}</code>.{% endif %}
         Annuler : <code>… | sudo sh -s -- --remove</code>.</p>
     </div>
   </section>
 
   {% if not local %}
   <p class="note">Serveur Windows : le dépôt Flatpak local demande ostree, qui n'existe pas sous Windows. Le cache Flathub
-    fonctionne normalement ; pour publier des applications internes, utilisez un serveur local-repo Linux.</p>
+    fonctionne normalement ; pour publier des applications internes, utilisez un serveur loco Linux.</p>
   {% else %}
   <div class="cols {{ 'w12' if can_edit else '' }}">
     {% if can_edit %}

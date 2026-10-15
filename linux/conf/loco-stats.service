@@ -1,0 +1,8 @@
+[Unit]
+Description=loco - calcul de la taille des caches
+
+[Service]
+Type=oneshot
+Nice=19
+IOSchedulingClass=idle
+ExecStart=/opt/loco/bin/loco-stats

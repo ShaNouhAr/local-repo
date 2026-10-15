@@ -8,7 +8,7 @@ work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
 mkdir -p "$work/deb/DEBIAN" "$work/deb/usr/share/lr-native-e2e"
 printf 'Package: lr-native-e2e\nVersion: 1.0\nArchitecture: all\nMaintainer: Tests <tests@invalid>\nDescription: native Windows server test\n' > "$work/deb/DEBIAN/control"
-printf 'local-repo native server\n' > "$work/deb/usr/share/lr-native-e2e/content"
+printf 'loco native server\n' > "$work/deb/usr/share/lr-native-e2e/content"
 for compression in xz gzip zstd; do
     dpkg-deb --root-owner-group -Z"$compression" -b "$work/deb" "$dest/$compression.deb"
 done
@@ -23,7 +23,7 @@ BuildArch: noarch
 Test repository served by native Windows.
 %install
 mkdir -p %{buildroot}/usr/share/lr-native-e2e
-echo 'local-repo native server' > %{buildroot}/usr/share/lr-native-e2e/content
+echo 'loco native server' > %{buildroot}/usr/share/lr-native-e2e/content
 %files
 /usr/share/lr-native-e2e/content
 SPEC

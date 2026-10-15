@@ -15,7 +15,7 @@ def ensure_key():
         return False
     from .openpgp import Key
     host = socket.gethostname()
-    Key.generate(f"local-repo ({host}) <localrepo@{host}>").save(KEY_PATH)
+    Key.generate(f"loco ({host}) <loco@{host}>").save(KEY_PATH)
     return True
 
 

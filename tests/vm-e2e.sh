@@ -9,14 +9,14 @@ for command in python3 qemu-system-x86_64 qemu-img genisoimage curl ssh ssh-keyg
     command -v "$command" >/dev/null || { echo "Commande requise : $command" >&2; exit 1; }
 done
 work=$(mktemp -d)
-LOG_DIR="${LR_VM_ARTIFACTS:-$ROOT/test-results}/$PLATFORM"
+LOG_DIR="${LOCO_VM_ARTIFACTS:-$ROOT/test-results}/$PLATFORM"
 mkdir -p "$LOG_DIR"
 VM_PID="" READY=0
 cleanup() {
     rc=$?
     trap - EXIT
     if [ "$rc" -ne 0 ] && [ "$READY" = 1 ]; then
-        ssh "${SSH_OPTIONS[@]}" ci@127.0.0.1 'sudo journalctl -u local-repo-portal -u nginx -u apt-cacher-ng --no-pager -n 150; sudo tail -100 /var/log/local-repo-install.log' > "$LOG_DIR/guest-errors.log" 2>&1 || true
+        ssh "${SSH_OPTIONS[@]}" ci@127.0.0.1 'sudo journalctl -u loco-portal -u nginx -u apt-cacher-ng --no-pager -n 150; sudo tail -100 /var/log/loco-install.log' > "$LOG_DIR/guest-errors.log" 2>&1 || true
     fi
     if [ -n "$VM_PID" ]; then kill "$VM_PID" 2>/dev/null || true; wait "$VM_PID" 2>/dev/null || true; fi
     rm -rf "$work"
@@ -39,7 +39,7 @@ for k in ('distribution','suite','version','image','checksums','algorithm','upgr
 PY
 mapfile -t platform < "$work/platform"
 IMAGE_URL=${platform[3]} IMAGE_NAME=${IMAGE_URL##*/} ALGORITHM=${platform[5]}
-CACHE="${LR_VM_IMAGE_CACHE:-$work/images}"
+CACHE="${LOCO_VM_IMAGE_CACHE:-$work/images}"
 mkdir -p "$CACHE"
 curl -fsSL --retry 3 "${platform[4]}" -o "$work/checksums"
 checksum=$(python3 - "$work/checksums" "$IMAGE_NAME" <<'PY'
@@ -73,9 +73,9 @@ users:
       - $PUBKEY
 ssh_pwauth: false
 EOF
-printf 'instance-id: local-repo-%s\nlocal-hostname: local-repo-ci\n' "$PLATFORM" > "$work/meta-data"
+printf 'instance-id: loco-%s\nlocal-hostname: loco-ci\n' "$PLATFORM" > "$work/meta-data"
 (cd "$work" && genisoimage -quiet -output seed.iso -volid cidata -joliet -rock user-data meta-data)
-PORT=${LR_VM_SSH_PORT:-$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')}
+PORT=${LOCO_VM_SSH_PORT:-$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')}
 if [[ ! "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -le 0 ] || [ "$PORT" -ge 65536 ]; then echo 'Port SSH invalide.' >&2; exit 1; fi
 SSH_OPTIONS=(-p "$PORT" -i "$work/key" -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
 ACCEL=(-accel tcg)
@@ -96,18 +96,18 @@ ssh "${SSH_OPTIONS[@]}" ci@127.0.0.1 'cloud-init status --wait' > "$LOG_DIR/clou
 ssh "${SSH_OPTIONS[@]}" ci@127.0.0.1 'cat /etc/os-release' > "$LOG_DIR/os-release"
 grep -qxE "ID=\"?${platform[0]}\"?" "$LOG_DIR/os-release"
 grep -qxE "VERSION_ID=\"?${platform[2]}\"?" "$LOG_DIR/os-release"
-tar --exclude=.git --exclude=./local-repo --exclude=__pycache__ --exclude=./test-results -czf - -C "$ROOT" . | \
-    ssh "${SSH_OPTIONS[@]}" ci@127.0.0.1 'mkdir -p local-repo && tar -xzf - -C local-repo'
+tar --exclude=.git --exclude=./loco --exclude=__pycache__ --exclude=./test-results -czf - -C "$ROOT" . | \
+    ssh "${SSH_OPTIONS[@]}" ci@127.0.0.1 'mkdir -p loco && tar -xzf - -C loco'
 LEGACY_SRC=""
 if [ -n "${platform[6]}" ]; then
-    if [ -n "${LR_VM_UPGRADE_ARCHIVE:-}" ]; then
-        cp "$LR_VM_UPGRADE_ARCHIVE" "$work/legacy.tar.gz"
+    if [ -n "${LOCO_VM_UPGRADE_ARCHIVE:-}" ]; then
+        cp "$LOCO_VM_UPGRADE_ARCHIVE" "$work/legacy.tar.gz"
     else
         git -C "$ROOT" archive "${platform[6]}" | gzip > "$work/legacy.tar.gz"
     fi
-    ssh "${SSH_OPTIONS[@]}" ci@127.0.0.1 'mkdir -p local-repo-legacy && tar -xzf - -C local-repo-legacy' < "$work/legacy.tar.gz"
-    LEGACY_SRC=/home/ci/local-repo-legacy
+    ssh "${SSH_OPTIONS[@]}" ci@127.0.0.1 'mkdir -p loco-legacy && tar -xzf - -C loco-legacy' < "$work/legacy.tar.gz"
+    LEGACY_SRC=/home/ci/loco-legacy
 fi
 # shellcheck disable=SC2029  # LEGACY_SRC est un chemin constant fixé ci-dessus, transmis volontairement à la VM.
-ssh "${SSH_OPTIONS[@]}" ci@127.0.0.1 "cd local-repo && sudo apt-get update -q && sudo apt-get install -y -q python3-flask apt-utils gnupg createrepo-c rpm && python3 -W error::ResourceWarning -m unittest discover -s tests -v && LR_E2E_LEGACY_SRC=$LEGACY_SRC tests/e2e.sh" 2>&1 | tee "$LOG_DIR/tests.log"
+ssh "${SSH_OPTIONS[@]}" ci@127.0.0.1 "cd loco && sudo apt-get update -q && sudo apt-get install -y -q python3-flask apt-utils gnupg createrepo-c rpm && python3 -W error::ResourceWarning -m unittest discover -s tests -v && LOCO_E2E_LEGACY_SRC=$LEGACY_SRC tests/e2e.sh" 2>&1 | tee "$LOG_DIR/tests.log"
 echo "Validation VM réussie : $PLATFORM"

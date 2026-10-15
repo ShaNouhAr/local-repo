@@ -1,26 +1,26 @@
 [Unit]
-Description=local-repo - portail web
-Documentation=https://github.com/ShaNouhAr/local-repo
+Description=loco - portail web
+Documentation=https://github.com/ShaNouhAr/loco
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-User=localrepo
-Group=localrepo
+User=loco
+Group=loco
 SupplementaryGroups=@LOG_GROUP@
-Environment=LR_DATA=@DATA@
-Environment=LR_STATE=/var/lib/local-repo
-Environment=LR_ETC=/etc/local-repo
-Environment=LR_PUBLIC_URL=@HTTP_URL@
-Environment=LR_ADMIN_URL=@ADMIN_URL@
-Environment=LR_HOST=@HOST@
-Environment=LR_ACNG_PORT=3142
-Environment=LR_BACKUP_DIR=@BACKUP_DIR@
-Environment=LR_FLATPAK=@FLATPAK@
-Environment=LR_RPM=@RPM@
+Environment=LOCO_DATA=@DATA@
+Environment=LOCO_STATE=/var/lib/loco
+Environment=LOCO_ETC=/etc/loco
+Environment=LOCO_PUBLIC_URL=@HTTP_URL@
+Environment=LOCO_ADMIN_URL=@ADMIN_URL@
+Environment=LOCO_HOST=@HOST@
+Environment=LOCO_ACNG_PORT=3142
+Environment=LOCO_BACKUP_DIR=@BACKUP_DIR@
+Environment=LOCO_FLATPAK=@FLATPAK@
+Environment=LOCO_RPM=@RPM@
 Environment=TMPDIR=@DATA@/.tmp
 @PROXY_ENV@
-WorkingDirectory=/opt/local-repo/portal
+WorkingDirectory=/opt/loco/portal
 ExecStart=@GUNICORN@ @GUNICORN_FLAGS@ --workers 1 --threads 8 --timeout 120 --bind 127.0.0.1:@APP_PORT@ --access-logfile - --access-logformat "%%(h)s %%(m)s %%(U)s %%(s)s" app:app
 Restart=always
 RestartSec=3
@@ -33,7 +33,7 @@ PrivateTmp=yes
 PrivateDevices=yes
 ProtectHome=yes
 ProtectSystem=strict
-ReadWritePaths=@DATA@ /var/lib/local-repo
+ReadWritePaths=@DATA@ /var/lib/loco
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectKernelLogs=yes

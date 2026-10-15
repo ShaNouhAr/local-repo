@@ -9,8 +9,8 @@ from pathlib import Path
 from unittest import mock
 
 import test_portal as fixture
-from localrepo import auth, config, linux
-from localrepo.db import transaction
+from loco import auth, config, linux
+from loco.db import transaction
 
 
 class TestAptRepositories(unittest.TestCase):
@@ -21,7 +21,7 @@ class TestAptRepositories(unittest.TestCase):
                 raise RuntimeError('Installez apt-utils et gnupg pour les tests APT.')
         os.makedirs(config.GNUPGHOME, mode=0o700, exist_ok=True)
         subprocess.run(['gpg', '--homedir', config.GNUPGHOME, '--batch', '--pinentry-mode', 'loopback',
-                        '--passphrase', '', '--quick-generate-key', 'local-repo tests <tests@invalid>',
+                        '--passphrase', '', '--quick-generate-key', 'loco tests <tests@invalid>',
                         'ed25519', 'sign', '0'], check=True, capture_output=True)
 
     def setUp(self):
@@ -56,6 +56,15 @@ class TestAptRepositories(unittest.TestCase):
         self.assertEqual(b.login('admin', fixture.ADMIN_PW).status_code, 302)
         return b
 
+    def test_migrated_repository_keeps_apt_identity(self):
+        repo = linux.create_repository('debian', 'migration-test', '13')
+        release = Path(linux.repository_path(repo), 'Release')
+        release.write_text(release.read_text().replace('Origin: loco', 'Origin: local-repo')
+                           .replace('Label: loco', 'Label: local-repo'))
+        linux.rebuild_apt(repo)
+        self.assertIn('Origin: local-repo\n', release.read_text())
+        self.assertIn('Label: local-repo debian/migration-test\n', release.read_text())
+
     def test_same_package_versions_stay_separate(self):
         first = linux.create_repository('debian', 'test-one', '13')
         second = linux.create_repository('ubuntu', 'test-two', '24.04')
@@ -80,11 +89,11 @@ class TestAptRepositories(unittest.TestCase):
 
     def test_future_release_and_public_sources(self):
         key = linux.create_repository('debian', 'future-release', '99')
-        c = fixture.localrepo.app.test_client()
+        c = fixture.loco.app.test_client()
         r = c.get('/linux/repositories/debian/future-release.sources', base_url='https://repo.test:8443')
         self.assertEqual(r.status_code, 200)
         self.assertIn('URIs: https://repo.test:8443/apt/repositories/' + key + '/', r.get_data(as_text=True))
-        self.assertIn('Signed-By: /etc/apt/keyrings/local-repo.gpg', r.get_data(as_text=True))
+        self.assertIn('Signed-By: /etc/apt/keyrings/loco.gpg', r.get_data(as_text=True))
         self.assertNotIn('Set-Cookie', r.headers)
         self.assertEqual(c.get('/linux/repositories/debian/not-created.sources').status_code, 404)
         os.unlink(os.path.join(linux.repository_path(key), 'InRelease'))
@@ -105,7 +114,7 @@ class TestAptRepositories(unittest.TestCase):
         name = linux.add_deb(self.build_deb('OLD'), linux.LEGACY)
         root = Path(config.APT_DIR)
         legacy_release = (root / 'Release').read_text()
-        self.assertIn('Label: local-repo\n', legacy_release)
+        self.assertIn('Label: loco\n', legacy_release)
         self.assertIn('Suite: stable\n', legacy_release)
         self.assertNotIn('repositories/', legacy_release)
         original = (root / 'pool' / name).read_bytes()
@@ -124,7 +133,7 @@ class TestAptRepositories(unittest.TestCase):
             if args[0] == 'gpg':
                 raise subprocess.CalledProcessError(1, args)
             return run(args, **kwargs)
-        with mock.patch('localrepo.linux.subprocess.run', side_effect=fail_gpg):
+        with mock.patch('loco.linux.subprocess.run', side_effect=fail_gpg):
             with self.assertRaises(subprocess.CalledProcessError):
                 linux.rebuild_apt(key)
         self.assertEqual({name: (root / name).read_bytes() for name in before}, before)

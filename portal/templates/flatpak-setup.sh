@@ -1,5 +1,5 @@
 #!/bin/sh
-# local-repo : Flatpak via le serveur local (Flathub en cache + dépôt local de l'entreprise).
+# loco : Flatpak via le serveur local (Flathub en cache + dépôt local de l'entreprise).
 #   curl -fsSL {{ base }}/flatpak/setup.sh | sudo sh
 #   ... | sudo sh -s -- --remove     Flathub en accès direct, dépôt local retiré
 # Les signatures GPG (clé de Flathub, clé du dépôt local) restent vérifiées par Flatpak.
@@ -14,9 +14,10 @@ if [ "${1:-}" = "--remove" ]; then
         if flatpak remotes --system --columns=name | grep -qx flathub; then
             flatpak remote-modify --system flathub --url="$FLATHUB"
         fi
+        flatpak remote-delete --system --force loco 2>/dev/null || true
         flatpak remote-delete --system --force local-repo 2>/dev/null || true
     fi
-    echo "Configuration Flatpak local-repo retirée (Flathub en accès direct)."
+    echo "Configuration Flatpak loco retirée (Flathub en accès direct)."
     exit 0
 fi
 [ -z "${1:-}" ] || { echo "Option inconnue : $1" >&2; exit 1; }
@@ -34,11 +35,19 @@ flatpak remote-add --system --if-not-exists flathub "$TMP"
 flatpak remote-modify --system flathub --url="$BASE/flathub/repo/"
 
 if [ "$LOCAL" = 1 ]; then
-# Dépôt local de l'entreprise (clé local-repo).
-$GET "$BASE/flatpak/local-repo.flatpakrepo" > "$TMP"
-flatpak remote-add --system --if-not-exists local-repo "$TMP"
-flatpak remote-modify --system local-repo --url="$BASE/flatpak/repo/"
+# Dépôt local de l'entreprise (clé loco).
+$GET "$BASE/flatpak/loco.flatpakrepo" > "$TMP"
+flatpak remote-add --system --if-not-exists loco "$TMP"
+flatpak remote-modify --system loco --url="$BASE/flatpak/repo/"
+# Réinstaller depuis le même dépôt signé change l'origine sans manipuler l'état interne de Flatpak.
+if flatpak remotes --system --columns=name | grep -qx local-repo; then
+    flatpak list --system --columns=ref,origin | awk '$2 == "local-repo" {print $1}' |
+    while IFS= read -r ref; do
+        flatpak install --system --noninteractive --assumeyes --no-deps --reinstall loco "$ref"
+    done
+    flatpak remote-delete --system --force local-repo
+fi
 fi
 
 flatpak remotes --system --show-details
-echo "Flatpak configuré pour local-repo ($BASE)."
+echo "Flatpak configuré pour loco ($BASE)."

@@ -9,17 +9,17 @@ import unittest
 from pathlib import Path
 
 import test_portal as fixture
-from localrepo import config, rpmrepo
-from localrepo.db import transaction
+from loco import config, rpmrepo
+from loco.db import transaction
 
 SPEC = """Name: {name}
 Version: 1.0
 Release: 1.{dist}
-Summary: test local-repo
+Summary: test loco
 License: MIT
 BuildArch: noarch
 %description
-test local-repo
+test loco
 %install
 mkdir -p %{{buildroot}}/usr/share/{name}
 echo '{content}' > %{{buildroot}}/usr/share/{name}/content
@@ -39,7 +39,7 @@ class TestRpmRepositories(unittest.TestCase):
                               capture_output=True, text=True).stdout
         if "sec" not in keys:
             subprocess.run(["gpg", "--homedir", config.GNUPGHOME, "--batch", "--pinentry-mode", "loopback",
-                            "--passphrase", "", "--quick-generate-key", "local-repo tests <tests@invalid>",
+                            "--passphrase", "", "--quick-generate-key", "loco tests <tests@invalid>",
                             "ed25519", "sign", "0"], check=True, capture_output=True)
 
     def setUp(self):
@@ -110,7 +110,7 @@ class TestRpmRepositories(unittest.TestCase):
     def test_viewer_cannot_change_repositories(self):
         rpmrepo.create_repository("el9")
         with transaction() as c:
-            from localrepo import auth
+            from loco import auth
             auth.create_user(c, "lecteur-rpm", "Lecture-Seule-2026x", "viewer", must_change=False)
         try:
             v = fixture.Browser()
@@ -128,7 +128,7 @@ class TestRpmRepositories(unittest.TestCase):
                 rpmrepo.repository_path(name)
 
     def test_client_script_follows_scheme(self):
-        c = fixture.localrepo.app.test_client()
+        c = fixture.loco.app.test_client()
         http = c.get("/rpm/setup.sh", base_url="http://repo.test:8088").get_data(as_text=True)
         self.assertIn('BASE="http://repo.test:8088"', http)
         self.assertIn('HTTPS_BASE="https://repo.test:8443"', http)

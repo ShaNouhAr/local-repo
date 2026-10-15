@@ -1,7 +1,7 @@
-"""Commandes d'administration : python3 -m localrepo.cli <commande>.
+"""Commandes d'administration : python3 -m loco.cli <commande>.
 
   init                      migrations de la base, reprise de l'ancien mot de passe
-  ensure-admin              crée le compte « admin » s'il n'existe aucun compte (mot de passe : $LR_PASSWORD)
+  ensure-admin              crée le compte « admin » s'il n'existe aucun compte (mot de passe : $LOCO_PASSWORD)
   rebuild-apt               régénère et signe tous les dépôts APT
   apt-repo add DISTRIBUTION SUITE [VERSION]   crée un dépôt pour Debian / Ubuntu
   apt-repo list             liste les dépôts par distribution et version
@@ -11,7 +11,7 @@
   user list                 liste les comptes
   user add NOM [admin|viewer]   crée un compte et affiche un mot de passe temporaire
   user passwd NOM           nouveau mot de passe temporaire (à changer à la connexion)
-  user set-password NOM     définit le mot de passe depuis $LR_PASSWORD
+  user set-password NOM     définit le mot de passe depuis $LOCO_PASSWORD
   user enable|disable NOM   active / désactive un compte
 """
 
@@ -65,7 +65,7 @@ def user_command(args):
             print(f"Mot de passe temporaire de {row['username']} : {password}")
         elif cmd == "set-password":
             row = _user(conn, name)
-            password = os.environ.get("LR_PASSWORD", "")
+            password = os.environ.get("LOCO_PASSWORD", "")
             problem = auth.password_problem(password, row["username"])
             if problem:
                 sys.exit(problem)
@@ -91,8 +91,8 @@ def main(argv):
     if cmd == "ensure-admin":
         with transaction() as conn:
             if conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
-                auth.create_user(conn, "admin", os.environ["LR_PASSWORD"], "admin",
-                                 must_change=os.environ.get("LR_MUST_CHANGE") == "1")
+                auth.create_user(conn, "admin", os.environ["LOCO_PASSWORD"], "admin",
+                                 must_change=os.environ.get("LOCO_MUST_CHANGE") == "1")
                 _audit(conn, "comptes.ajout", "admin (installation)")
                 print("created")
     elif cmd == "rebuild-apt":
@@ -125,11 +125,11 @@ def main(argv):
         else:
             key = subprocess.run([config.GPG, "--batch", "--armor", "--export"],
                                  env=dict(os.environ, GNUPGHOME=config.GNUPGHOME), check=True, capture_output=True).stdout
-        tmp = os.path.join(config.RPM_DIR, ".local-repo.asc.tmp")
+        tmp = os.path.join(config.RPM_DIR, ".loco.asc.tmp")
         with open(tmp, "wb") as f:
             f.write(key)
         os.chmod(tmp, 0o644)
-        os.replace(tmp, os.path.join(config.RPM_DIR, "local-repo.asc"))
+        os.replace(tmp, os.path.join(config.RPM_DIR, "loco.asc"))
         existing = {r["name"] for r in rpmrepo.repositories()}
         for name in config.RPM_DEFAULT_REPOSITORIES:
             if name not in existing:

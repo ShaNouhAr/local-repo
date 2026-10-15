@@ -1,0 +1,8 @@
+[Unit]
+Description=loco - surveille la liste des domaines Windows Update
+
+[Path]
+PathChanged=/var/lib/loco/nginx/wu-http.map
+
+[Install]
+WantedBy=multi-user.target

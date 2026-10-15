@@ -15,20 +15,20 @@ from .util import disk_usage, read_stats, service_active
 from .wupdate import wu_stats
 
 UNITS = [
-    ("local-repo-portal", "Interface et scripts clients"),
+    ("loco-portal", "Interface et scripts clients"),
     ("nginx", "HTTPS, fichiers, cache Windows Update"),
     ("apt-cacher-ng", "Cache des paquets Linux"),
-    ("local-repo-stats.timer", "Taille des caches, toutes les 15 min"),
-    ("local-repo-nginx.path", "Recharge nginx quand la liste des domaines change"),
-    ("local-repo-backup.timer", "Sauvegarde quotidienne"),
+    ("loco-stats.timer", "Taille des caches, toutes les 15 min"),
+    ("loco-nginx.path", "Recharge nginx quand la liste des domaines change"),
+    ("loco-backup.timer", "Sauvegarde quotidienne"),
 ]
 if config.CONTAINER:
-    UNITS = UNITS[:3] + [("local-repo-cron", "Tâches périodiques : taille des caches, rechargement nginx, sauvegarde")]
+    UNITS = UNITS[:3] + [("loco-cron", "Tâches périodiques : taille des caches, rechargement nginx, sauvegarde")]
 if config.WINDOWS:
     UNITS = [
-        ("local-repo-portal", "Interface et scripts clients (service Windows local-repo)"),
+        ("loco-portal", "Interface et scripts clients (service Windows loco)"),
         ("nginx", "HTTPS, fichiers, caches APT, RPM, Flathub et Windows Update"),
-        ("local-repo-tasks", "Tâches : taille des caches, rechargement nginx, sauvegarde quotidienne"),
+        ("loco-tasks", "Tâches : taille des caches, rechargement nginx, sauvegarde quotidienne"),
     ]
 
 
@@ -113,7 +113,7 @@ def package_version(name):
         if out.returncode == 0:
             return out.stdout.strip()
         if name == "apt-cacher-ng":
-            with open("/usr/local/lib/local-repo/acng/version") as f:
+            with open("/usr/local/lib/loco/acng/version") as f:
                 return f.read().strip()
     except (OSError, subprocess.SubprocessError):
         pass
@@ -142,12 +142,12 @@ def system():
         services=[(unit, desc, service_active(unit)) for unit, desc in UNITS],
         cert=cert_info(os.path.join(config.TLS_DIR, "server.crt")),
         ca=cert_info(os.path.join(config.TLS_DIR, "ca.crt")),
-        versions=({"local-repo": config.VERSION, "nginx": package_version("nginx"),
+        versions=({"loco": config.VERSION, "nginx": package_version("nginx"),
                    "waitress": package_version("waitress"), "cryptography (signatures, TLS)": package_version("cryptography"),
                    "Python": sys.version.split()[0],
                    "Flask": package_version("python3-flask"), "Windows": package_version("windows")}
                   if config.WINDOWS else
-                  {"local-repo": config.VERSION, "nginx": package_version("nginx"),
+                  {"loco": config.VERSION, "nginx": package_version("nginx"),
                    "apt-cacher-ng": package_version("apt-cacher-ng"), "Python": sys.version.split()[0],
                    "Flask": package_version("python3-flask")}),
         disk=disk_usage(),
@@ -180,28 +180,28 @@ def metrics():
             label = "{" + ",".join(f'{k}="{v}"' for k, v in labels.items()) + "}" if labels else ""
             lines.append(f"{name}{label} {value}")
 
-    metric("local_repo_info", "Version de local-repo.", "gauge", [({"version": config.VERSION}, 1)])
-    metric("local_repo_service_up", "Service actif (1) ou non (0).", "gauge",
+    metric("loco_info", "Version de loco.", "gauge", [({"version": config.VERSION}, 1)])
+    metric("loco_service_up", "Service actif (1) ou non (0).", "gauge",
            [({"unit": u}, int(service_active(u))) for u, _ in UNITS])
-    metric("local_repo_cache_bytes", "Taille des caches sur disque.", "gauge",
+    metric("loco_cache_bytes", "Taille des caches sur disque.", "gauge",
            [({"cache": "apt"}, stats.get("acng", 0)), ({"cache": "windows_update"}, stats.get("wucache", 0)),
             ({"cache": "flathub"}, stats.get("flatpakcache", 0)), ({"cache": "rpm"}, stats.get("rpmcache", 0))])
-    metric("local_repo_wu_recent_bytes", "Octets Windows Update récents servis depuis le cache ou Internet.", "gauge",
+    metric("loco_wu_recent_bytes", "Octets Windows Update récents servis depuis le cache ou Internet.", "gauge",
            [({"source": "cache"}, wu["hit_bytes"]), ({"source": "internet"}, wu["miss_bytes"])])
-    metric("local_repo_deb_packages", "Paquets du dépôt APT local.", "gauge", [({}, len(list_debs()))])
+    metric("loco_deb_packages", "Paquets du dépôt APT local.", "gauge", [({}, len(list_debs()))])
     if config.RPM_ENABLED:
         from .rpmrepo import list_rpms
-        metric("local_repo_rpm_packages", "Paquets des dépôts RPM locaux.", "gauge", [({}, len(list_rpms()))])
+        metric("loco_rpm_packages", "Paquets des dépôts RPM locaux.", "gauge", [({}, len(list_rpms()))])
     rows = db().execute("SELECT status, COUNT(*) AS n FROM win_apps GROUP BY status").fetchall()
-    metric("local_repo_windows_apps", "Logiciels du catalogue Windows par état.", "gauge",
+    metric("loco_windows_apps", "Logiciels du catalogue Windows par état.", "gauge",
            [({"status": r["status"]}, r["n"]) for r in rows] or [({"status": "ready"}, 0)])
-    metric("local_repo_disk_bytes", "Disque des données.", "gauge",
+    metric("loco_disk_bytes", "Disque des données.", "gauge",
            [({"kind": "total"}, disk["total"]), ({"kind": "free"}, disk["free"])])
     cert = cert_info(os.path.join(config.TLS_DIR, "server.crt"))
     if cert and cert.get("end", {}).get("days") is not None:
-        metric("local_repo_tls_cert_expiry_days", "Jours avant expiration du certificat HTTPS.", "gauge",
+        metric("loco_tls_cert_expiry_days", "Jours avant expiration du certificat HTTPS.", "gauge",
                [({}, cert["end"]["days"])])
     backups = list_backups()
-    metric("local_repo_backup_last_timestamp_seconds", "Date de la dernière sauvegarde (0 si aucune).", "gauge",
+    metric("loco_backup_last_timestamp_seconds", "Date de la dernière sauvegarde (0 si aucune).", "gauge",
            [({}, int(backups[0]["mtime"]) if backups else 0)])
     return Response("\n".join(lines) + "\n", mimetype="text/plain; version=0.0.4")

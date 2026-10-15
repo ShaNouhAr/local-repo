@@ -1,6 +1,6 @@
-"""Point d'entrée gunicorn (« app:app »). Administration : python3 -m localrepo.cli."""
+"""Point d'entrée gunicorn (« app:app »). Administration : python3 -m loco.cli."""
 
-from localrepo import app, startup
+from loco import app, startup
 
 startup()
 

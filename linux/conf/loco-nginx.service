@@ -1,5 +1,5 @@
 [Unit]
-Description=local-repo - recharge nginx après un changement de domaines
+Description=loco - recharge nginx après un changement de domaines
 
 [Service]
 Type=oneshot

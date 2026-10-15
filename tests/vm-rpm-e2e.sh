@@ -1,5 +1,5 @@
 #!/bin/bash
-# Postes de la famille Red Hat : un serveur local-repo (Debian 13) et des postes Rocky Linux / AlmaLinux,
+# Postes de la famille Red Hat : un serveur loco (Debian 13) et des postes Rocky Linux / AlmaLinux,
 # chacun dans une VM QEMU jetable (sans Docker). Les postes joignent le serveur par 10.0.2.2.
 # Usage : tests/vm-rpm-e2e.sh [rocky-9 almalinux-10 …]   (par défaut : tests/rpm-platforms.json)
 set -euo pipefail
@@ -10,14 +10,14 @@ done
 # shellcheck disable=SC1091  # bibliothèque des tests, vérifiée séparément
 . "$ROOT/tests/lib-vm.sh"
 WORK=$(mktemp -d)
-LOG_DIR="${LR_VM_ARTIFACTS:-$ROOT/test-results}/rpm"
+LOG_DIR="${LOCO_VM_ARTIFACTS:-$ROOT/test-results}/rpm"
 mkdir -p "$LOG_DIR"
 VMS=()
 cleanup() {
     rc=$?
     trap - EXIT
     if [ "$rc" -ne 0 ] && [ -d "$WORK/vm-server" ]; then
-        vm_ssh server 'sudo journalctl -u local-repo-portal -u nginx --no-pager -n 150; sudo tail -60 /var/log/nginx/error.log' \
+        vm_ssh server 'sudo journalctl -u loco-portal -u nginx --no-pager -n 150; sudo tail -60 /var/log/nginx/error.log' \
             > "$LOG_DIR/server-errors.log" 2>&1 || true
     fi
     for vm in "${VMS[@]}"; do vm_stop "$vm"; done
@@ -39,10 +39,10 @@ echo "=== Serveur (Debian 13)"
 image=$(vm_image "$ROOT/tests/platforms.json" debian-13)
 VMS+=(server)
 vm_start server "$image" "$(free_port)" "tcp:127.0.0.1:8443-:8443" "tcp:127.0.0.1:8088-:8088"
-tar --exclude=.git --exclude=./local-repo --exclude=__pycache__ --exclude=./test-results -czf - -C "$ROOT" . | \
-    vm_ssh server 'mkdir -p local-repo && tar -xzf - -C local-repo'
+tar --exclude=.git --exclude=./loco --exclude=__pycache__ --exclude=./test-results -czf - -C "$ROOT" . | \
+    vm_ssh server 'mkdir -p loco && tar -xzf - -C loco'
 # shellcheck disable=SC2029  # mot de passe généré ci-dessus, transmis volontairement à la VM.
-vm_ssh server "cd local-repo && sudo tests/rpm-server.sh '$PW'" 2>&1 | tee "$LOG_DIR/server.log"
+vm_ssh server "cd loco && sudo tests/rpm-server.sh '$PW'" 2>&1 | tee "$LOG_DIR/server.log"
 
 for id in "${CLIENTS[@]}"; do
     [[ "$id" =~ ^[a-z0-9][a-z0-9.-]+$ ]] || { echo "Plateforme invalide : $id" >&2; exit 1; }

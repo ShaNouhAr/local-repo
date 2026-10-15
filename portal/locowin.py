@@ -1,14 +1,14 @@
 """Serveur Windows natif : configuration, service (nginx, portail, tâches) et sauvegardes.
 
-Module hors du paquet localrepo : la configuration JSON doit être appliquée avant de l'importer.
-Lancé par windows\\install.ps1 et par le service Windows « local-repo » (WinSW) :
-  python -m lrwin configure        dossiers, certificats, clé de signature, comptes, nginx
-  python -m lrwin service          service : nginx, portail (waitress) et tâches périodiques
-  python -m lrwin stats            taille des caches
-  python -m lrwin backup create|list|restore ARCHIVE
-  python -m lrwin user list|add|passwd|enable|disable …
+Module hors du paquet loco : la configuration JSON doit être appliquée avant de l'importer.
+Lancé par windows\\install.ps1 et par le service Windows « loco » (WinSW) :
+  python -m locowin configure        dossiers, certificats, clé de signature, comptes, nginx
+  python -m locowin service          service : nginx, portail (waitress) et tâches périodiques
+  python -m locowin stats            taille des caches
+  python -m locowin backup create|list|restore ARCHIVE
+  python -m locowin user list|add|passwd|enable|disable …
 
-La configuration est lue dans le fichier JSON désigné par LR_CONFIG (écrit par install.ps1).
+La configuration est lue dans le fichier JSON désigné par LOCO_CONFIG (écrit par install.ps1).
 """
 
 import datetime
@@ -29,7 +29,7 @@ import tempfile
 import threading
 import time
 
-CONFIG_PATH = os.environ.get("LR_CONFIG", r"C:\ProgramData\local-repo\etc\local-repo.json")
+CONFIG_PATH = os.environ.get("LOCO_CONFIG", r"C:\ProgramData\loco\etc\loco.json")
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
@@ -55,16 +55,16 @@ def load_config(path=CONFIG_PATH):
 
 
 def apply_environment(cfg):
-    """Variables lues par localrepo.config : à fixer avant d'importer le portail."""
+    """Variables lues par loco.config : à fixer avant d'importer le portail."""
     https = f"https://{cfg['host']}:{cfg['https_port']}"
     http = f"http://{cfg['host']}:{cfg['http_port']}" if cfg.get("http_port") else ""
     tmp = os.path.join(cfg["data_dir"], ".tmp")
     os.environ.update({
-        "LR_RUNTIME": "windows", "LR_DATA": cfg["data_dir"], "LR_STATE": cfg["state_dir"], "LR_ETC": cfg["etc_dir"],
-        "LR_HOST": cfg["host"], "LR_ADMIN_URL": https, "LR_PUBLIC_URL": http, "LR_BACKUP_DIR": cfg["backup_dir"],
-        "LR_ACNG_PORT": str(cfg["acng_port"]), "LR_FLATPAK": "1" if cfg.get("flatpak", True) else "0",
-        "LR_RPM": "1" if cfg.get("rpm", True) else "0",
-        "LR_WU_LOG": os.path.join(cfg["log_dir"], "local-repo-wu.log"), "TEMP": tmp, "TMP": tmp,
+        "LOCO_RUNTIME": "windows", "LOCO_DATA": cfg["data_dir"], "LOCO_STATE": cfg["state_dir"], "LOCO_ETC": cfg["etc_dir"],
+        "LOCO_HOST": cfg["host"], "LOCO_ADMIN_URL": https, "LOCO_PUBLIC_URL": http, "LOCO_BACKUP_DIR": cfg["backup_dir"],
+        "LOCO_ACNG_PORT": str(cfg["acng_port"]), "LOCO_FLATPAK": "1" if cfg.get("flatpak", True) else "0",
+        "LOCO_RPM": "1" if cfg.get("rpm", True) else "0",
+        "LOCO_WU_LOG": os.path.join(cfg["log_dir"], "loco-wu.log"), "TEMP": tmp, "TMP": tmp,
     })
     if cfg.get("proxy"):
         os.environ.update({"http_proxy": cfg["proxy"], "https_proxy": cfg["proxy"],
@@ -118,8 +118,8 @@ def ensure_tls(cfg):
     server_path, server_key_path = os.path.join(tls, "server.crt"), os.path.join(tls, "server.key")
     if not os.path.exists(ca_key_path):
         key = _new_key()
-        name = x509.Name([x509.NameAttribute(NameOID.ORGANIZATION_NAME, "local-repo"),
-                          x509.NameAttribute(NameOID.COMMON_NAME, f"local-repo CA ({hostname()})")])
+        name = x509.Name([x509.NameAttribute(NameOID.ORGANIZATION_NAME, "loco"),
+                          x509.NameAttribute(NameOID.COMMON_NAME, f"loco CA ({hostname()})")])
         cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
                 .serial_number(x509.random_serial_number()).not_valid_before(now - datetime.timedelta(minutes=5))
                 .not_valid_after(now + datetime.timedelta(days=3650))
@@ -155,7 +155,7 @@ def ensure_tls(cfg):
             names.append(x509.DNSName(fqdn))
         key = _new_key()
         cert = (x509.CertificateBuilder()
-                .subject_name(x509.Name([x509.NameAttribute(NameOID.ORGANIZATION_NAME, "local-repo"),
+                .subject_name(x509.Name([x509.NameAttribute(NameOID.ORGANIZATION_NAME, "loco"),
                                          x509.NameAttribute(NameOID.COMMON_NAME, hostname())]))
                 .issuer_name(ca.subject).public_key(key.public_key()).serial_number(x509.random_serial_number())
                 .not_valid_before(now - datetime.timedelta(minutes=5)).not_valid_after(now + datetime.timedelta(days=825))
@@ -251,22 +251,22 @@ def render_nginx(cfg):
         # Chemins Linux des gabarits ramenés aux dossiers de l'installation Windows.
         # Fichiers statiques du portail : chemin du programme (avec une espace), donc entre guillemets.
         static = _slash(os.path.join(cfg["program_dir"], "portal", "static")) + "/"
-        text = text.replace("alias /opt/local-repo/portal/static/;", f'alias "{static}";')
-        for linux, windows in (("/etc/local-repo/", _slash(cfg["etc_dir"]) + "/"),
-                               ("/var/lib/local-repo/", _slash(cfg["state_dir"]) + "/"),
+        text = text.replace("alias /opt/loco/portal/static/;", f'alias "{static}";')
+        for linux, windows in (("/etc/loco/", _slash(cfg["etc_dir"]) + "/"),
+                               ("/var/lib/loco/", _slash(cfg["state_dir"]) + "/"),
                                ("/var/log/nginx/", _slash(cfg["log_dir"]) + "/"),
-                               ("/opt/local-repo/portal/", _slash(os.path.join(cfg["program_dir"], "portal")) + "/"),
+                               ("/opt/loco/portal/", _slash(os.path.join(cfg["program_dir"], "portal")) + "/"),
                                ("/etc/nginx/snippets/", "snippets/")):
             text = text.replace(linux, windows)
         # nginx pour Windows est un programme 32 bits : zones de clés de cache plus petites.
-        return text.replace("keys_zone=local_repo_wu:256m", "keys_zone=local_repo_wu:64m")
+        return text.replace("keys_zone=loco_wu:256m", "keys_zone=loco_wu:64m")
 
     files = {
-        "snippets/local-repo-clients.conf": "# local-repo : réseaux autorisés pour les postes.\n" + acl(cfg["allow"]),
-        "snippets/local-repo-admin.conf": "# local-repo : réseaux autorisés pour l'interface.\n" + acl(cfg["admin_allow"]),
-        "snippets/local-repo-proxy.conf": tpl("nginx-proxy-snippet.conf"),
-        "snippets/local-repo-flathub-proxy.conf": tpl("nginx-flathub-proxy-snippet.conf"),
-        "snippets/local-repo-rpm-proxy.conf": tpl("nginx-rpm-proxy-snippet.conf"),
+        "snippets/loco-clients.conf": "# loco : réseaux autorisés pour les postes.\n" + acl(cfg["allow"]),
+        "snippets/loco-admin.conf": "# loco : réseaux autorisés pour l'interface.\n" + acl(cfg["admin_allow"]),
+        "snippets/loco-proxy.conf": tpl("nginx-proxy-snippet.conf"),
+        "snippets/loco-flathub-proxy.conf": tpl("nginx-flathub-proxy-snippet.conf"),
+        "snippets/loco-rpm-proxy.conf": tpl("nginx-rpm-proxy-snippet.conf"),
     }
     values["FLATPAK_LOCATIONS"] = tpl("nginx-flatpak-locations.conf") if cfg.get("flatpak", True) else ""
     values["RPM_LOCATIONS"] = tpl("nginx-rpm-locations.conf") if cfg.get("rpm", True) else ""
@@ -278,29 +278,29 @@ def render_nginx(cfg):
     portal += tpl("nginx-portal.conf")
     if cfg.get("http_port"):
         portal += tpl("nginx-portal-http.conf")
-    files["local-repo-portal.conf"] = portal
-    files["local-repo-apt.conf"] = tpl("nginx-apt-proxy.conf")
+    files["loco-portal.conf"] = portal
+    files["loco-apt.conf"] = tpl("nginx-apt-proxy.conf")
     main = [
-        "# Généré par local-repo (serveur Windows) : relancer le service pour appliquer une modification.",
+        "# Généré par loco (serveur Windows) : relancer le service pour appliquer une modification.",
         "worker_processes 1;", "error_log " + _slash(os.path.join(cfg["log_dir"], "nginx-error.log")) + " warn;",
         "pid logs/nginx.pid;", "events {", "    worker_connections 1000;", "}",
     ]
     if cfg.get("wu", True):
-        files["local-repo-stream.conf"] = tpl("nginx-stream.conf")
-        main.append("include local-repo-stream.conf;")
+        files["loco-stream.conf"] = tpl("nginx-stream.conf")
+        main.append("include loco-stream.conf;")
     main += [
         "http {", f"    include \"{_slash(os.path.join(cfg['program_dir'], 'nginx', 'conf', 'mime.types'))}\";",
         "    default_type application/octet-stream;", "    server_tokens off;", "    access_log off;",
         "    client_body_temp_path temp/client_body;", "    proxy_temp_path temp/proxy;",
         "    fastcgi_temp_path temp/fastcgi;", "    uwsgi_temp_path temp/uwsgi;", "    scgi_temp_path temp/scgi;",
-        "    include local-repo-portal.conf;", "    include local-repo-apt.conf;",
+        "    include loco-portal.conf;", "    include loco-apt.conf;",
     ]
     if cfg.get("wu", True):
-        files["local-repo-wucache.conf"] = tpl("nginx-wucache.conf")
-        main.append("    include local-repo-wucache.conf;")
+        files["loco-wucache.conf"] = tpl("nginx-wucache.conf")
+        main.append("    include loco-wucache.conf;")
     main.append("}")
     files["nginx.conf"] = "\n".join(main) + "\n"
-    for old in ("local-repo-stream.conf", "local-repo-wucache.conf"):
+    for old in ("loco-stream.conf", "loco-wucache.conf"):
         if old not in files and os.path.exists(os.path.join(conf_dir, old)):
             os.unlink(os.path.join(conf_dir, old))
     for name, text in files.items():
@@ -345,16 +345,16 @@ def configure(cfg, password=""):
               os.path.join(cfg["etc_dir"], "tls"), cfg["log_dir"], cfg["backup_dir"]):
         os.makedirs(d, exist_ok=True)
     ensure_secret(cfg)
-    from localrepo import app, auth, cli, config, signing
-    from localrepo.db import transaction
+    from loco import app, auth, cli, config, signing
+    from loco.db import transaction
     with app.app_context():
         cli.main(["init"])
         # Clé OpenPGP des dépôts (RSA 4096), gérée en Python : pas de GnuPG sous Windows.
         if signing.ensure_key():
             say("Création de la clé de signature des dépôts")
-        with open(os.path.join(config.APT_DIR, "local-repo.gpg.new"), "wb") as f:
+        with open(os.path.join(config.APT_DIR, "loco.gpg.new"), "wb") as f:
             f.write(signing.public_key())
-        os.replace(os.path.join(config.APT_DIR, "local-repo.gpg.new"), os.path.join(config.APT_DIR, "local-repo.gpg"))
+        os.replace(os.path.join(config.APT_DIR, "loco.gpg.new"), os.path.join(config.APT_DIR, "loco.gpg"))
         say("Dépôts APT et RPM")
         cli.main(["rebuild-apt"])
         cli.main(["write-maps"])
@@ -444,7 +444,7 @@ def rotate_logs(cfg, keep=14):
 def backup_create(cfg, dest=None):
     dest = dest or cfg["backup_dir"]
     os.makedirs(dest, exist_ok=True)
-    name = f"local-repo-{hostname()}-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}.tar.gz"
+    name = f"loco-{hostname()}-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}.tar.gz"
     with tempfile.TemporaryDirectory(dir=os.path.join(cfg["data_dir"], ".tmp")) as work:
         db_copy = os.path.join(work, "portal.db")
         src = sqlite3.connect(os.path.join(cfg["state_dir"], "portal.db"))
@@ -472,7 +472,7 @@ def backup_create(cfg, dest=None):
         shutil.move(archive, os.path.join(dest, name))
     keep_n = int(cfg.get("backup_keep", 3))
     if keep_n > 0 and dest == cfg["backup_dir"]:
-        archives = sorted((n for n in os.listdir(dest) if n.startswith("local-repo-") and n.endswith(".tar.gz")),
+        archives = sorted((n for n in os.listdir(dest) if n.startswith("loco-") and n.endswith(".tar.gz")),
                           key=lambda n: os.path.getmtime(os.path.join(dest, n)), reverse=True)
         for n in archives[keep_n:]:
             os.unlink(os.path.join(dest, n))
@@ -482,11 +482,11 @@ def backup_create(cfg, dest=None):
 
 
 def backup_restore(cfg, archive):
-    """À lancer service arrêté (local-repo.cmd backup restore s'en charge)."""
+    """À lancer service arrêté (loco.cmd backup restore s'en charge)."""
     with tarfile.open(archive) as tar:
         names = tar.getnames()
-        if "portal.db" not in names or "etc/local-repo.json" not in names:
-            sys.exit("Ce n'est pas une sauvegarde local-repo pour Windows.")
+        if "portal.db" not in names or not {"etc/loco.json", "etc/local-repo.json"}.intersection(names):
+            sys.exit("Ce n'est pas une sauvegarde loco pour Windows.")
         for member in tar.getmembers():
             path = PurePosixPath(member.name)
             if (path.is_absolute() or ".." in path.parts or "\\" in member.name or ":" in member.name
@@ -498,7 +498,7 @@ def backup_restore(cfg, archive):
             if member.name == "portal.db":
                 dest = os.path.join(cfg["state_dir"], "portal.db")
             elif top in targets and rest:
-                if rest == "local-repo.json" and top == "etc":
+                if rest in ("loco.json", "local-repo.json") and top == "etc":
                     continue    # la configuration propre à ce serveur (adresse, ports, réseaux) est gardée
                 dest = os.path.join(targets[top], *rest.split("/"))
             else:
@@ -548,7 +548,7 @@ class Service:
     def write_status(self):
         status = {"updated": time.time(), "versions": self.versions,
                   "services": {"nginx": self.nginx is not None and self.nginx.poll() is None,
-                               "local-repo-tasks": self.tasks_alive}}
+                               "loco-tasks": self.tasks_alive}}
         path = os.path.join(self.cfg["state_dir"], "service-status.json")
         with open(path + ".tmp", "w") as f:
             json.dump(status, f)
@@ -630,14 +630,14 @@ class Service:
         self.collect_versions()
         import app as entry      # portal/app.py : migrations et application Flask
         server = create_server(entry.app, host="127.0.0.1", port=int(self.cfg["app_port"]), threads=8,
-                               ident="local-repo", clear_untrusted_proxy_headers=False,
+                               ident="loco", clear_untrusted_proxy_headers=False,
                                max_request_body_size=1 << 40, channel_timeout=300)
         self.start_nginx()
         web = threading.Thread(target=server.run, name="portail", daemon=True)
         web.start()
         tasks = threading.Thread(target=self.tasks, name="taches", daemon=True)
         tasks.start()
-        print(f"local-repo démarré : https://{self.cfg['host']}:{self.cfg['https_port']}", flush=True)
+        print(f"loco démarré : https://{self.cfg['host']}:{self.cfg['https_port']}", flush=True)
 
         def stop(*_):
             self.stop.set()
@@ -650,7 +650,7 @@ class Service:
                     raise RuntimeError("Un composant du service s'est arrêté ; redémarrage par Windows.")
         finally:
             self.stop.set()
-            print("Arrêt de local-repo", flush=True)
+            print("Arrêt de loco", flush=True)
             self.stop_nginx()
             server.close()
             tasks.join(10)
@@ -666,7 +666,7 @@ def main(argv):
     apply_environment(cfg)
     cmd = argv[0]
     if cmd == "configure":
-        result = configure(cfg, password=os.environ.pop("LR_PASSWORD", ""))
+        result = configure(cfg, password=os.environ.pop("LOCO_PASSWORD", ""))
         print("LOCALREPO-RESULT " + json.dumps(result), flush=True)
     elif cmd == "service":
         Service(cfg).run()
@@ -683,7 +683,7 @@ def main(argv):
         else:
             sys.exit("backup create [DOSSIER] | list | restore ARCHIVE")
     elif cmd == "user":
-        from localrepo import app, cli
+        from loco import app, cli
         with app.app_context():
             cli.main(["user"] + argv[1:])
     elif cmd == "fingerprint":

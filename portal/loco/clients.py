@@ -33,7 +33,7 @@ def linux_repository_source(distribution, suite):
     if not os.path.isfile(os.path.join(root, "InRelease")):
         abort(503)
     source = (f"Types: deb\nURIs: {client_base()}{repository_url(repository)}\nSuites: ./\n"
-              "Signed-By: /etc/apt/keyrings/local-repo.gpg\n")
+              "Signed-By: /etc/apt/keyrings/loco.gpg\n")
     return Response(source, mimetype="text/plain")
 
 
@@ -63,18 +63,19 @@ def flatpak_setup():
     return Response(script, mimetype="text/x-shellscript")
 
 
+@app.route("/flatpak/loco.flatpakrepo")
 @app.route("/flatpak/local-repo.flatpakrepo")
 def flatpak_repo_file():
     """Fichier .flatpakrepo du dépôt local : adresse (selon le protocole utilisé) et clé publique GPG."""
     if not config.FLATPAK_LOCAL:
         abort(404)
     try:
-        with open(os.path.join(config.APT_DIR, "local-repo.gpg"), "rb") as f:
+        with open(os.path.join(config.APT_DIR, "loco.gpg"), "rb") as f:
             key = base64.b64encode(f.read()).decode()
     except OSError:
         abort(503)
     body = ("[Flatpak Repo]\n"
-            f"Title=local-repo ({config.HOST})\n"
+            f"Title=loco ({config.HOST})\n"
             f"Url={client_base()}/flatpak/repo/\n"
             f"Homepage={config.HTTPS_URL}/\n"
             "Comment=Dépôt Flatpak local de l'entreprise\n"

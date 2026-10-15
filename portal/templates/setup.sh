@@ -1,5 +1,5 @@
 #!/bin/sh
-# local-repo : poste Debian / Ubuntu, dépôt détecté depuis /etc/os-release.
+# loco : poste Debian / Ubuntu, dépôt détecté depuis /etc/os-release.
 #   curl -fsSL {{ base }}/linux/setup.sh | sudo sh
 #   ... | sudo sh -s -- --trust-ca         importe l'autorité et passe en HTTPS
 #   ... | sudo sh -s -- --no-proxy         dépôt seulement
@@ -11,11 +11,11 @@ set -eu
 [ "$(id -u)" -eq 0 ] || { echo "Lancez ce script en root (sudo)." >&2; exit 1; }
 BASE="{{ base }}"
 HTTPS_BASE="{{ https_url }}"
-KEY=/etc/apt/keyrings/local-repo.gpg
-LIST=/etc/apt/sources.list.d/local-repo.list
-SOURCE=/etc/apt/sources.list.d/local-repo.sources
-PROXY=/etc/apt/apt.conf.d/01local-repo-proxy
-CA=/usr/local/share/ca-certificates/local-repo.crt
+KEY=/etc/apt/keyrings/loco.gpg
+LIST=/etc/apt/sources.list.d/loco.list
+SOURCE=/etc/apt/sources.list.d/loco.sources
+PROXY=/etc/apt/apt.conf.d/01loco-proxy
+CA=/usr/local/share/ca-certificates/loco.crt
 USE_PROXY=1 TRUST_CA=0 REMOVE=0 CACHE_ONLY=0 LEGACY=0 DIST="" SUITE=""
 need() { if [ "$#" -lt 2 ] || [ -z "$2" ]; then echo "L'option $1 attend une valeur." >&2; exit 1; fi; }
 while [ "$#" -gt 0 ]; do
@@ -32,8 +32,14 @@ while [ "$#" -gt 0 ]; do
 done
 if [ "$REMOVE" = 1 ]; then
     rm -f "$KEY" "$LIST" "$SOURCE" "$PROXY"
+    rm -f /etc/apt/keyrings/local-repo.gpg /etc/apt/sources.list.d/local-repo.list /etc/apt/sources.list.d/local-repo.sources
+    rm -f /etc/apt/apt.conf.d/01local-repo-proxy
+    if [ -f /usr/local/share/ca-certificates/local-repo.crt ]; then
+        rm -f /usr/local/share/ca-certificates/local-repo.crt
+        update-ca-certificates --fresh >/dev/null
+    fi
     if [ -f "$CA" ]; then rm -f "$CA"; update-ca-certificates --fresh >/dev/null 2>&1 || true; fi
-    echo "Configuration local-repo retirée."
+    echo "Configuration loco retirée."
     exit 0
 fi
 command -v apt-get >/dev/null 2>&1 || { echo "Ce poste doit utiliser APT." >&2; exit 1; }
@@ -70,7 +76,7 @@ if [ "$CACHE_ONLY" = 0 ]; then
         EXPECTED=$(printf 'Types: deb\nURIs: %s/apt/repositories/%s/%s/\nSuites: ./\nSigned-By: %s\n' "$BASE" "$DIST" "$SUITE" "$KEY")
         [ "$(cat "$TMP/source")" = "$EXPECTED" ] || { echo "Configuration de dépôt inattendue." >&2; exit 1; }
     fi
-    $GET "$BASE/apt/local-repo.gpg" > "$TMP/key"
+    $GET "$BASE/apt/loco.gpg" > "$TMP/key"
     [ -s "$TMP/key" ] || { echo "Clé du dépôt vide." >&2; exit 1; }
 fi
 if [ "$TRUST_CA" = 1 ]; then
@@ -99,6 +105,14 @@ if [ "$CACHE_ONLY" = 0 ]; then
     rm -f "$LIST"
 else
     rm -f "$SOURCE" "$LIST" "$KEY"
+fi
+# La nouvelle configuration est en place : retirer les anciennes sources pour éviter les doublons.
+rm -f /etc/apt/sources.list.d/local-repo.list /etc/apt/sources.list.d/local-repo.sources
+rm -f /etc/apt/keyrings/local-repo.gpg /etc/apt/apt.conf.d/01local-repo-proxy
+if [ -f /usr/local/share/ca-certificates/local-repo.crt ]; then
+    if [ "$TRUST_CA" = 0 ] && [ ! -f "$CA" ]; then mv /usr/local/share/ca-certificates/local-repo.crt "$CA";
+    else rm -f /usr/local/share/ca-certificates/local-repo.crt; fi
+    update-ca-certificates --fresh >/dev/null
 fi
 if [ "$USE_PROXY" = 1 ]; then
     cat > "$PROXY" <<CONF

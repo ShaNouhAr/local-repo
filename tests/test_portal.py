@@ -14,16 +14,16 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TMP = tempfile.mkdtemp(prefix="lr-test-")
 for sub in ("data", "state", "etc"):
     os.makedirs(os.path.join(TMP, sub), exist_ok=True)
-os.environ.update(LR_DATA=os.path.join(TMP, "data"), LR_STATE=os.path.join(TMP, "state"), LR_ETC=os.path.join(TMP, "etc"),
-                  LR_SECURE_COOKIE="0", LR_ADMIN_URL="https://repo.test:8443", LR_PUBLIC_URL="http://repo.test:8088",
-                  LR_HOST="repo.test", LR_WU_LOG=os.path.join(TMP, "wu.log"))
+os.environ.update(LOCO_DATA=os.path.join(TMP, "data"), LOCO_STATE=os.path.join(TMP, "state"), LOCO_ETC=os.path.join(TMP, "etc"),
+                  LOCO_SECURE_COOKIE="0", LOCO_ADMIN_URL="https://repo.test:8443", LOCO_PUBLIC_URL="http://repo.test:8088",
+                  LOCO_HOST="repo.test", LOCO_WU_LOG=os.path.join(TMP, "wu.log"))
 sys.path.insert(0, os.path.join(ROOT, "portal"))
 
-import localrepo  # noqa: E402
-from localrepo import auth, config, util  # noqa: E402
-from localrepo.db import transaction as connect  # noqa: E402
+import loco  # noqa: E402
+from loco import auth, config, util  # noqa: E402
+from loco.db import transaction as connect  # noqa: E402
 
-localrepo.startup()
+loco.startup()
 ADMIN_PW = "Admin-Password-2026"
 with connect() as conn:
     auth.create_user(conn, "admin", ADMIN_PW, "admin", must_change=False)
@@ -40,7 +40,7 @@ def _cleanup():
 
 class Browser:
     def __init__(self):
-        self.c = localrepo.app.test_client()
+        self.c = loco.app.test_client()
 
     def token(self, path="/login"):
         html = self.c.get(path).get_data(as_text=True)
@@ -160,7 +160,7 @@ class TestClients(unittest.TestCase):
                          "('app-o-test', 'L''appli « test »', 'exe', '/S', 'setup prog.exe', 'ab12', 'ready')")
 
     def test_install_script_follows_scheme(self):
-        c = localrepo.app.test_client()
+        c = loco.app.test_client()
         https = c.get("/win/i/app-o-test,absent", base_url="https://repo.test:8443").get_data(as_text=True)
         self.assertIn("'https://repo.test:8443/win/files/app-o-test/setup%20prog.exe'", https)
         self.assertIn("Name = 'L''appli « test »'", https)            # apostrophe échappée pour PowerShell
@@ -169,12 +169,12 @@ class TestClients(unittest.TestCase):
         self.assertIn("'http://repo.test:8088/win/files/", http)
 
     def test_install_script_rejects_bad_slugs(self):
-        c = localrepo.app.test_client()
+        c = loco.app.test_client()
         self.assertEqual(c.get("/win/i/..%2fetc").status_code, 404)
         self.assertEqual(c.get("/win/i/" + ",".join(["a"] * 101)).status_code, 404)
 
     def test_setup_script(self):
-        c = localrepo.app.test_client()
+        c = loco.app.test_client()
         s = c.get("/linux/setup.sh", base_url="http://repo.test:8088").get_data(as_text=True)
         self.assertIn('BASE="http://repo.test:8088"', s)
         self.assertIn('HTTPS_BASE="https://repo.test:8443"', s)
@@ -184,10 +184,10 @@ class TestClients(unittest.TestCase):
 
     def test_flatpak_endpoints(self):
         os.makedirs(config.APT_DIR, exist_ok=True)
-        with open(os.path.join(config.APT_DIR, "local-repo.gpg"), "wb") as f:
+        with open(os.path.join(config.APT_DIR, "loco.gpg"), "wb") as f:
             f.write(b"\x99cle-de-test")
-        c = localrepo.app.test_client()
-        repo = c.get("/flatpak/local-repo.flatpakrepo", base_url="https://repo.test:8443").get_data(as_text=True)
+        c = loco.app.test_client()
+        repo = c.get("/flatpak/loco.flatpakrepo", base_url="https://repo.test:8443").get_data(as_text=True)
         self.assertIn("Url=https://repo.test:8443/flatpak/repo/", repo)
         self.assertIn("GPGKey=mWNsZS1kZS10ZXN0", repo)
         setup = c.get("/flatpak/setup.sh", base_url="http://repo.test:8088").get_data(as_text=True)
@@ -202,10 +202,10 @@ class TestClients(unittest.TestCase):
             self.assertEqual(b.post("/flatpak/delete", {"ref": ref}).status_code, 400, ref)
 
     def test_metrics(self):
-        with mock.patch("localrepo.system.service_active", return_value=True):
-            body = localrepo.app.test_client().get("/metrics").get_data(as_text=True)
-        self.assertIn('local_repo_info{version="%s"} 1' % config.VERSION, body)
-        self.assertIn('local_repo_windows_apps{status="ready"}', body)
+        with mock.patch("loco.system.service_active", return_value=True):
+            body = loco.app.test_client().get("/metrics").get_data(as_text=True)
+        self.assertIn('loco_info{version="%s"} 1' % config.VERSION, body)
+        self.assertIn('loco_windows_apps{status="ready"}', body)
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 import test_portal as fixture
-from localrepo import config, debpkg, linux
+from loco import config, debpkg, linux
 
 
 def build_deb(directory, name, version, compression, description="essai\n multi-ligne\n .\n fin"):
@@ -70,7 +70,7 @@ class TestDebPackages(unittest.TestCase):
         first = Path(self.dir, "Packages.gz").read_bytes()
         debpkg.gzip_file(os.path.join(self.dir, "Packages"))
         self.assertEqual(first, Path(self.dir, "Packages.gz").read_bytes())   # reproductible (gzip -n)
-        release = debpkg.release_file(self.dir, "local-repo", "local-repo debian/trixie", "trixie", "trixie").decode()
+        release = debpkg.release_file(self.dir, "loco", "loco debian/trixie", "trixie", "trixie").decode()
         self.assertIn("Codename: trixie\n", release)
         import hashlib
         digest = hashlib.sha256(first).hexdigest()
@@ -115,7 +115,7 @@ class TestPortalWithoutDebianTools(unittest.TestCase):
                               capture_output=True, text=True).stdout
         if "sec" not in keys:
             subprocess.run(["gpg", "--homedir", config.GNUPGHOME, "--batch", "--pinentry-mode", "loopback",
-                            "--passphrase", "", "--quick-generate-key", "local-repo tests <tests@invalid>",
+                            "--passphrase", "", "--quick-generate-key", "loco tests <tests@invalid>",
                             "ed25519", "sign", "0"], check=True, capture_output=True)
         work = tempfile.mkdtemp(dir=fixture.TMP)
         deb = build_deb(work, "lr-windows", "3.1", "xz")

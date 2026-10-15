@@ -1,15 +1,15 @@
 #!/bin/bash
-# local-repo : désinstallation.
+# loco : désinstallation.
 #
-#   sudo ./remove.sh            retire les services, la configuration et les paquets installés par local-repo,
+#   sudo ./remove.sh            retire les services, la configuration et les paquets installés par loco,
 #                               mais garde les données (logiciels, paquets .deb, caches, clé de signature)
 #   sudo ./remove.sh --purge    supprime aussi toutes les données
 #   -y                          ne pas demander de confirmation
 set -euo pipefail
 
-ETC=/etc/local-repo
-STATE=/var/lib/local-repo
-PREFIX=/opt/local-repo
+ETC=/etc/loco
+STATE=/var/lib/loco
+PREFIX=/opt/loco
 
 say() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31mErreur :\033[0m %s\n' "$*" >&2; exit 1; }
@@ -26,37 +26,37 @@ for arg in "$@"; do
     esac
 done
 
-DATA=/srv/local-repo
+DATA=/srv/loco
 ACNG_SOURCE=0
 ACNG_USER_CREATED=0
-[ -d /usr/local/lib/local-repo/acng ] && ACNG_SOURCE=1
+[ -d /usr/local/lib/loco/acng ] && ACNG_SOURCE=1
 [ -f "$ETC/install-state/rocky-acng-user-created" ] && ACNG_USER_CREATED=1
 # shellcheck disable=SC1091
-[ -f "$ETC/local-repo.conf" ] && . "$ETC/local-repo.conf"
+[ -f "$ETC/loco.conf" ] && . "$ETC/loco.conf"
 cd /
 
 if [ "$YES" = 0 ]; then
     if [ "$PURGE" = 1 ]; then
-        echo "local-repo va être désinstallé ET toutes ses données supprimées ($DATA, $STATE, cache apt-cacher-ng)."
+        echo "loco va être désinstallé ET toutes ses données supprimées ($DATA, $STATE, cache apt-cacher-ng)."
     else
-        echo "local-repo va être désinstallé (les données dans $DATA et $STATE sont conservées)."
+        echo "loco va être désinstallé (les données dans $DATA et $STATE sont conservées)."
     fi
     read -r -p "Continuer ? [o/N] " answer < /dev/tty
     [[ "$answer" =~ ^[oOyY]$ ]] || { echo "Annulé."; exit 1; }
 fi
 
 say "Arrêt des services"
-systemctl disable --now local-repo-portal local-repo-stats.timer local-repo-nginx.path local-repo-backup.timer \
+systemctl disable --now loco-portal loco-stats.timer loco-nginx.path loco-backup.timer \
     >/dev/null 2>&1 || true
-rm -f /etc/systemd/system/local-repo-portal.service /etc/systemd/system/local-repo-stats.service \
-      /etc/systemd/system/local-repo-stats.timer /etc/systemd/system/local-repo-nginx.service \
-      /etc/systemd/system/local-repo-nginx.path /etc/systemd/system/local-repo-backup.service \
-      /etc/systemd/system/local-repo-backup.timer
-rm -rf /etc/systemd/system/apt-cacher-ng.service.d/local-repo.conf
+rm -f /etc/systemd/system/loco-portal.service /etc/systemd/system/loco-stats.service \
+      /etc/systemd/system/loco-stats.timer /etc/systemd/system/loco-nginx.service \
+      /etc/systemd/system/loco-nginx.path /etc/systemd/system/loco-backup.service \
+      /etc/systemd/system/loco-backup.timer
+rm -rf /etc/systemd/system/apt-cacher-ng.service.d/loco.conf
 rmdir /etc/systemd/system/apt-cacher-ng.service.d 2>/dev/null || true
-rm -f /etc/apt-cacher-ng/zz-local-repo.conf /usr/local/sbin/local-repo-user /usr/local/sbin/local-repo-backup /usr/local/sbin/local-repo-apt
+rm -f /etc/apt-cacher-ng/zz-loco.conf /usr/local/sbin/loco-user /usr/local/sbin/loco-backup /usr/local/sbin/loco-apt
 for f in /etc/hosts.allow /etc/hosts.deny; do
-    if [ -f "$f" ]; then sed -i '/# local-repo$/d' "$f"; fi
+    if [ -f "$f" ]; then sed -i '/# loco$/d' "$f"; fi
 done
 systemctl daemon-reload
 
@@ -66,17 +66,17 @@ if [ -f "$ETC/install-state/nginx-rocky-original.conf" ]; then
     . "$PREFIX/lib/rocky.sh"
     rocky_remove
 fi
-rm -f /etc/nginx/sites-enabled/local-repo-portal.conf /etc/nginx/sites-available/local-repo-portal.conf \
-      /etc/nginx/sites-enabled/local-repo-wucache.conf /etc/nginx/sites-available/local-repo-wucache.conf \
-      /etc/nginx/modules-enabled/99-local-repo-stream.conf /etc/nginx/snippets/local-repo-clients.conf \
-      /etc/nginx/snippets/local-repo-admin.conf /etc/nginx/snippets/local-repo-proxy.conf \
-      /etc/nginx/snippets/local-repo-flathub-proxy.conf /etc/nginx/snippets/local-repo-rpm-proxy.conf
+rm -f /etc/nginx/sites-enabled/loco-portal.conf /etc/nginx/sites-available/loco-portal.conf \
+      /etc/nginx/sites-enabled/loco-wucache.conf /etc/nginx/sites-available/loco-wucache.conf \
+      /etc/nginx/modules-enabled/99-loco-stream.conf /etc/nginx/snippets/loco-clients.conf \
+      /etc/nginx/snippets/loco-admin.conf /etc/nginx/snippets/loco-proxy.conf \
+      /etc/nginx/snippets/loco-flathub-proxy.conf /etc/nginx/snippets/loco-rpm-proxy.conf
 if [ -f "$STATE/nginx-default-disabled" ]; then
     [ -e /etc/nginx/sites-available/default ] && ln -sf ../sites-available/default /etc/nginx/sites-enabled/default
     rm -f "$STATE/nginx-default-disabled"
 fi
 
-# Paquets installés par local-repo uniquement (ceux déjà présents avant restent en place).
+# Paquets installés par loco uniquement (ceux déjà présents avant restent en place).
 PKGS=()
 PACKAGE_RECORD="$STATE/installed-packages"
 if [ -f "$ETC/install-state/installed-packages" ]; then PACKAGE_RECORD="$ETC/install-state/installed-packages"; fi
@@ -106,14 +106,14 @@ if [ "$PURGE" = 1 ]; then
     say "Suppression des données"
     case "$DATA" in /|/srv|/var|/home|/opt|"") die "dossier de données suspect : '$DATA'" ;; esac
     rm -rf "$DATA" "$STATE" "$ETC"
-    rm -f /var/log/nginx/local-repo-*.log* /var/log/local-repo-install.log
-    # Cache et journaux d'apt-cacher-ng seulement s'il avait été installé par local-repo.
+    rm -f /var/log/nginx/loco-*.log* /var/log/loco-install.log
+    # Cache et journaux d'apt-cacher-ng seulement s'il avait été installé par loco.
     if [ "$ACNG_SOURCE" = 1 ] || printf '%s\n' "${PKGS[@]}" | grep -qx apt-cacher-ng; then
         rm -rf /var/cache/apt-cacher-ng /var/log/apt-cacher-ng
     fi
     if [ "$ACNG_USER_CREATED" = 1 ]; then userdel apt-cacher-ng; fi
-    userdel localrepo 2>/dev/null || true
-    BACKUP_DIR=${BACKUP_DIR:-/var/backups/local-repo}
+    userdel loco 2>/dev/null || true
+    BACKUP_DIR=${BACKUP_DIR:-/var/backups/loco}
     if [ -d "$BACKUP_DIR" ]; then
         echo "    Sauvegardes conservées : $BACKUP_DIR (à supprimer à la main si inutiles)"
     fi
@@ -121,4 +121,4 @@ else
     echo "    Données conservées : $DATA, $STATE, $ETC (sudo ./remove.sh --purge pour tout effacer)"
 fi
 
-say "local-repo est désinstallé"
+say "loco est désinstallé"

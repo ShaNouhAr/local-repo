@@ -3,29 +3,29 @@
 import os
 import re
 
-VERSION = "1.9.0"
+VERSION = "2.0.0"
 
-DATA = os.environ.get("LR_DATA", "/srv/local-repo")
-STATE = os.environ.get("LR_STATE", "/var/lib/local-repo")
-ETC = os.environ.get("LR_ETC", "/etc/local-repo")
-HOST = os.environ.get("LR_HOST", "localhost")
-ACNG_PORT = os.environ.get("LR_ACNG_PORT", "3142")
+DATA = os.environ.get("LOCO_DATA", "/srv/loco")
+STATE = os.environ.get("LOCO_STATE", "/var/lib/loco")
+ETC = os.environ.get("LOCO_ETC", "/etc/loco")
+HOST = os.environ.get("LOCO_HOST", "localhost")
+ACNG_PORT = os.environ.get("LOCO_ACNG_PORT", "3142")
 # Image Docker : supervisord à la place de systemd (voir docker/).
-CONTAINER = os.environ.get("LR_RUNTIME") == "container"
+CONTAINER = os.environ.get("LOCO_RUNTIME") == "container"
 # Serveur Windows natif : service Windows, nginx et waitress (voir windows/).
-WINDOWS = os.name == "nt" or os.environ.get("LR_RUNTIME") == "windows"
-GPG = os.environ.get("LR_GPG", "gpg")
+WINDOWS = os.name == "nt" or os.environ.get("LOCO_RUNTIME") == "windows"
+GPG = os.environ.get("LOCO_GPG", "gpg")
 
 # Adresse HTTPS (interface, et postes qui font confiance à l'autorité locale).
-HTTPS_URL = os.environ.get("LR_ADMIN_URL", "https://localhost:8443").rstrip("/")
+HTTPS_URL = os.environ.get("LOCO_ADMIN_URL", "https://localhost:8443").rstrip("/")
 # Adresse HTTP des postes clients ; vide si le HTTP est désactivé (--no-http).
-HTTP_URL = os.environ.get("LR_PUBLIC_URL", "").rstrip("/")
+HTTP_URL = os.environ.get("LOCO_PUBLIC_URL", "").rstrip("/")
 
-TLS_DIR = os.environ.get("LR_TLS_DIR", os.path.join(ETC, "tls"))
-SECRETS_PATH = os.environ.get("LR_SECRETS", os.path.join(ETC, "portal.secret"))
-WU_LOG = os.environ.get("LR_WU_LOG", "/var/log/nginx/local-repo-wu.log")
-GNUPGHOME = os.environ.get("LR_GNUPGHOME", os.path.join(STATE, "gnupg"))
-BACKUP_DIR = os.environ.get("LR_BACKUP_DIR", "/var/backups/local-repo")
+TLS_DIR = os.environ.get("LOCO_TLS_DIR", os.path.join(ETC, "tls"))
+SECRETS_PATH = os.environ.get("LOCO_SECRETS", os.path.join(ETC, "portal.secret"))
+WU_LOG = os.environ.get("LOCO_WU_LOG", "/var/log/nginx/loco-wu.log")
+GNUPGHOME = os.environ.get("LOCO_GNUPGHOME", os.path.join(STATE, "gnupg"))
+BACKUP_DIR = os.environ.get("LOCO_BACKUP_DIR", "/var/backups/loco")
 
 APT_DIR = os.path.join(DATA, "apt")
 POOL_DIR = os.path.join(APT_DIR, "pool")
@@ -38,7 +38,7 @@ DB_PATH = os.path.join(STATE, "portal.db")
 STATS_PATH = os.path.join(STATE, "stats.json")
 WU_DOMAINS_PATH = os.path.join(STATE, "wu-domains.txt")
 NGINX_MAP_DIR = os.path.join(STATE, "nginx")
-FLATPAK_ENABLED = os.environ.get("LR_FLATPAK", "1") == "1"
+FLATPAK_ENABLED = os.environ.get("LOCO_FLATPAK", "1") == "1"
 # Dépôt Flatpak local : ostree n'existe pas sous Windows ; le cache Flathub y fonctionne.
 FLATPAK_LOCAL = FLATPAK_ENABLED and not WINDOWS
 FLATPAK_REPO = os.path.join(DATA, "flatpak", "repo")
@@ -46,7 +46,7 @@ FLATHUB_URL = "https://dl.flathub.org/repo/"
 
 # Famille Red Hat (RHEL, Rocky Linux, AlmaLinux…) : dépôts RPM locaux par version majeure (el8, el9…)
 # et cache des miroirs officiels. RHEL lui-même exige un abonnement : ses dépôts ne passent pas par le cache.
-RPM_ENABLED = os.environ.get("LR_RPM", "1") == "1"
+RPM_ENABLED = os.environ.get("LOCO_RPM", "1") == "1"
 RPM_DIR = os.path.join(DATA, "rpm")
 RPM_REPOSITORY_RE = re.compile(r"^el([1-9][0-9]?)$")
 RPM_DEFAULT_REPOSITORIES = ("el8", "el9", "el10")
@@ -65,7 +65,7 @@ SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 DOMAIN_RE = re.compile(r"^(?=.{1,253}$)([a-z0-9-]{1,63}\.)+[a-z]{2,63}$")
 FLATPAK_REF_RE = re.compile(r"^(app|runtime)/[A-Za-z0-9_][A-Za-z0-9_.-]{2,254}/[a-z0-9_]{1,16}/[A-Za-z0-9_.-]{1,64}$")
 USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{1,31}$")
-USER_AGENT = f"local-repo/{VERSION}"
+USER_AGENT = f"loco/{VERSION}"
 
 # Comptes et sessions
 ROLES = {"admin": "Administrateur", "viewer": "Lecture seule"}

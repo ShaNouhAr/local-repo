@@ -2,21 +2,21 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    Désinstalle local-repo (serveur Windows). Par défaut, garde les données, la configuration, les comptes
+    Désinstalle loco (serveur Windows). Par défaut, garde les données, la configuration, les comptes
     et les clés pour une réinstallation ; -Purge efface aussi tout cela (dépôts, caches, sauvegardes).
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -File "C:\Program Files\local-repo\windows\remove.ps1"
+    powershell -ExecutionPolicy Bypass -File "C:\Program Files\loco\windows\remove.ps1"
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -File "C:\Program Files\local-repo\windows\remove.ps1" -Purge
+    powershell -ExecutionPolicy Bypass -File "C:\Program Files\loco\windows\remove.ps1" -Purge
 #>
 [CmdletBinding()]
 param([switch]$Purge, [switch]$Yes)
 
 $ErrorActionPreference = 'Stop'
-$Program = Join-Path $env:ProgramFiles 'local-repo'
-$Root = Join-Path $env:ProgramData 'local-repo'
-$ConfigPath = Join-Path $Root 'etc\local-repo.json'
-$ServiceName = 'local-repo'
+$Program = Join-Path $env:ProgramFiles 'loco'
+$Root = Join-Path $env:ProgramData 'loco'
+$ConfigPath = Join-Path $Root 'etc\loco.json'
+$ServiceName = 'loco'
 
 function Say([string]$Text) { Write-Host "==> $Text" -ForegroundColor Cyan }
 
@@ -34,13 +34,13 @@ if ($service) {
         Stop-Service $ServiceName -Force
         (Get-Service $ServiceName).WaitForStatus('Stopped', '00:01:00')
     }
-    $exe = Join-Path $Program 'winsw\local-repo.exe'
+    $exe = Join-Path $Program 'winsw\loco.exe'
     if (Test-Path $exe) { & $exe uninstall | Out-Null } else { & sc.exe delete $ServiceName | Out-Null }
 }
 Get-Process nginx -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$Program\*" } | Stop-Process -Force
 
 Say 'Règles du pare-feu'
-Get-NetFirewallRule -Group 'local-repo' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+Get-NetFirewallRule -Group 'loco' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 
 Say 'Programme'
 if (Test-Path $Program) {
@@ -60,4 +60,4 @@ if ($Purge) {
     if ($cfg) { Write-Host "    Conservé : $($cfg.data_dir) (dépôts et caches), $($cfg.backup_dir) (sauvegardes)" }
     Write-Host '    Pour tout effacer : remove.ps1 -Purge'
 }
-Say 'local-repo est désinstallé'
+Say 'loco est désinstallé'

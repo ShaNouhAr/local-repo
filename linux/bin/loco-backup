@@ -1,36 +1,36 @@
 #!/bin/bash
-# local-repo : sauvegarde et restauration (root).
-#   local-repo-backup create [DOSSIER]   archive configuration, comptes, clés, dépôt APT et catalogue Windows
+# loco : sauvegarde et restauration (root).
+#   loco-backup create [DOSSIER]   archive configuration, comptes, clés, dépôt APT et catalogue Windows
 #                                        (hors caches) ; garde les BACKUP_KEEP plus récentes
-#   local-repo-backup restore ARCHIVE    restaure une archive (même serveur ou nouveau serveur, local-repo
+#   loco-backup restore ARCHIVE    restaure une archive (même serveur ou nouveau serveur, loco
 #                                        déjà installé) ; la configuration locale (IP, ports, réseaux) est gardée
-#   local-repo-backup list
+#   loco-backup list
 set -euo pipefail
 [ "$(id -u)" -eq 0 ] || { echo "Lancez cette commande en root (sudo)." >&2; exit 1; }
 # shellcheck disable=SC1091
-. /etc/local-repo/local-repo.conf
-DEST="${BACKUP_DIR:-/var/backups/local-repo}"
+. /etc/loco/loco.conf
+DEST="${BACKUP_DIR:-/var/backups/loco}"
 KEEP="${BACKUP_KEEP:-3}"
-STATE=/var/lib/local-repo
+STATE=/var/lib/loco
 
 case "${1:-}" in
     create)
         DEST="${2:-$DEST}"
-        install -d -m 750 -o root -g localrepo "$DEST"
+        install -d -m 750 -o root -g loco "$DEST"
         work=$(mktemp -d)
         trap 'rm -rf "$work"' EXIT
-        chown localrepo "$work"
+        chown loco "$work"
         # Copie cohérente de la base, même pendant une écriture.
-        runuser -u localrepo -- "${PYTHON:-python3}" -c "import sqlite3,sys; s=sqlite3.connect(sys.argv[1]); d=sqlite3.connect(sys.argv[2]); s.backup(d); d.close()" \
+        runuser -u loco -- "${PYTHON:-python3}" -c "import sqlite3,sys; s=sqlite3.connect(sys.argv[1]); d=sqlite3.connect(sys.argv[2]); s.backup(d); d.close()" \
             "$STATE/portal.db" "$work/portal.db"
-        name="local-repo-$(hostname)-$(date +%Y%m%d-%H%M%S).tar.gz"
+        name="loco-$(hostname)-$(date +%Y%m%d-%H%M%S).tar.gz"
         S="${STATE#/}" D="${DATA#/}"
-        paths=(etc/local-repo "$S" "$D/apt" "$D/win")
+        paths=(etc/loco "$S" "$D/apt" "$D/win")
         if [ -d "$DATA/flatpak" ]; then paths+=("$D/flatpak"); fi
         if [ -d "$DATA/rpm" ]; then paths+=("$D/rpm"); fi
         rc=0
         tar -czf "$work/$name" --warning=no-file-changed \
-            --exclude=etc/local-repo/install-state --exclude="$S/portal.db" --exclude="$S/portal.db-*" --exclude="$S/gnupg/S.*" \
+            --exclude=etc/loco/install-state --exclude="$S/portal.db" --exclude="$S/portal.db-*" --exclude="$S/gnupg/S.*" \
             --exclude="$D/win/*/.*" \
             --exclude="$D/flatpak/repo/tmp" \
             -C / "${paths[@]}" \
@@ -39,38 +39,38 @@ case "${1:-}" in
         install -m 600 "$work/$name" "$DEST/$name"
         if [ "$KEEP" -gt 0 ]; then
             # shellcheck disable=SC2012  # noms générés par ce script
-            ls -1t "$DEST"/local-repo-*.tar.gz 2>/dev/null | tail -n +"$((KEEP + 1))" | xargs -r rm -f
+            ls -1t "$DEST"/loco-*.tar.gz 2>/dev/null | tail -n +"$((KEEP + 1))" | xargs -r rm -f
         fi
         echo "$DEST/$name ($(du -h "$DEST/$name" | cut -f1))"
         ;;
     restore)
         archive="${2:-}"
         [ -f "$archive" ] || { echo "Archive introuvable : $archive" >&2; exit 1; }
-        tar -tzf "$archive" | grep -qx "portal.db" || { echo "Ce n'est pas une sauvegarde local-repo." >&2; exit 1; }
-        if [ "${LR_RUNTIME:-}" = container ]; then
-            supervisorctl -c /etc/supervisor/local-repo.conf stop local-repo-portal >/dev/null 2>&1 || true
+        tar -tzf "$archive" | grep -qx "portal.db" || { echo "Ce n'est pas une sauvegarde loco." >&2; exit 1; }
+        if [ "${LOCO_RUNTIME:-}" = container ]; then
+            supervisorctl -c /etc/supervisor/loco.conf stop loco-portal >/dev/null 2>&1 || true
         else
-            systemctl stop local-repo-portal 2>/dev/null || true
+            systemctl stop loco-portal 2>/dev/null || true
         fi
         # La configuration propre à ce serveur (IP, ports, réseaux) est conservée ; le reste est restauré.
-        tar -xzpf "$archive" -C / --exclude=portal.db --exclude=etc/local-repo/local-repo.conf --exclude=etc/local-repo/install-state
-        tar -xzf "$archive" -O portal.db > "$STATE/portal.db"
+        "${PYTHON:-python3}" /opt/loco/portal/loco/backup.py "$archive" "$DATA"
+        chown root:loco /etc/loco/portal.secret
         rm -f "$STATE/portal.db-wal" "$STATE/portal.db-shm"
-        if id localrepo >/dev/null 2>&1; then
-            chown -R localrepo:localrepo "$STATE" "$DATA/apt" "$DATA/win"
-            if [ -d "$DATA/flatpak" ]; then chown -R localrepo:localrepo "$DATA/flatpak"; fi
-            if [ -d "$DATA/rpm" ]; then chown -R localrepo:localrepo "$DATA/rpm"; fi
+        if id loco >/dev/null 2>&1; then
+            chown -R loco:loco "$STATE" "$DATA/apt" "$DATA/win"
+            if [ -d "$DATA/flatpak" ]; then chown -R loco:loco "$DATA/flatpak"; fi
+            if [ -d "$DATA/rpm" ]; then chown -R loco:loco "$DATA/rpm"; fi
         fi
-        if [ "${LR_RUNTIME:-}" = container ]; then
+        if [ "${LOCO_RUNTIME:-}" = container ]; then
             echo "Archive restaurée. Redémarrez maintenant le conteneur pour régénérer la configuration :"
-            echo "    docker compose restart local-repo"
+            echo "    docker compose restart loco"
         else
             echo "Archive restaurée. Relancez maintenant l'installation pour régénérer services et configuration :"
             echo "    sudo ./install.sh      (depuis le dossier du projet)"
         fi
         ;;
     list)
-        ls -lh "$DEST"/local-repo-*.tar.gz 2>/dev/null || echo "Aucune sauvegarde dans $DEST."
+        find "$DEST" -maxdepth 1 -type f \( -name 'loco-*.tar.gz' -o -name 'local-repo-*.tar.gz' \) -exec ls -lh {} +
         ;;
     *)
         sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'

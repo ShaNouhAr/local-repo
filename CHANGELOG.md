@@ -1,5 +1,14 @@
 # Journal des versions
 
+## 2.0.0 — 2026-10-15
+
+- Renommage complet en **loco** : dépôt GitHub, portail, modules Python, services, compte système, commandes, chemins et configurations des postes.
+- Migration des serveurs Linux et Windows existants à la relance de l'installateur, avec sauvegarde préalable et conservation des comptes, UID Linux, certificats, clés, dépôts et caches.
+- Les dépôts APT existants gardent leur Origin/Label signé pour que les anciens postes continuent leurs mises à jour sans confirmation manuelle ; les nouveaux dépôts portent loco.
+- Mise à jour des postes APT/RPM au prochain setup, migration des origines Flatpak ; anciennes sauvegardes Linux et Windows restaurables.
+- `linux/docker/up.sh` reprend les variables LR_ et copie les volumes historiques vers le projet loco ; les volumes d'origine sont conservés et l'ancien conteneur redémarre si la migration échoue.
+- CI : migrations depuis local-repo 1.9.0 sur Debian, Ubuntu, Rocky, Docker et Windows Server 2022/2025.
+
 ## 1.9.0 — 2026-10-15
 
 - **Organisation du projet par système**, dans une seule branche : `linux/` (installateur, administration,

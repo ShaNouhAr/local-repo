@@ -1,6 +1,6 @@
 """Vérifie un serveur Windows réel par HTTPS, ses signatures et son cache APT.
 
-À lancer avec le Python embarqué, LR_E2E_PASSWORD et un dossier de paquets d'essai.
+À lancer avec le Python embarqué, LOCO_E2E_PASSWORD et un dossier de paquets d'essai.
 """
 import gzip
 import hashlib
@@ -21,12 +21,12 @@ import urllib.request
 import uuid
 import xml.etree.ElementTree as ET
 
-import lrwin
+import locowin
 
-cfg = lrwin.load_config()
+cfg = locowin.load_config()
 base = f"https://127.0.0.1:{cfg['https_port']}"
 fixtures = Path(sys.argv[1]).resolve()
-password = os.environ['LR_E2E_PASSWORD']
+password = os.environ['LOCO_E2E_PASSWORD']
 context = ssl.create_default_context(cafile=str(Path(cfg['etc_dir'], 'tls', 'ca.crt')))
 opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()),
                                    urllib.request.HTTPSHandler(context=context))
@@ -37,9 +37,9 @@ def get(path):
         return response.read()
 
 
-# gpgv indépendant de local-repo (celui de Git for Windows sur les machines de CI) : les signatures produites
+# gpgv indépendant de loco (celui de Git for Windows sur les machines de CI) : les signatures produites
 # en Python par le serveur sont vérifiées par un outil OpenPGP de référence.
-GPGV = next((g for g in (os.environ.get('LR_GPGV'), shutil.which('gpgv'),
+GPGV = next((g for g in (os.environ.get('LOCO_GPGV'), shutil.which('gpgv'),
                           r'C:\Program Files\Git\usr\bin\gpgv.exe') if g and os.path.exists(g)), None)
 if GPGV is None and os.environ.get('CI'):
     sys.exit('gpgv introuvable : vérification des signatures impossible.')
@@ -50,11 +50,11 @@ def verify(signature, data=None):
         print('gpgv absent : signature non vérifiée sur ce poste')
         return
     with tempfile.TemporaryDirectory() as work:
-        keyring = Path(work, 'local-repo.gpg')
-        keyring.write_bytes(get('/apt/local-repo.gpg'))
+        keyring = Path(work, 'loco.gpg')
+        keyring.write_bytes(get('/apt/loco.gpg'))
         Path(work, 'sig').write_bytes(signature)
         # Chemins relatifs : le gpgv de Git for Windows prend « C: » pour un préfixe d'URL de trousseau.
-        args = [GPGV, '--keyring', './local-repo.gpg', 'sig']
+        args = [GPGV, '--keyring', './loco.gpg', 'sig']
         if data is not None:
             Path(work, 'data').write_bytes(data)
             args.append('data')
@@ -129,7 +129,7 @@ class Origin(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         type(self).hits += 1
-        body = b'local-repo-cache-test'
+        body = b'loco-cache-test'
         self.send_response(200)
         self.send_header('Content-Length', str(len(body)))
         self.end_headers()
@@ -149,8 +149,8 @@ try:
         connection.request('GET', target)
         response = connection.getresponse()
         assert response.status == 200
-        assert response.getheader('X-Local-Repo-Cache') == expected
-        assert response.read() == b'local-repo-cache-test'
+        assert response.getheader('X-Loco-Cache') == expected
+        assert response.read() == b'loco-cache-test'
         connection.close()
     assert Origin.hits == 1
 finally:

@@ -89,7 +89,7 @@
           {% endif %}
           {% if flatpak_enabled %}
           <div class="tab-panel client-panel" data-panel="flatpak">
-            <p class="muted">Toute distribution avec Flatpak : Flathub via le cache{% if not windows %}, et dépôt local « local-repo »{% endif %}.</p>
+            <p class="muted">Toute distribution avec Flatpak : Flathub via le cache{% if not windows %}, et dépôt local « loco »{% endif %}.</p>
             {{ cmd('cmd-flatpak-home', 'curl -fsSL ' ~ client_url ~ '/flatpak/setup.sh | sudo sh') }}
             {% if http_url %}<span class="hint">Autorité pas encore importée : remplacer l'adresse par <code>{{ http_url }}</code>.</span>{% endif %}
             <span class="hint">Retrait et applications internes : <a href="{{ url_for('flatpak') }}">Linux › Flatpak</a>.</span>
@@ -99,7 +99,7 @@
             <p class="muted">Logiciels du catalogue, dans PowerShell administrateur (plusieurs : <code>7-zip,vlc</code>).</p>
             {{ cmd('cmd-win', "irm '" ~ client_url ~ "/win/i/<logiciel>' | iex", 'PS>') }}
             <span class="hint">Identifiants dans <a href="{{ url_for('windows_apps') }}">Logiciels Windows</a>. Windows Update : rien à installer sur le poste, le DNS redirige les téléchargements (<a href="{{ url_for('windows_update') }}">Windows Update</a>).</span>
-            <span class="hint">L'autorité local-repo se déploie par GPO{% if can_edit %} (voir <a href="{{ url_for('system') }}">Système</a>){% endif %}.</span>
+            <span class="hint">L'autorité loco se déploie par GPO{% if can_edit %} (voir <a href="{{ url_for('system') }}">Système</a>){% endif %}.</span>
           </div>
         </div>
       </section>

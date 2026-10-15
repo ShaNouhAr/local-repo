@@ -1,6 +1,6 @@
-# local-repo
+# loco
 
-[![CI](https://github.com/ShaNouhAr/local-repo/actions/workflows/ci.yml/badge.svg)](https://github.com/ShaNouhAr/local-repo/actions/workflows/ci.yml)
+[![CI](https://github.com/ShaNouhAr/loco/actions/workflows/ci.yml/badge.svg)](https://github.com/ShaNouhAr/loco/actions/workflows/ci.yml)
 
 Serveur de dépôts et de caches pour un réseau d'entreprise, installé sur Debian, Ubuntu, Rocky Linux ou Windows
 (installation native, recommandée), dans un **conteneur LXC Proxmox VE** ou avec **Docker Compose** :
@@ -46,8 +46,8 @@ install.sh  raccourci vers linux/install.sh
 ### Installation native (recommandée)
 
 ```bash
-git clone https://github.com/ShaNouhAr/local-repo.git
-cd local-repo
+git clone https://github.com/ShaNouhAr/loco.git
+cd loco
 sudo ./install.sh
 ```
 
@@ -83,7 +83,7 @@ Options principales (toutes : `sudo ./install.sh --help`) :
 Sur n'importe quel hôte Proxmox VE 7, 8 ou 9, en root :
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/ShaNouhAr/local-repo/main/linux/lxc/proxmox-lxc.sh
+curl -fsSLO https://raw.githubusercontent.com/ShaNouhAr/loco/main/linux/lxc/proxmox-lxc.sh
 bash proxmox-lxc.sh                                   # DHCP, 100 Go, 2 processeurs, 2 Go de mémoire
 bash proxmox-lxc.sh --ip 192.168.10.20/24 --gw 192.168.10.1 --disk 300 -- --allow "192.168.10.0/24"
 ```
@@ -97,19 +97,20 @@ l'adresse, l'empreinte de l'autorité et le mot de passe initial. Mise à jour :
 ### Avec Docker
 
 ```bash
-git clone https://github.com/ShaNouhAr/local-repo.git
-cd local-repo/linux/docker
-cp .env.example .env          # réglages : LR_HOST, LR_ALLOW, LR_PROXY, LR_WU…
-docker compose up -d --build
-docker compose logs local-repo   # adresse, empreinte de l'autorité, mot de passe initial de « admin »
+git clone https://github.com/ShaNouhAr/loco.git
+cd loco/linux/docker
+cp .env.example .env          # réglages : LOCO_HOST, LOCO_ALLOW, LOCO_PROXY, LOCO_WU…
+sudo ./up.sh
+docker compose logs loco   # adresse, empreinte de l'autorité, mot de passe initial de « admin »
 ```
 
 Même portail, mêmes fonctions et même configuration que l'installation native : au démarrage, le
 conteneur applique les variables de `.env` avec `linux/install.sh --container`, puis `supervisord` lance nginx,
 apt-cacher-ng, le portail et les tâches périodiques. Le conteneur utilise le **réseau de l'hôte** (ports
 8443, 8088, 3142, et 80/443 pour Windows Update) : ne pas l'associer à une installation native sur la même
-machine. Les données sont dans des volumes Docker (`LR_DATA_DIR` : dossier de l'hôte pour les dépôts et
-caches). Mise à jour : `git pull && docker compose up -d --build` (dans `linux/docker`).
+machine. Les données sont dans des volumes Docker (`LOCO_DATA_DIR` : dossier de l'hôte pour les dépôts et
+caches). Installation et mise à jour : `sudo ./up.sh` (dans `linux/docker`, après `git pull`). Ce script
+migre aussi un ancien projet Docker `local-repo`, en conservant ses volumes d'origine.
 
 L'installation native reste recommandée en production : elle confine chaque service avec systemd
 (détails dans [SECURITY.md](SECURITY.md)). Docker Engine 26 ou plus récent avec Compose v2 (validé avec
@@ -121,33 +122,33 @@ Déploiement en entreprise (réseau, GPO, proxy, sauvegardes, supervision, LXC, 
 ### Administration
 
 ```bash
-sudo local-repo-user list | add NOM [admin|viewer] | passwd NOM   # comptes (accès perdu : passwd admin)
-sudo local-repo-backup create | list | restore ARCHIVE             # sauvegardes
-sudo /opt/local-repo/remove.sh [--purge]                           # désinstallation
+sudo loco-user list | add NOM [admin|viewer] | passwd NOM   # comptes (accès perdu : passwd admin)
+sudo loco-backup create | list | restore ARCHIVE             # sauvegardes
+sudo /opt/loco/remove.sh [--purge]                           # désinstallation
 ```
 
-Dans un conteneur LXC, depuis l'hôte Proxmox : `pct exec N -- local-repo-user list`, etc.
-Avec Docker, les mêmes commandes passent par le conteneur : `docker compose exec local-repo local-repo-user list`,
-`docker compose exec local-repo local-repo-backup create`. Désinstallation : `docker compose down`
+Dans un conteneur LXC, depuis l'hôte Proxmox : `pct exec N -- loco-user list`, etc.
+Avec Docker, les mêmes commandes passent par le conteneur : `docker compose exec loco loco-user list`,
+`docker compose exec loco loco-backup create`. Désinstallation : `docker compose down`
 (ajouter `-v` pour effacer aussi les données).
 
 ### Architecture
 
 | Élément | Emplacement | Port |
 |---|---|---|
-| Portail (Flask + gunicorn, unité `local-repo-portal`, confinée) | `/opt/local-repo` | 8089, local |
-| nginx : interface et fichiers des postes (HTTPS) | `/etc/nginx/sites-available/local-repo-portal.conf` | 8443 |
+| Portail (Flask + gunicorn, unité `loco-portal`, confinée) | `/opt/loco` | 8089, local |
+| nginx : interface et fichiers des postes (HTTPS) | `/etc/nginx/sites-available/loco-portal.conf` | 8443 |
 | nginx : amorçage HTTP (optionnel) | même fichier | 8088 |
-| nginx : cache Windows Update, relais HTTPS (SNI) | `local-repo-wucache.conf`, `modules-enabled/99-local-repo-stream.conf` | 80, 443 |
+| nginx : cache Windows Update, relais HTTPS (SNI) | `loco-wucache.conf`, `modules-enabled/99-loco-stream.conf` | 80, 443 |
 | apt-cacher-ng | `/var/cache/apt-cacher-ng` | 3142 |
-| Données : dépôts, catalogue, caches | `/srv/local-repo` | — |
-| Base, clé GPG, statistiques | `/var/lib/local-repo` | — |
-| Configuration, autorité et certificats | `/etc/local-repo` | — |
+| Données : dépôts, catalogue, caches | `/srv/loco` | — |
+| Base, clé GPG, statistiques | `/var/lib/loco` | — |
+| Configuration, autorité et certificats | `/etc/loco` | — |
 
 Sur Debian / Ubuntu, les dépendances viennent des dépôts officiels (`nginx`, `apt-cacher-ng`, `python3-flask`, `gunicorn`,
 `gnupg`, `flatpak`, `ostree`, `createrepo-c`, `rpm`) : les correctifs de sécurité arrivent avec `apt upgrade`.
 Sur Rocky, les paquets système sont suivis par `dnf upgrade` ; le runtime Python isolé et les composants
-compilés sont figés et mis à jour avec les versions de local-repo.
+compilés sont figés et mis à jour avec les versions de loco.
 
 ## Serveur Windows
 
@@ -157,13 +158,13 @@ Windows 11 Professionnel / Entreprise et Windows Server 2022 / 2025, en x64, ave
 ou supérieur. Dans une console PowerShell **administrateur**, depuis les sources du projet :
 
 ```powershell
-Invoke-WebRequest https://github.com/ShaNouhAr/local-repo/archive/refs/heads/main.zip -OutFile local-repo.zip
-Expand-Archive local-repo.zip -DestinationPath .
-cd local-repo-main
+Invoke-WebRequest https://github.com/ShaNouhAr/loco/archive/refs/heads/main.zip -OutFile loco.zip
+Expand-Archive loco.zip -DestinationPath .
+cd loco-main
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\windows\install.ps1
 ```
 
-L'application tourne dans le service Windows `local-repo`, avec ses composants Windows natifs :
+L'application tourne dans le service Windows `loco`, avec ses composants Windows natifs :
 Python et nginx ; les dépôts sont signés par le programme lui-même (OpenPGP). Aucune VM Linux, WSL,
 Hyper-V ou installation Docker n'est nécessaire.
 Relancer le même script met à jour le programme en conservant les comptes, les clés et les dépôts.
@@ -177,16 +178,16 @@ consulter les limites du nginx Windows et le dimensionnement dans le [guide Wind
 Dans une console administrateur :
 
 ```powershell
-$lr = "$env:ProgramFiles\local-repo\local-repo.cmd"
+$lr = "$env:ProgramFiles\loco\loco.cmd"
 & $lr user list ; & $lr user passwd admin ; & $lr backup create ; & $lr status
-powershell -ExecutionPolicy Bypass -File "$env:ProgramFiles\local-repo\windows\remove.ps1"   # -Purge : tout effacer
+powershell -ExecutionPolicy Bypass -File "$env:ProgramFiles\loco\windows\remove.ps1"   # -Purge : tout effacer
 ```
 
 ### Architecture
 
-Service `local-repo` (compte `NT SERVICE\local-repo`) qui lance nginx et le portail
-(Waitress, 8089 en local) ; programme dans `%ProgramFiles%\local-repo`, données, configuration et journaux
-dans `%ProgramData%\local-repo`. Ports : 8443 (HTTPS), 8088 (amorçage HTTP), 3142 (cache APT), 80 et 443
+Service `loco` (compte `NT SERVICE\loco`) qui lance nginx et le portail
+(Waitress, 8089 en local) ; programme dans `%ProgramFiles%\loco`, données, configuration et journaux
+dans `%ProgramData%\loco`. Ports : 8443 (HTTPS), 8088 (amorçage HTTP), 3142 (cache APT), 80 et 443
 (Windows Update). Détails : [guide Windows](docs/windows.md).
 
 ## Brancher les postes
@@ -209,7 +210,7 @@ curl -fsSL https://<ip>:8443/linux/setup.sh | sudo sh -s -- --cache-only
 # Rocky Linux, AlmaLinux, RHEL 8+ : dépôt local elN + dépôts officiels via le cache (--epel : EPEL aussi)
 curl -fsSL https://<ip>:8443/rpm/setup.sh | sudo sh
 
-# Flatpak : Flathub via le cache + dépôt local « local-repo »
+# Flatpak : Flathub via le cache + dépôt local « loco »
 curl -fsSL https://<ip>:8443/flatpak/setup.sh | sudo sh
 ```
 
@@ -218,7 +219,7 @@ curl -fsSL https://<ip>:8443/flatpak/setup.sh | sudo sh
 irm 'https://<ip>:8443/win/i/7-zip,vlc' | iex
 ```
 
-Le script Windows vérifie le SHA-256 de chaque installeur, laisse 30 minutes à chacun (`$env:LR_TIMEOUT`)
+Le script Windows vérifie le SHA-256 de chaque installeur, laisse 30 minutes à chacun (`$env:LOCO_TIMEOUT`)
 et reconnaît les codes « redémarrage requis », « déjà installé » et « non applicable ».
 
 Pour Windows Update, le DNS doit renvoyer l'IP du serveur pour les domaines de mise à jour : la page
@@ -226,7 +227,7 @@ Pour Windows Update, le DNS doit renvoyer l'IP du serveur pour les domaines de m
 
 Le script Linux lit `/etc/os-release` et sélectionne le dépôt correspondant au poste. Si ce dépôt
 n'existe pas, il s'arrête avant de remplacer la configuration. Les dérivées peuvent choisir explicitement
-`--distribution ubuntu --suite noble`. Les sources APT sont au format deb822 (`local-repo.sources`).
+`--distribution ubuntu --suite noble`. Les sources APT sont au format deb822 (`loco.sources`).
 
 **Mise à jour depuis 1.0.0** : l'ancien dépôt `/apt/` et les postes déjà branchés restent fonctionnels.
 L'action *Copier vers un autre dépôt* conserve les originaux. Vérifiez la compatibilité de chaque paquet,
@@ -270,3 +271,5 @@ Historique : [CHANGELOG.md](CHANGELOG.md).
 
 MIT. Polices [IBM Plex](https://github.com/IBM/plex) sous licence SIL OFL 1.1
 (`portal/static/fonts/IBMPlex-LICENSE.txt`).
+
+Passage depuis une version local-repo : [guide de migration vers loco](docs/migration-loco.md).

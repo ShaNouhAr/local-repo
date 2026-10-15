@@ -1,5 +1,5 @@
 #!/bin/bash
-# Serveur du test RPM (VM jetable uniquement) : installe local-repo pour des postes qui le joignent par
+# Serveur du test RPM (VM jetable uniquement) : installe loco pour des postes qui le joignent par
 # 10.0.2.2 (passerelle QEMU), puis publie un paquet de test dans el8, el9 et el10.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -14,14 +14,14 @@ for major in 8 9 10; do
 Name: lr-rpm-e2e
 Version: 1.0
 Release: 1.el$major
-Summary: paquet de test local-repo
+Summary: paquet de test loco
 License: MIT
 BuildArch: noarch
 %description
-paquet de test local-repo
+paquet de test loco
 %install
 mkdir -p %{buildroot}/usr/share/lr-rpm-e2e
-echo local-repo-rpm-el$major > %{buildroot}/usr/share/lr-rpm-e2e/content
+echo loco-rpm-el$major > %{buildroot}/usr/share/lr-rpm-e2e/content
 %files
 /usr/share/lr-rpm-e2e/content
 SPEC

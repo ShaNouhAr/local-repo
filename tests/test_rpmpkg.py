@@ -11,14 +11,14 @@ from pathlib import Path
 from unittest import mock
 
 import test_portal as fixture
-from localrepo import config, rpmpkg, rpmrepo
-from localrepo.db import transaction
+from loco import config, rpmpkg, rpmrepo
+from loco.db import transaction
 
 SPEC = """Name: {name}
 Version: 2.1
 Release: 3.el9
 Epoch: {epoch}
-Summary: essai <local-repo> & co
+Summary: essai <loco> & co
 License: MIT
 URL: https://example.invalid/{name}
 BuildArch: noarch
@@ -170,7 +170,7 @@ class TestPortalWithoutRpmTools(unittest.TestCase):
                               capture_output=True, text=True).stdout
         if "sec" not in keys:
             subprocess.run(["gpg", "--homedir", config.GNUPGHOME, "--batch", "--pinentry-mode", "loopback",
-                            "--passphrase", "", "--quick-generate-key", "local-repo tests <tests@invalid>",
+                            "--passphrase", "", "--quick-generate-key", "loco tests <tests@invalid>",
                             "ed25519", "sign", "0"], check=True, capture_output=True)
         work = tempfile.mkdtemp(dir=fixture.TMP)
         try:

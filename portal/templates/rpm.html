@@ -13,7 +13,7 @@
   <div class="metrics">
     <div class="metric"><div class="k">Cache des miroirs</div><div class="v">{{ stats.get('rpmcache', 0)|human }}</div><div class="s">paquets gardés 6 mois</div></div>
     <div class="metric"><div class="k">Dépôt {{ selected or '—' }}</div><div class="v">{{ packages|length }}</div><div class="s">paquet(s) · {{ packages|sum(attribute='size')|human }}</div></div>
-    <div class="metric"><div class="k">Signature</div><div class="v">GPG</div><div class="s"><a href="{{ client_url }}/rpm/local-repo.asc">clé publique</a></div></div>
+    <div class="metric"><div class="k">Signature</div><div class="v">GPG</div><div class="s"><a href="{{ client_url }}/rpm/loco.asc">clé publique</a></div></div>
   </div>
 
   <section class="panel">

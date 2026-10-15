@@ -1,6 +1,10 @@
 __pycache__/
 *.pyc
-/local-repo/
+/loco/
 
 /test-results/
 .env
+.env.before-loco
+
+# Ancien dossier de travail local, conservé lors du renommage.
+/local-repo/

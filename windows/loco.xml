@@ -1,12 +1,12 @@
-<!-- Service Windows local-repo (WinSW), généré par install.ps1. -->
+<!-- Service Windows loco (WinSW), généré par install.ps1. -->
 <service>
-  <id>local-repo</id>
-  <name>local-repo</name>
-  <description>local-repo : portail, caches APT, RPM, Flathub et Windows Update, dépôts locaux.</description>
+  <id>loco</id>
+  <name>loco</name>
+  <description>loco : portail, caches APT, RPM, Flathub et Windows Update, dépôts locaux.</description>
   <executable>@PROGRAM@\python\python.exe</executable>
-  <arguments>-m lrwin service</arguments>
+  <arguments>-m locowin service</arguments>
   <workingdirectory>@PROGRAM@\portal</workingdirectory>
-  <env name="LR_CONFIG" value="@CONFIG@"/>
+  <env name="LOCO_CONFIG" value="@CONFIG@"/>
   <env name="PYTHONUNBUFFERED" value="1"/>
   <env name="PYTHONDONTWRITEBYTECODE" value="1"/>
   <startmode>Automatic</startmode>
