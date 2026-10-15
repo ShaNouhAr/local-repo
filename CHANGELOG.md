@@ -1,5 +1,13 @@
 # Journal des versions
 
+## 2.1.0 — 2026-10-15
+
+- Appliance ISO Alpine 3.24 / BusyBox : assistant visuel, installation automatique par réponses, BIOS et UEFI, paquets embarqués et premier démarrage configuré.
+- Administration graphique et CLI : configuration des accès, fonctions et caches, mises à jour de loco et du système, journaux en direct ; `setup-loco`, `loco-config` et `loco-update`.
+- Agent OpenRC séparé du portail sans privilèges ; demandes revalidées, opérations sérialisées et retour arrière de loco / configuration / base en cas d’échec.
+- Alpine devient une plateforme de l’installateur Linux commun, avec cache APT nginx partagé avec Windows, signatures et lecteurs de paquets Python, sauvegardes et désinstallation.
+- CI Alpine native et ISO : archives vérifiées, retour arrière provoqué, installations BIOS / UEFI et redémarrages sans média ; publication des sources, ISO validée et SHA256SUMS.
+
 ## 2.0.0 — 2026-10-15
 
 - Renommage complet en **loco** : dépôt GitHub, portail, modules Python, services, compte système, commandes, chemins et configurations des postes.

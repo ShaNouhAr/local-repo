@@ -115,9 +115,11 @@ def service_active(name):
         # Sous Windows, le cache APT est assuré par nginx (proxy sur le port 3142).
         name = "nginx" if name == "apt-cacher-ng" else name
         return bool(windows_status().get("services", {}).get(name))
-    if config.CONTAINER:
+    if config.CONTAINER or config.ALPINE:
         if name == "loco-portal":
             return True
+        if config.ALPINE and name == "apt-cacher-ng":
+            name = "nginx"     # Alpine : cache APT servi par nginx
         return name in CONTAINER_PROCESSES and process_running(CONTAINER_PROCESSES[name])
     try:
         out = subprocess.run(["systemctl", "is-active", name], capture_output=True, text=True, timeout=5)

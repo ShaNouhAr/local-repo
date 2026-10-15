@@ -263,6 +263,7 @@ tr.note-row.warn td { color: var(--warn); }
 tr.new td { animation: hl 1.5s ease-out; }
 @keyframes hl { from { background: var(--bg-3); } }
 .empty { padding: 28px 16px; color: var(--text-2); text-align: center; }
+pre.log { margin: 0; padding: 12px 16px; max-height: 440px; overflow: auto; border-top: 1px solid var(--line); background: var(--bg-2); font: 12px/1.6 var(--mono); color: var(--text-2); white-space: pre-wrap; word-break: break-word; }
 
 /* ------------------------------------------------------------------ barre de sélection */
 
@@ -364,3 +365,6 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
 .subnav a { padding: 0 0 8px; margin-bottom: -1px; border-bottom: 2px solid transparent; color: var(--text-2); text-decoration: none; font-size: 13.5px; }
 .subnav a:hover { color: var(--text); }
 .subnav a.on { color: var(--text); border-bottom-color: var(--text); font-weight: 500; }
+
+.appliance-form .panel-b.grid2 > * { margin-top: 0; }
+.subnav a { flex-shrink: 0; white-space: nowrap; }

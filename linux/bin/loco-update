@@ -1,0 +1,3 @@
+#!/bin/sh
+# Mises à jour de l'appliance Alpine (loco et paquets du système) : voir loco-update --help.
+exec /usr/bin/python3 -I /opt/loco/portal/locoadmin.py update "$@"

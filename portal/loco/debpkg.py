@@ -9,10 +9,14 @@ import lzma
 import os
 import tarfile
 
-try:  # Python 3.14 et plus
+try:  # Python 3.14 et plus, compilé avec zstd
     from compression import zstd as _zstd
 except ImportError:  # pragma: no cover - selon la version de Python
     _zstd = None
+try:  # module zstandard (Alpine : son Python 3.14 n'a pas le module _zstd)
+    import zstandard as _zstandard
+except ImportError:  # pragma: no cover - selon le système
+    _zstandard = None
 
 # Ordre des champs d'un paquet binaire (celui de dpkg) ; les autres suivent dans leur ordre d'origine.
 _FIELD_ORDER = ("Package", "Source", "Version", "Architecture", "Maintainer", "Installed-Size", "Pre-Depends",
@@ -50,15 +54,26 @@ def _decompress(name, blob):
     elif name.endswith(".xz"):
         reader = lzma.LZMAFile(io.BytesIO(blob))
     elif name.endswith(".zst"):
-        if _zstd is None:
-            raise ValueError("paquet compressé en zstd : Python 3.14 ou plus est requis pour le lire")
-        reader = _zstd.ZstdFile(io.BytesIO(blob))
+        if _zstd is not None:
+            reader = _zstd.ZstdFile(io.BytesIO(blob))
+        elif _zstandard is not None:
+            reader = _zstandard.ZstdDecompressor().stream_reader(io.BytesIO(blob))
+        else:
+            raise ValueError("paquet compressé en zstd : Python 3.14 avec zstd, ou le module zstandard, est requis")
     elif name.endswith(".tar"):
         reader = io.BytesIO(blob)
     else:
         raise ValueError(f"compression non prise en charge : {name}")
+    chunks, total = [], 0
     with reader:
-        control = reader.read(limit + 1)
+        # Lecture en boucle : certains lecteurs rendent moins que demandé avant la fin.
+        while total <= limit:
+            chunk = reader.read(min(1 << 20, limit + 1 - total))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+    control = b"".join(chunks)
     if len(control) > limit:
         raise ValueError("archive de contrôle trop volumineuse (maximum 64 Mio)")
     return control
@@ -91,6 +106,8 @@ def control_text(path):
     errors = (OSError, EOFError, tarfile.TarError, lzma.LZMAError, UnicodeError)
     if _zstd is not None:
         errors += (_zstd.ZstdError,)
+    if _zstandard is not None:
+        errors += (_zstandard.ZstdError,)
     try:
         return _control_text(path)
     except errors as exc:

@@ -1,0 +1,40 @@
+name: Release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag existant à publier (ex. v2.1.0), avec CI réussie'
+        required: true
+        type: string
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Vérifier le tag et sa CI, récupérer l'ISO validée
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+          revision=$(git rev-parse "$RELEASE_TAG^{commit}")
+          version=${RELEASE_TAG#v}
+          git show "$revision:portal/loco/config.py" | grep -qx "VERSION = \"$version\""
+          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$revision&status=success" --jq '.workflow_runs[0].id // empty')
+          test -n "$run"
+          mkdir -p /tmp/loco-release-iso dist
+          gh run download "$run" -n loco-iso -D /tmp/loco-release-iso
+          cp /tmp/loco-release-iso/alpine-build/loco-v3.24-x86_64.iso "dist/loco-$version-x86_64.iso"
+          git archive --format=tar.gz --prefix="loco-$version/" "$revision" > "dist/loco-$version.tar.gz"
+          (cd dist && sha256sum loco-* > SHA256SUMS)
+      - name: Publier les sources, l'ISO et les empreintes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: gh release create "$RELEASE_TAG" --verify-tag --title "loco ${RELEASE_TAG#v}" --generate-notes dist/*

@@ -54,7 +54,7 @@
           <table>
             <thead><tr><th>Service</th><th class="hide-sm">Rôle</th><th>Adresse</th><th>État</th></tr></thead>
             <tbody>
-              <tr><td>{{ 'Cache APT' if windows else 'apt-cacher-ng' }}</td><td class="muted hide-sm">{{ 'nginx, paquets Debian / Ubuntu' if windows else 'Cache des paquets Debian / Ubuntu' }}</td><td class="mono">:{{ acng_port }}</td><td><span data-bind="services.acng" data-fmt="service">{{ service(d.services.acng) }}</span></td></tr>
+              <tr><td>{{ 'Cache APT' if apt_nginx else 'apt-cacher-ng' }}</td><td class="muted hide-sm">{{ 'nginx, paquets Debian / Ubuntu' if apt_nginx else 'Cache des paquets Debian / Ubuntu' }}</td><td class="mono">:{{ acng_port }}</td><td><span data-bind="services.acng" data-fmt="service">{{ service(d.services.acng) }}</span></td></tr>
               <tr><td>Cache Windows Update</td><td class="muted hide-sm">nginx, ports 80 et 443</td><td class="mono">:80 :443</td><td><span data-bind="services.nginx" data-fmt="service">{{ service(d.services.nginx) }}</span></td></tr>
               {% if rpm_enabled %}<tr><td>Cache RPM</td><td class="muted hide-sm">Rocky Linux, AlmaLinux, EPEL</td><td class="mono nowrap">/rpmcache/</td><td><span data-bind="services.nginx" data-fmt="service">{{ service(d.services.nginx) }}</span></td></tr>{% endif %}
               {% if flatpak_enabled %}<tr><td>Cache Flathub</td><td class="muted hide-sm">nginx, avec le portail</td><td class="mono nowrap">/flathub/</td><td><span data-bind="services.nginx" data-fmt="service">{{ service(d.services.nginx) }}</span></td></tr>{% endif %}

@@ -1,0 +1,4 @@
+#!/bin/sh
+# Appliance loco : bannière de la console (adresse du portail, empreinte de l'autorité HTTPS), à chaque démarrage.
+# shellcheck source=linux/lib/appliance.sh
+. /opt/loco/lib/appliance.sh && appliance_issue

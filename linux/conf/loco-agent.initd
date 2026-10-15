@@ -1,0 +1,20 @@
+#!/sbin/openrc-run
+# shellcheck shell=sh disable=SC2034
+# Agent d'administration de l'appliance (root) : exécute les mises à jour et réglages demandés depuis le portail.
+# Séparé du service loco : il le redémarre pendant les mises à jour sans s'interrompre lui-même.
+name="loco-agent"
+description="loco : mises à jour et réglages demandés depuis le portail"
+supervisor=supervise-daemon
+command=/usr/bin/python3
+command_args="-I /opt/loco/portal/locoadmin.py agent"
+output_log=/var/log/loco/agent.log
+error_log=/var/log/loco/agent.log
+
+depend() {
+    need localmount
+    after loco
+}
+
+start_pre() {
+    checkpath -d -m 0755 /var/log/loco
+}

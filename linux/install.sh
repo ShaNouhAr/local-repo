@@ -1,6 +1,7 @@
 #!/bin/bash
 # loco : installe le dépôt local (paquets Linux, Windows Update, logiciels Windows)
-# sur Debian / Ubuntu / Rocky Linux (versions validées : README). Relançable sans risque pour mettre à jour ou reconfigurer.
+# sur Debian / Ubuntu / Rocky Linux / Alpine Linux (versions validées : README). Relançable sans risque pour mettre à jour
+# ou reconfigurer.
 # L'image Docker l'utilise aussi, avec --container (voir linux/docker/).
 #
 #   sudo ./install.sh [options]
@@ -26,6 +27,7 @@
 #   --flatpak-cache-size T   taille max du cache Flathub (défaut : quart de l'espace libre, max 100g)
 #   --no-rpm / --rpm         sans / avec la famille Red Hat (cache Rocky/AlmaLinux/EPEL, dépôts RPM el8…)
 #   --rpm-cache-size T       taille max du cache RPM (défaut : quart de l'espace libre, max 100g)
+#   --apt-cache-size T       Alpine : taille max du cache APT nginx (défaut : quart de l'espace libre, max 100g)
 set -euo pipefail
 
 # Dossier linux/ du projet (installateur et fichiers propres à Linux) et racine du projet (portail, gabarits nginx).
@@ -71,7 +73,15 @@ case "$ID" in
         # shellcheck source=linux/lib/rocky.sh
         . "$SRC/lib/rocky.sh"
         ;;
-    *) die "Serveur Debian, Ubuntu ou Rocky Linux requis." ;;
+    alpine)
+        PLATFORM=alpine
+        NGINX_USER=nginx
+        LOG_GROUP=nginx
+        # shellcheck source=linux/lib/alpine.sh
+        . "$SRC/lib/alpine.sh"
+        alpine_supported || die "Alpine Linux 3.24 ou plus récent requis."
+        ;;
+    *) die "Serveur Debian, Ubuntu, Rocky Linux ou Alpine Linux requis." ;;
 esac
 # Le code et les ressources publiques doivent rester lisibles même avec umask 077.
 umask 022
@@ -81,6 +91,8 @@ CONTAINER=0
 for arg in "$@"; do if [ "$arg" = "--container" ]; then CONTAINER=1; fi; done
 if [ "$CONTAINER" = 1 ]; then
     [ "${LOCO_RUNTIME:-}" = container ] || die "--container est réservé à l'image Docker (docker compose up -d)."
+elif [ "$PLATFORM" = alpine ]; then
+    command -v rc-service >/dev/null || die "OpenRC requis."
 else
     command -v systemctl >/dev/null || die "systemd requis."
 fi
@@ -92,6 +104,8 @@ if ! command -v python3 >/dev/null; then
     echo python3 >> "$PACKAGE_RECORD"
     if [ "$PLATFORM" = rocky ]; then
         dnf install -y python3 >/dev/null 2>&1 || die "impossible d'installer python3."
+    elif [ "$PLATFORM" = alpine ]; then
+        apk add --no-progress python3 >/dev/null 2>&1 || die "impossible d'installer python3."
     else
         { apt-get update -q -o APT::Update::Error-Mode=any && DEBIAN_FRONTEND=noninteractive apt-get install -y -q python3; } >/dev/null 2>&1 \
             || die "impossible d'installer python3."
@@ -106,7 +120,7 @@ if [[ " $* " != *" --help "* && " $* " != *" -h "* ]]; then migrate_local_repo; 
 PORTAL_PORT=8088 HTTPS_PORT=8443 HTTP_ENABLED=1 HOST="" DATA=/srv/loco WU_CACHE_SIZE=""
 RESOLVERS="1.1.1.1 9.9.9.9" WU_ENABLED=1 ALLOW="$PRIVATE_NETS" ADMIN_ALLOW="" UPSTREAM_PROXY=""
 MAX_UPLOAD=8g BACKUP_KEEP=3 BACKUP_DIR=/var/backups/loco FLATPAK_ENABLED=1 FLATPAK_CACHE_SIZE=""
-RPM_ENABLED=1 RPM_CACHE_SIZE=""
+RPM_ENABLED=1 RPM_CACHE_SIZE="" APT_CACHE_SIZE=""
 # shellcheck disable=SC1091
 [ -f "$ETC/loco.conf" ] && . "$ETC/loco.conf"
 PASSWORD="" TLS_CERT="" TLS_KEY=""
@@ -137,6 +151,7 @@ while [ $# -gt 0 ]; do
         --no-rpm) RPM_ENABLED=0; shift ;;
         --rpm) RPM_ENABLED=1; shift ;;
         --rpm-cache-size) need "$@"; RPM_CACHE_SIZE="$2"; shift 2 ;;
+        --apt-cache-size) need "$@"; APT_CACHE_SIZE="$2"; shift 2 ;;
         --container) shift ;;
         --no-wu) WU_ENABLED=0; shift ;;
         --wu) WU_ENABLED=1; shift ;;
@@ -154,6 +169,7 @@ num --https-port "$HTTPS_PORT"; num --http-port "$PORTAL_PORT"; num --backup-kee
 [[ "$WU_CACHE_SIZE" =~ ^([0-9]+[kKmMgGtT]?)?$ ]] || die "--wu-cache-size : taille invalide (ex. 50g)."
 [[ "$FLATPAK_CACHE_SIZE" =~ ^([0-9]+[kKmMgGtT]?)?$ ]] || die "--flatpak-cache-size : taille invalide (ex. 20g)."
 [[ "$RPM_CACHE_SIZE" =~ ^([0-9]+[kKmMgGtT]?)?$ ]] || die "--rpm-cache-size : taille invalide (ex. 30g)."
+[[ "$APT_CACHE_SIZE" =~ ^([0-9]+[kKmMgGtT]?)?$ ]] || die "--apt-cache-size : taille invalide (ex. 50g)."
 if [[ ! "$DATA" =~ ^/[A-Za-z0-9._/-]+$ || "$DATA" == "/" ]]; then die "--data : chemin absolu simple attendu."; fi
 [[ "$BACKUP_DIR" =~ ^/[A-Za-z0-9._/-]+$ ]] || die "--backup-dir : chemin absolu simple attendu."
 if [ -n "$UPSTREAM_PROXY" ]; then
@@ -181,7 +197,8 @@ ALLOW_LIST=$(nets "$ALLOW" --allow)
 ADMIN_LIST=$(nets "$ADMIN_ALLOW" --admin-allow)
 
 if [ -z "$HOST" ]; then
-    HOST=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
+    HOST=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}' || true)
+    if [ -z "$HOST" ]; then HOST=$(ip -4 -o addr show scope global | awk '{sub(/\/.*/, "", $4); print $4; exit}'); fi
 fi
 [ -n "$HOST" ] || die "impossible de détecter l'IP du serveur, utilisez --host."
 ADMIN_URL="https://$HOST:$HTTPS_PORT"
@@ -206,7 +223,7 @@ check_port() {
 say "Vérification des ports"
 check_port "$HTTPS_PORT" nginx
 if [ "$HTTP_ENABLED" = 1 ]; then check_port "$PORTAL_PORT" nginx; fi
-if [ "$PLATFORM" = rocky ]; then check_port 3142 nginx; else check_port 3142 apt-cacher-ng; fi
+if [ "$PLATFORM" = debian ]; then check_port 3142 apt-cacher-ng; else check_port 3142 nginx; fi
 check_port "$APP_PORT" gunicorn
 if [ "$WU_ENABLED" = 1 ]; then
     check_port 80 nginx
@@ -222,6 +239,8 @@ if [ "$CONTAINER" = 0 ]; then
 say "Installation des paquets"
 if [ "$PLATFORM" = rocky ]; then
     rocky_packages
+elif [ "$PLATFORM" = alpine ]; then
+    alpine_packages
 else
 touch "$PACKAGE_RECORD"
 for p in "${PACKAGES[@]}"; do
@@ -241,7 +260,8 @@ fi
 
 # ---------------------------------------------------------------- utilisateur et dossiers
 say "Utilisateur et dossiers"
-id loco >/dev/null 2>&1 || useradd --system --home-dir "$STATE" --shell /usr/sbin/nologin loco
+if [ "$PLATFORM" = alpine ]; then alpine_user
+else id loco >/dev/null 2>&1 || useradd --system --home-dir "$STATE" --shell /usr/sbin/nologin loco; fi
 install -d -m 755 -o loco -g loco "$DATA" "$DATA/apt" "$DATA/apt/pool" "$DATA/win"
 install -d -m 700 -o loco -g loco "$DATA/.tmp" "$STATE/gnupg"
 install -d -m 755 -o loco -g loco "$STATE" "$STATE/nginx"
@@ -267,6 +287,10 @@ if [ -z "$FLATPAK_CACHE_SIZE" ]; then
     free_g=$(df -BG --output=avail "$DATA" | tail -1 | tr -dc '0-9')
     FLATPAK_CACHE_SIZE="$(( free_g / 4 > 100 ? 100 : (free_g / 4 < 2 ? 2 : free_g / 4) ))g"
 fi
+if [ "$PLATFORM" = alpine ] && [ -z "$APT_CACHE_SIZE" ]; then
+    free_g=$(df -BG --output=avail "$DATA" | tail -1 | tr -dc '0-9')
+    APT_CACHE_SIZE="$(( free_g / 4 > 100 ? 100 : (free_g / 4 < 2 ? 2 : free_g / 4) ))g"
+fi
 
 cat > "$ETC/loco.conf" <<EOF
 # Généré par install.sh : modifiez puis relancez sudo ./install.sh pour appliquer.
@@ -285,10 +309,12 @@ FLATPAK_ENABLED=$FLATPAK_ENABLED
 FLATPAK_CACHE_SIZE=$FLATPAK_CACHE_SIZE
 RPM_ENABLED=$RPM_ENABLED
 RPM_CACHE_SIZE=$RPM_CACHE_SIZE
+APT_CACHE_SIZE=$APT_CACHE_SIZE
 RESOLVERS="$RESOLVERS"
 MAX_UPLOAD=$MAX_UPLOAD
 BACKUP_KEEP=$BACKUP_KEEP
 BACKUP_DIR=$BACKUP_DIR
+SOURCE_DIR=$(printf '%q' "$ROOT")
 EOF
 chmod 644 "$ETC/loco.conf"
 
@@ -302,6 +328,7 @@ find "$PREFIX.new" -name __pycache__ -prune -exec rm -rf {} +
 chmod 755 "$PREFIX.new/bin/"* "$PREFIX.new/remove.sh"
 rm -rf "$PREFIX"
 mv "$PREFIX.new" "$PREFIX"
+install -d /usr/local/sbin    # absent sur Alpine minimal
 ln -sf "$PREFIX/bin/loco-user" /usr/local/sbin/loco-user
 ln -sf "$PREFIX/bin/loco-backup" /usr/local/sbin/loco-backup
 ln -sf "$PREFIX/bin/loco-apt" /usr/local/sbin/loco-apt
@@ -477,6 +504,7 @@ else
           /etc/nginx/modules-enabled/99-loco-stream.conf
 fi
 if [ "$PLATFORM" = rocky ]; then rocky_nginx; rocky_access; fi
+if [ "$PLATFORM" = alpine ]; then alpine_nginx; fi
 if ! nginx -t >/dev/null 2>&1; then
     nginx -t 2>&1 | grep -v -e "syntax is ok" -e "test is successful" || true
     # On retire notre configuration pour ne pas laisser nginx dans un état cassé.
@@ -490,6 +518,8 @@ if ! nginx -t >/dev/null 2>&1; then
 fi
 
 # ---------------------------------------------------------------- apt-cacher-ng
+# Alpine : pas d'apt-cacher-ng, le cache APT est servi par nginx (voir alpine_nginx).
+if [ "$PLATFORM" != alpine ]; then
 say "Configuration d'apt-cacher-ng"
 if [ "$PLATFORM" = debian ]; then
 ldd /usr/sbin/apt-cacher-ng | grep libwrap >/dev/null || die "apt-cacher-ng sans libwrap : impossible de garantir le filtrage des postes sur cette distribution."
@@ -529,10 +559,14 @@ if [ "$CONTAINER" = 0 ]; then
     install -d /etc/systemd/system/apt-cacher-ng.service.d
     render "$PREFIX/conf/apt-cacher-ng-override.conf" > /etc/systemd/system/apt-cacher-ng.service.d/loco.conf
 fi
+fi
 
 # ---------------------------------------------------------------- services
 say "Services"
-if [ "$CONTAINER" = 1 ]; then
+if [ "$PLATFORM" = alpine ]; then
+    alpine_services
+    alpine_check
+elif [ "$CONTAINER" = 1 ]; then
     # Conteneur : supervisord (lancé par linux/docker/entrypoint.sh) remplace systemd.
     install -d -o apt-cacher-ng -g apt-cacher-ng /run/apt-cacher-ng /var/log/apt-cacher-ng
     chown apt-cacher-ng:apt-cacher-ng /var/cache/apt-cacher-ng
@@ -589,6 +623,8 @@ if [ -n "$ISSUED" ]; then
 fi
 if [ "$CONTAINER" = 1 ]; then
     echo "    Accès perdu        : docker compose exec loco loco-user passwd admin"
+elif [ "$PLATFORM" = alpine ]; then
+    echo "    Accès perdu        : loco-user passwd admin   (en root, sur la console)"
 else
     echo "    Accès perdu        : sudo loco-user passwd admin"
 fi
@@ -615,5 +651,5 @@ fi
 if [ "$CONTAINER" = 1 ]; then
     echo "    Arrêter            : docker compose down   (les données restent dans les volumes)"
 else
-    echo "    Désinstaller       : sudo $PREFIX/remove.sh"
+    echo "    Désinstaller       : $([ "$PLATFORM" = alpine ] || printf 'sudo ')$PREFIX/remove.sh"
 fi

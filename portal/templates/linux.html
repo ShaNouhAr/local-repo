@@ -8,7 +8,7 @@
     <p>Cache APT et dépôts signés, séparés par distribution et version.</p>
   </div>
   <div class="actions">
-    {% if not windows %}<a class="btn" href="http://{{ host }}:{{ acng_port }}/acng-report.html" target="_blank" rel="noopener">Rapport apt-cacher-ng</a>{% endif %}
+    {% if not apt_nginx %}<a class="btn" href="http://{{ host }}:{{ acng_port }}/acng-report.html" target="_blank" rel="noopener">Rapport apt-cacher-ng</a>{% endif %}
   </div>
 </div>
 
@@ -45,7 +45,7 @@
     </div>
   </section>
   <div class="metrics">
-    <div class="metric"><div class="k">{{ 'Cache APT (nginx)' if windows else 'Cache apt-cacher-ng' }}</div><div class="v">{{ stats.get('acng', 0)|human }}</div><div class="s">{{ service(acng) }} · <span class="mono">:{{ acng_port }}</span></div></div>
+    <div class="metric"><div class="k">{{ 'Cache APT (nginx)' if apt_nginx else 'Cache apt-cacher-ng' }}</div><div class="v">{{ stats.get('acng', 0)|human }}</div><div class="s">{{ service(acng) }} · <span class="mono">:{{ acng_port }}</span></div></div>
     <div class="metric"><div class="k">Dépôt local</div><div class="v">{{ debs|length }}</div><div class="s">paquet(s) · {{ debs|sum(attribute='size')|human }}</div></div>
     <div class="metric"><div class="k">Signature</div><div class="v">GPG</div><div class="s"><a href="{{ client_url }}/apt/loco.gpg">clé publique</a></div></div>
   </div>

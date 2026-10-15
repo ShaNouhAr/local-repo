@@ -21,8 +21,8 @@ jobs:
           persist-credentials: false
       - name: Shell et Python
         run: |
-          shellcheck -S style -x install.sh linux/install.sh linux/remove.sh linux/lib/*.sh linux/bin/* tests/*.sh linux/docker/*.sh linux/docker/loco-cron linux/lxc/proxmox-lxc.sh portal/templates/setup.sh portal/templates/flatpak-setup.sh portal/templates/rpm-setup.sh
-          pipx run pyflakes portal tests linux/docker/migrate-env.py
+          shellcheck -S style -x install.sh linux/install.sh linux/remove.sh linux/lib/*.sh linux/bin/* tests/*.sh linux/docker/*.sh linux/conf/loco-cron linux/conf/*.initd linux/conf/loco-issue.start linux/lxc/proxmox-lxc.sh portal/templates/setup.sh portal/templates/flatpak-setup.sh portal/templates/rpm-setup.sh linux/iso/*.sh linux/iso/loco-installer
+          pipx run pyflakes portal tests linux/docker/migrate-env.py linux/iso/package.py
           docker compose -f linux/docker/docker-compose.yml config -q
       - name: PowerShell (syntaxe des scripts Windows)
         shell: pwsh
@@ -117,10 +117,62 @@ jobs:
         run: tests/vm-docker-e2e.sh
       - name: Conserver les résultats
         if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.1
         with:
           name: resultats-docker
           path: test-results/
+          retention-days: 14
+
+  alpine-server:
+    name: Serveur natif / Alpine 3.24
+    runs-on: ubuntu-24.04
+    needs: windows-fixtures
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: windows-packages
+          path: test-results/packages
+      - name: Outils de virtualisation
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q qemu-system-x86 qemu-utils genisoimage
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+      - name: Installation, agent, GUI et CLI, mises à jour, retour arrière et désinstallation
+        run: LOCO_FIXTURES="$PWD/test-results/packages" tests/vm-alpine-server-e2e.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: resultats-alpine
+          path: test-results/alpine-server/
+          retention-days: 14
+
+  iso-alpine:
+    name: ISO appliance / Alpine BIOS et UEFI
+    runs-on: ubuntu-24.04
+    needs: lint
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Outils de virtualisation et ISO
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q qemu-system-x86 qemu-utils genisoimage xorriso ovmf
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+      - name: Fabrique ISO, installation BIOS / UEFI, démarrage sans média, portail et commandes
+        run: tests/vm-alpine-iso-build.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: loco-iso
+          path: |
+            test-results/alpine-build/
+            test-results/alpine-iso/
           retention-days: 14
 
   rocky-server:

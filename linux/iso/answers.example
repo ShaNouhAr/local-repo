@@ -1,0 +1,25 @@
+# Copiez ce fichier, adaptez-le et gardez-le confidentiel (chmod 600).
+# Sur un volume USB nommé LOCO : loco-answers.conf ; ou build.sh --answers ce-fichier.
+# Le disque choisi sera EFFACÉ. auto exige un seul disque fixe d'au moins 8 Gio.
+# Sans réponses valides, l'assistant apparaît. Aucune ligne n'est exécutée comme du shell.
+DISK=auto
+HOSTNAME=loco
+KEYMAP="fr fr"
+TIMEZONE=Europe/Paris
+INTERFACE=auto
+NETWORK=dhcp
+# Pour une adresse fixe : NETWORK=static, ADDRESS=192.168.1.10/24,
+# GATEWAY=192.168.1.1, DNS="192.168.1.1 1.1.1.1".
+ADDRESS=
+GATEWAY=
+DNS=
+ROOT_PASSWORD=
+ADMIN_PASSWORD=
+# Vide : réseau du bail DHCP ou de l'adresse fixe ; ADMIN_ALLOW hérite de ALLOW.
+ALLOW=
+ADMIN_ALLOW=
+FEATURES="http wu rpm flatpak"
+PROXY=
+SSH_KEY=
+# poweroff (défaut) ou reboot. Retirez le média avant le prochain démarrage.
+AFTER=poweroff

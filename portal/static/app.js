@@ -342,12 +342,29 @@
     if (changed) window.location.reload();
   }
 
+  // Opération de l'appliance : journal en direct, rechargement à la fin (le portail redémarre pendant
+  // une mise à jour : les requêtes échouent quelques secondes, l'actualisation reprend ensuite).
+  function renderJob(d) {
+    var log = $("#job-log");
+    var bottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+    log.textContent = d.log || "Journal vide.";
+    if (bottom) log.scrollTop = log.scrollHeight;
+    if (d.state !== "queued" && d.state !== "running") window.location.reload();
+  }
+
+  var operations = $("[data-operations]");
+  if (operations) {
+    poll(operations.dataset.operations, 3000, function (d) {
+      if (d.signature !== operations.dataset.signature) window.location.reload();
+    });
+  }
   var live = $("[data-poll]");
   if (live) {
     var kind = live.dataset.pollKind;
     if (kind === "apps" && !$('tr[data-status="downloading"]')) return;
-    var handler = { status: bind, wu: function (d) { bind(d); renderWuLog(d); }, apps: renderApps }[kind];
+    var handler = { status: bind, wu: function (d) { bind(d); renderWuLog(d); }, apps: renderApps, job: renderJob }[kind];
     var tick = poll(live.dataset.poll, Number(live.dataset.pollEvery) || 10000, handler);
-    if (kind === "apps") tick();
+    if (kind === "apps" || kind === "job") tick();
+    if (kind === "job") { var log = $("#job-log"); log.scrollTop = log.scrollHeight; }
   }
 })();

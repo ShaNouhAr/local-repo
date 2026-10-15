@@ -8,3 +8,7 @@ __pycache__/
 
 # Ancien dossier de travail local, conservé lors du renommage.
 /local-repo/
+
+# Sorties de construction de l’ISO.
+/out/
+/linux/iso/out/

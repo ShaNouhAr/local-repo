@@ -1,0 +1,145 @@
+#!/bin/sh
+# Appliance loco (ISO) : réglages de la console, en root. Réseau, nom, mots de passe, accès SSH ; ce qui touche
+# l'adresse ou le nom relance l'installation (certificat HTTPS et liens des postes mis à jour).
+# Les autres réglages se font dans le portail (Administration › Configuration) ou avec loco-config.
+set -u
+[ "$(id -u)" -eq 0 ] || { echo "Lancez setup-loco en root." >&2; exit 1; }
+# shellcheck source=linux/lib/appliance.sh
+. /opt/loco/lib/appliance.sh
+TITLE="loco : réglages de la console"
+ask() { dialog --backtitle "$TITLE" "$@" 3>&1 1>&2 2>&3; }
+msg() { dialog --backtitle "$TITLE" --title "$1" --msgbox "$2" 0 0; }
+conf() { sed -n "s/^$1=//p" /etc/loco/loco.conf | tr -d '"'; }
+
+reinstall() {
+    src=$(conf SOURCE_DIR)
+    clear
+    echo "Application : bash $src/linux/install.sh $*"
+    if bash "$src/linux/install.sh" "$@"; then
+        appliance_issue
+        printf '\nTerminé. Entrée pour continuer. '
+    else
+        printf '\nÉchec (journal : /var/log/loco-install.log). Entrée pour continuer. '
+    fi
+    read -r _
+}
+
+network() {
+    iface=$(appliance_interfaces | head -1)
+    current=$(appliance_current_cidr "$iface")
+    mode=$(ask --title "Réseau" --default-item static --menu "Interface $iface, adresse actuelle ${current:-aucune} :" 12 66 2 \
+        static "Adresse fixe (recommandé)" dhcp "DHCP") || return 0
+    cidr="" gw="" dns=""
+    if [ "$mode" = static ]; then
+        cidr=$current gw=$(appliance_current_gateway) dns=$(appliance_current_dns)
+        while :; do
+            values=$(ask --title "Adresse fixe" --form "Interface $iface :" 12 66 3 \
+                "Adresse/préfixe" 1 1 "$cidr" 1 20 40 0 "Passerelle" 2 1 "$gw" 2 20 40 0 "DNS" 3 1 "$dns" 3 20 40 0) || return 0
+            cidr=$(printf '%s\n' "$values" | sed -n 1p)
+            gw=$(printf '%s\n' "$values" | sed -n 2p)
+            dns=$(printf '%s\n' "$values" | sed -n 3p)
+            err=""
+            appliance_cidr_ok "$cidr" || err="Adresse invalide (forme 192.168.1.10/24)."
+            if [ -n "$gw" ] && ! appliance_ip_ok "$gw"; then err="Passerelle invalide."; fi
+            [ -n "$dns" ] || err="Au moins un serveur DNS."
+            for d in $dns; do appliance_ip_ok "$d" || err="DNS invalide : $d"; done
+            [ -z "$err" ] && break
+            msg "Adresse fixe" "$err"
+        done
+    fi
+    dialog --backtitle "$TITLE" --yesno "Appliquer ? Les postes devront utiliser la nouvelle adresse, et la session SSH éventuelle sera coupée." 8 66 || return 0
+    cp /etc/network/interfaces /etc/network/interfaces.loco-previous
+    cp /etc/hosts /etc/hosts.loco-previous
+    cp /etc/resolv.conf /etc/resolv.conf.loco-previous
+    appliance_write_network "" "$iface" "$mode" "$cidr" "$gw" "$dns"
+    host=$(hostname)
+    printf '127.0.0.1\tlocalhost\n::1\t\tlocalhost\n' > /etc/hosts
+    if [ "$mode" = static ]; then printf '%s\t%s\n' "${cidr%/*}" "$host" >> /etc/hosts; fi
+    clear
+    echo "Redémarrage du réseau…"
+    rc-service networking restart
+    new=$(appliance_current_cidr "$iface")
+    if [ -z "$new" ]; then
+        echo "Aucune adresse obtenue : retour à la configuration précédente."
+        mv /etc/network/interfaces.loco-previous /etc/network/interfaces
+        mv /etc/hosts.loco-previous /etc/hosts
+        mv /etc/resolv.conf.loco-previous /etc/resolv.conf
+        rc-service networking restart
+        printf 'Entrée pour continuer. '
+        read -r _
+        return 0
+    fi
+    rm -f /etc/network/interfaces.loco-previous /etc/hosts.loco-previous /etc/resolv.conf.loco-previous
+    reinstall --host "${new%/*}"
+}
+
+name() {
+    while :; do
+        new=$(ask --title "Nom" --inputbox "Nom du serveur :" 8 50 "$(hostname)") || return 0
+        appliance_hostname_ok "$new" && break
+        msg "Nom" "Minuscules, chiffres et tirets uniquement."
+    done
+    echo "$new" > /etc/hostname
+    hostname "$new"
+    sed -i "s/\t[^\t]*$/\t$new/; 1,2s/\t$new$/\tlocalhost/" /etc/hosts
+    reinstall
+}
+
+root_password() {
+    clear
+    passwd root
+    printf 'Entrée pour continuer. '
+    read -r _
+}
+
+admin_password() {
+    clear
+    echo "Mot de passe temporaire du compte admin du portail (à changer à la connexion) :"
+    loco-user passwd admin
+    printf 'Entrée pour continuer. '
+    read -r _
+}
+
+ssh_access() {
+    if [ -L /etc/runlevels/default/sshd ]; then
+        dialog --backtitle "$TITLE" --yesno "L'accès SSH root par clé est activé. Le désactiver ?" 7 60 || return 0
+        rc-update del sshd default >/dev/null
+        rc-service sshd stop >/dev/null 2>&1
+        msg "SSH" "Accès SSH désactivé."
+        return 0
+    fi
+    while :; do
+        key=$(ask --title "SSH" --inputbox "Clé publique autorisée pour root (ssh-ed25519 AAAA…) :" 9 76) || return 0
+        appliance_ssh_key_ok "$key" && break
+        msg "SSH" "Clé publique OpenSSH attendue (une ligne)."
+    done
+    install -d -m 700 /root/.ssh
+    printf '%s\n' "$key" >> /root/.ssh/authorized_keys
+    chmod 600 /root/.ssh/authorized_keys
+    install -d /etc/ssh/sshd_config.d
+    printf 'PermitRootLogin prohibit-password\nPasswordAuthentication no\nKbdInteractiveAuthentication no\n' \
+        > /etc/ssh/sshd_config.d/loco.conf
+    rc-update add sshd default >/dev/null
+    rc-service sshd restart >/dev/null 2>&1 || rc-service sshd start >/dev/null
+    msg "SSH" "Accès SSH root par clé activé (mot de passe refusé)."
+}
+
+while :; do
+    appliance_issue
+    choice=$(ask --title "Réglages" --cancel-label Quitter --menu "$(sed -n '3,4p' /etc/issue)" 17 76 6 \
+        reseau "Adresse réseau (fixe ou DHCP)" \
+        nom "Nom du serveur" \
+        root "Mot de passe root" \
+        admin "Mot de passe du compte admin du portail" \
+        ssh "Accès SSH root par clé" \
+        autres "Autres réglages : portail (Configuration) ou loco-config") || break
+    case "$choice" in
+        reseau) network ;;
+        nom) name ;;
+        root) root_password ;;
+        admin) admin_password ;;
+        ssh) ssh_access ;;
+        autres) clear; loco-config show; printf '\nModifier : loco-config set CLÉ=VALEUR. Entrée pour continuer. '; read -r _ ;;
+    esac
+done
+clear

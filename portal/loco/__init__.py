@@ -98,6 +98,9 @@ def inject_globals():
         "rpm_enabled": config.RPM_ENABLED,
         "container": config.CONTAINER,
         "windows": config.WINDOWS,
+        "alpine": config.ALPINE,
+        "apt_nginx": config.APT_NGINX,
+        "appliance": config.APPLIANCE,
     }
 
 
@@ -111,9 +114,9 @@ from . import db as _db  # noqa: E402
 app.teardown_appcontext(_db.close_db)
 
 # Les modules déclarent leurs routes sur `app` (structure « grande application » de Flask).
-from . import auth, dashboard, linux, wupdate, winapps, flatpak, rpmrepo, clients, system  # noqa: E402
+from . import auth, dashboard, linux, wupdate, winapps, flatpak, rpmrepo, clients, system, appliance  # noqa: E402
 
-ROUTE_MODULES = (auth, dashboard, linux, wupdate, winapps, flatpak, rpmrepo, clients, system)
+ROUTE_MODULES = (auth, dashboard, linux, wupdate, winapps, flatpak, rpmrepo, clients, system, appliance)
 
 
 def startup():

@@ -1,0 +1,507 @@
+#!/bin/sh
+# Installateur de l'ISO loco (système live Alpine, console virtuelle 7) : assistant à l'écran, ou installation
+# automatique avec un fichier de réponses (loco-answers.conf sur un volume nommé LOCO, ou intégré à l'ISO).
+# Installe Alpine sur le disque choisi (effacé), les paquets de loco depuis le média (sans Internet), puis prépare
+# le premier démarrage : loco-firstboot y lance linux/install.sh avec les réglages choisis.
+set -u
+TERM=${TERM:-linux}
+[ "$TERM" != dumb ] || TERM=linux
+export TERM
+# shellcheck source=linux/lib/appliance.sh
+. /usr/local/lib/loco/appliance.sh
+
+SHARE=/usr/share/loco
+VERSION=$(cat "$SHARE/VERSION")
+ALPINE_BRANCH=$(cat "$SHARE/ALPINE_BRANCH")
+LOG=/tmp/loco-install.log
+TARGET=/mnt
+TITLE="loco $VERSION : installation"
+MIN_DISK_GIB=8
+
+# Réglages (réponses), valeurs par défaut de l'assistant.
+DISK=auto HOSTNAME=loco KEYMAP="fr fr" TIMEZONE=Europe/Paris INTERFACE=auto NETWORK=dhcp ADDRESS="" GATEWAY=""
+DNS="" ROOT_PASSWORD="" ADMIN_PASSWORD="" ALLOW="" ADMIN_ALLOW="" FEATURES="http wu rpm flatpak" PROXY=""
+SSH_KEY="" AFTER="" ANSWERS_DEV=""
+KEYS="DISK HOSTNAME KEYMAP TIMEZONE INTERFACE NETWORK ADDRESS GATEWAY DNS ROOT_PASSWORD ADMIN_PASSWORD ALLOW
+      ADMIN_ALLOW FEATURES PROXY SSH_KEY AFTER"
+
+# dialog écrit le choix sur la sortie d'erreur : échange des descripteurs pour le récupérer.
+ask() { dialog --backtitle "$TITLE" "$@" 3>&1 1>&2 2>&3; }
+msg() { dialog --backtitle "$TITLE" --title "$1" --msgbox "$2" 0 0; }
+# Messages pour la console série (installation automatique suivie à distance, tests) et la console 1.
+console() {
+    for tty in /dev/ttyS0 /dev/tty1; do printf '%s\n' "$*" > "$tty" 2>/dev/null || true; done
+}
+
+# ---------------------------------------------------------------- réponses
+
+# Lecture sûre (jamais exécutée) : CLÉ=valeur, guillemets facultatifs, fins de ligne Windows tolérées.
+load_answers() {
+    tr -d '\r' < "$1" > /tmp/loco-answers.clean
+    chmod 600 /tmp/loco-answers.clean
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in ''|'#'*) continue ;; esac
+        key=${line%%=*}
+        value=${line#*=}
+        case " $(printf '%s' "$KEYS" | tr '\n' ' ') " in
+            *" $key "*) ;;
+            *) echo "Clé inconnue ignorée : $key" >> "$LOG"; continue ;;
+        esac
+        case "$value" in
+            \"*\") value=${value#\"}; value=${value%\"} ;;
+            \'*\') value=${value#\'}; value=${value%\'} ;;
+        esac
+        eval "$key=\$value"
+    done < /tmp/loco-answers.clean
+    rm -f /tmp/loco-answers.clean
+}
+
+find_answers() {
+    if [ -f /etc/loco-answers.conf ]; then
+        ANSWERS_FILE=/etc/loco-answers.conf
+        return 0
+    fi
+    mkdir -p /tmp/loco-media
+    for dev in $(blkid -o device -t LABEL=LOCO 2>/dev/null) $(blkid -o device -t LABEL=loco 2>/dev/null); do
+        mount -o ro "$dev" /tmp/loco-media 2>/dev/null || continue
+        for name in loco-answers.conf LOCO-ANSWERS.CONF LOCO_ANS.CON; do
+            if [ -f "/tmp/loco-media/$name" ]; then
+                cp "/tmp/loco-media/$name" /tmp/loco-answers.conf
+                chmod 600 /tmp/loco-answers.conf
+                ANSWERS_DEV=$dev
+                umount /tmp/loco-media
+                ANSWERS_FILE=/tmp/loco-answers.conf
+                return 0
+            fi
+        done
+        umount /tmp/loco-media
+    done
+    return 1
+}
+
+# ---------------------------------------------------------------- disques et réseau
+
+parent_disk() {
+    name=${1##*/}
+    if [ -e "/sys/class/block/$name/partition" ]; then
+        name=$(basename "$(readlink -f "/sys/class/block/$name/..")")
+    fi
+    echo "$name"
+}
+
+# Disques à ne jamais proposer : celui du média d'installation et celui des réponses.
+excluded_disks() {
+    awk '$2 ~ /^\/media\// {print $1}' /proc/mounts | while read -r dev; do
+        case "$dev" in /dev/*) parent_disk "$dev" ;; esac
+    done
+    if [ -n "$ANSWERS_DEV" ]; then parent_disk "$ANSWERS_DEV"; fi
+}
+
+# « nom taille_Gio amovible modèle » pour chaque disque utilisable.
+list_disks() {
+    skip=" $(excluded_disks | tr '\n' ' ') "
+    for path in /sys/block/*; do
+        name=${path##*/}
+        case "$name" in loop*|ram*|sr*|zram*|fd*|md*|dm-*|nbd*) continue ;; esac
+        case "$skip" in *" $name "*) continue ;; esac
+        [ "$(cat "$path/ro" 2>/dev/null)" = 0 ] || continue
+        size=$(( $(cat "$path/size") / 2097152 ))
+        [ "$size" -gt 0 ] || continue
+        model=$(cat "$path/device/model" 2>/dev/null | tr -s ' ' | sed 's/ $//')
+        echo "$name $size $(cat "$path/removable" 2>/dev/null || echo 0) ${model:-disque}"
+    done
+}
+
+auto_disk() {
+    fixed=$(list_disks | awk '$3 == 0 && $2 >= '"$MIN_DISK_GIB")
+    if [ "$(printf '%s\n' "$fixed" | grep -c .)" -eq 1 ]; then
+        printf '%s\n' "$fixed" | cut -d' ' -f1
+    fi
+}
+
+disk_size() { list_disks | awk -v d="$1" '$1 == d {print $2}'; }
+
+# Bail DHCP d'essai sur le système live : préremplit l'adresse fixe et les réseaux autorisés.
+probe_dhcp() {
+    ip link set "$1" up 2>/dev/null
+    [ -n "$(appliance_current_cidr "$1")" ] && return 0
+    udhcpc -i "$1" -n -q -t 4 -T 2 >> "$LOG" 2>&1
+}
+
+resolve_interface() {
+    if [ "$INTERFACE" = auto ]; then INTERFACE=$(appliance_interfaces | head -1); fi
+}
+
+# ---------------------------------------------------------------- validation
+
+problems() {
+    out=""
+    [ -n "$DISK" ] && [ -n "$(disk_size "$DISK")" ] || out="$out\n- disque introuvable : ${DISK:-aucun} (DISK=auto exige un seul disque fixe)"
+    if [ -n "$DISK" ] && [ -e "/sys/block/$DISK" ]; then
+        case " $(excluded_disks | tr '\n' ' ') " in *" $DISK "*) out="$out\n- $DISK porte le média d'installation" ;; esac
+        size=$(( $(cat "/sys/block/$DISK/size") / 2097152 ))
+        [ "$size" -ge "$MIN_DISK_GIB" ] || out="$out\n- disque trop petit : $size Gio (minimum $MIN_DISK_GIB)"
+    fi
+    appliance_hostname_ok "$HOSTNAME" || out="$out\n- nom invalide : $HOSTNAME (minuscules, chiffres, tirets)"
+    [ -f "/usr/share/zoneinfo/$TIMEZONE" ] || out="$out\n- fuseau horaire inconnu : $TIMEZONE"
+    [ -n "$INTERFACE" ] && [ -e "/sys/class/net/$INTERFACE" ] || out="$out\n- interface réseau introuvable : ${INTERFACE:-aucune}"
+    case "$NETWORK" in
+        dhcp) ;;
+        static)
+            appliance_cidr_ok "$ADDRESS" || out="$out\n- adresse invalide : $ADDRESS (forme 192.168.1.10/24)"
+            if [ -n "$GATEWAY" ] && ! appliance_ip_ok "$GATEWAY"; then out="$out\n- passerelle invalide : $GATEWAY"; fi
+            for d in $DNS; do appliance_ip_ok "$d" || out="$out\n- DNS invalide : $d"; done
+            [ -n "$DNS" ] || out="$out\n- au moins un serveur DNS est requis en adresse fixe"
+            ;;
+        *) out="$out\n- NETWORK : dhcp ou static" ;;
+    esac
+    [ ${#ROOT_PASSWORD} -ge 8 ] || out="$out\n- mot de passe root : au moins 8 caractères"
+    p=$(appliance_password_problem "$ADMIN_PASSWORD")
+    [ -z "$p" ] || out="$out\n- mot de passe admin du portail : $p"
+    appliance_networks "$ALLOW" >/dev/null || out="$out\n- réseaux des postes invalides : $ALLOW"
+    appliance_networks "${ADMIN_ALLOW:-$ALLOW}" >/dev/null || out="$out\n- réseaux de l'interface invalides : $ADMIN_ALLOW"
+    for f in $FEATURES; do
+        case "$f" in http|wu|rpm|flatpak) ;; *) out="$out\n- fonction inconnue : $f (http wu rpm flatpak)" ;; esac
+    done
+    if [ -n "$PROXY" ] && ! printf '%s' "$PROXY" | grep -Eq '^http://([A-Za-z0-9._~%!*+,;=:-]+@)?[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$'; then
+        out="$out\n- proxy invalide : $PROXY (http://hôte:port)"
+    fi
+    if [ -n "$SSH_KEY" ] && ! appliance_ssh_key_ok "$SSH_KEY"; then out="$out\n- clé SSH publique invalide"; fi
+    case "$AFTER" in ''|poweroff|reboot) ;; *) out="$out\n- AFTER : poweroff ou reboot" ;; esac
+    for key in $KEYS; do
+        eval "value=\${$key}"
+        if printf '%s' "$value" | LC_ALL=C grep -q '[[:cntrl:]]'; then out="$out\n- caractères de contrôle interdits : $key"; fi
+    done
+    printf '%b' "$out"
+}
+
+# Réseaux autorisés par défaut : le sous-réseau du serveur, sinon les plages privées.
+default_networks() {
+    cidr=$ADDRESS
+    if [ "$NETWORK" = dhcp ]; then cidr=$(appliance_current_cidr "$INTERFACE"); fi
+    if [ -n "$cidr" ]; then appliance_networks "$cidr"; else echo "10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"; fi
+}
+
+# ---------------------------------------------------------------- assistant
+
+wizard() {
+    choice=$(ask --title "Bienvenue" --menu "Installation de loco $VERSION, serveur de dépôts et de caches (Alpine Linux).\n\nLe disque choisi sera entièrement effacé." 14 70 2 \
+        install "Installer loco" shell "Console (root)") || choice=shell
+    if [ "$choice" = shell ]; then return 1; fi
+
+    KEYMAP=$(ask --title "Clavier" --default-item "$KEYMAP" --menu "Disposition du clavier :" 15 50 7 \
+        "fr fr" "Français (AZERTY)" "be be" "Belge" "ch ch-fr" "Suisse romand" "ca ca-fr" "Canadien français" \
+        "us us" "Anglais (QWERTY US)" "gb gb" "Anglais (Royaume-Uni)" "de de" "Allemand") || return 1
+    # shellcheck disable=SC2086 # disposition et variante
+    setup-keymap $KEYMAP >> "$LOG" 2>&1
+
+    disks=$(list_disks)
+    if [ -z "$disks" ]; then msg "Disque" "Aucun disque utilisable."; return 1; fi
+    set --
+    while read -r name size removable model; do
+        if [ "$removable" = 1 ]; then model="$model (amovible)"; fi
+        set -- "$@" "$name" "$size Gio   $model"
+    done <<EOF
+$disks
+EOF
+    DISK=$(ask --title "Disque" --menu "Disque d'installation (ENTIÈREMENT effacé) :" 15 70 6 "$@") || return 1
+
+    while :; do
+        HOSTNAME=$(ask --title "Nom" --inputbox "Nom du serveur :" 8 50 "$HOSTNAME") || return 1
+        appliance_hostname_ok "$HOSTNAME" && break
+        msg "Nom" "Minuscules, chiffres et tirets uniquement."
+    done
+
+    ifaces=$(appliance_interfaces)
+    if [ -z "$ifaces" ]; then msg "Réseau" "Aucune carte réseau détectée."; return 1; fi
+    if [ "$(printf '%s\n' "$ifaces" | grep -c .)" -gt 1 ]; then
+        set --
+        for i in $ifaces; do
+            state=débranchée
+            if [ "$(cat "/sys/class/net/$i/carrier" 2>/dev/null)" = 1 ]; then state=reliée; fi
+            set -- "$@" "$i" "$(cat "/sys/class/net/$i/address")   $state"
+        done
+        INTERFACE=$(ask --title "Réseau" --menu "Carte réseau :" 14 60 6 "$@") || return 1
+    else
+        INTERFACE=$ifaces
+    fi
+    dialog --backtitle "$TITLE" --infobox "Recherche d'un serveur DHCP sur $INTERFACE…" 3 60
+    probe_dhcp "$INTERFACE"
+    lease=$(appliance_current_cidr "$INTERFACE")
+    NETWORK=$(ask --title "Réseau" --default-item static --menu "Adresse du serveur${lease:+ (DHCP propose $lease)} :" 12 66 2 \
+        static "Adresse fixe (recommandé : les postes s'y connectent)" dhcp "DHCP") || return 1
+    if [ "$NETWORK" = static ]; then
+        ADDRESS=${ADDRESS:-$lease}
+        GATEWAY=${GATEWAY:-$(appliance_current_gateway)}
+        DNS=${DNS:-$(appliance_current_dns)}
+        while :; do
+            values=$(ask --title "Adresse fixe" --form "Interface $INTERFACE :" 12 66 3 \
+                "Adresse/préfixe" 1 1 "$ADDRESS" 1 20 40 0 \
+                "Passerelle" 2 1 "$GATEWAY" 2 20 40 0 \
+                "DNS" 3 1 "$DNS" 3 20 40 0) || return 1
+            ADDRESS=$(printf '%s\n' "$values" | sed -n 1p)
+            GATEWAY=$(printf '%s\n' "$values" | sed -n 2p)
+            DNS=$(printf '%s\n' "$values" | sed -n 3p)
+            err=""
+            appliance_cidr_ok "$ADDRESS" || err="Adresse invalide (forme 192.168.1.10/24)."
+            if [ -n "$GATEWAY" ] && ! appliance_ip_ok "$GATEWAY"; then err="Passerelle invalide."; fi
+            [ -n "$DNS" ] || err="Au moins un serveur DNS."
+            for d in $DNS; do appliance_ip_ok "$d" || err="DNS invalide : $d"; done
+            [ -z "$err" ] && break
+            msg "Adresse fixe" "$err"
+        done
+    fi
+
+    while :; do
+        TIMEZONE=$(ask --title "Fuseau horaire" --inputbox "Fuseau horaire (ex. Europe/Paris, America/Montreal, UTC) :" 8 60 "$TIMEZONE") || return 1
+        [ -f "/usr/share/zoneinfo/$TIMEZONE" ] && break
+        msg "Fuseau horaire" "Fuseau inconnu : $TIMEZONE"
+    done
+
+    while :; do
+        p1=$(ask --title "Compte root" --insecure --passwordbox "Mot de passe root (console du serveur, 8 caractères minimum) :" 9 60) || return 1
+        p2=$(ask --title "Compte root" --insecure --passwordbox "Confirmation :" 8 60) || return 1
+        if [ "$p1" != "$p2" ]; then msg "Compte root" "Les deux saisies diffèrent."
+        elif [ ${#p1} -lt 8 ]; then msg "Compte root" "8 caractères minimum."
+        else ROOT_PASSWORD=$p1; break; fi
+    done
+    while :; do
+        p1=$(ask --title "Portail" --insecure --passwordbox "Mot de passe du compte admin du portail web (12 caractères minimum) :" 9 66) || return 1
+        p2=$(ask --title "Portail" --insecure --passwordbox "Confirmation :" 8 66) || return 1
+        problem=$(appliance_password_problem "$p1")
+        if [ "$p1" != "$p2" ]; then msg "Portail" "Les deux saisies diffèrent."
+        elif [ -n "$problem" ]; then msg "Portail" "Mot de passe refusé : $problem."
+        else ADMIN_PASSWORD=$p1; break; fi
+    done
+
+    ALLOW=${ALLOW:-$(default_networks)}
+    while :; do
+        values=$(ask --title "Accès" --form "Réseaux autorisés, séparés par des espaces :" 10 72 2 \
+            "Postes clients" 1 1 "$ALLOW" 1 18 50 0 \
+            "Interface web" 2 1 "${ADMIN_ALLOW:-$ALLOW}" 2 18 50 0) || return 1
+        ALLOW=$(appliance_networks "$(printf '%s\n' "$values" | sed -n 1p)") \
+            && ADMIN_ALLOW=$(appliance_networks "$(printf '%s\n' "$values" | sed -n 2p)") && break
+        msg "Accès" "Réseau invalide (forme 192.168.1.0/24)."
+    done
+
+    on() { case " $FEATURES " in *" $1 "*) echo on ;; *) echo off ;; esac; }
+    FEATURES=$(ask --title "Fonctions" --separate-output --checklist "Fonctions activées (modifiables ensuite dans le portail) :" 14 74 5 \
+        http "Accès HTTP des postes (port 8088)" "$(on http)" \
+        wu "Cache Windows Update (ports 80 et 443)" "$(on wu)" \
+        rpm "Famille Red Hat : dépôts et cache RPM" "$(on rpm)" \
+        flatpak "Flatpak : cache Flathub et dépôt local" "$(on flatpak)" \
+        ssh "Accès SSH root par clé publique" "$( [ -n "$SSH_KEY" ] && echo on || echo off)" | tr '\n' ' ') || return 1
+    case " $FEATURES " in
+        *" ssh "*)
+            while :; do
+                SSH_KEY=$(ask --title "SSH" --inputbox "Clé publique autorisée pour root (ssh-ed25519 AAAA…) :" 9 76 "$SSH_KEY") || return 1
+                appliance_ssh_key_ok "$SSH_KEY" && break
+                msg "SSH" "Clé publique OpenSSH attendue (une ligne)."
+            done
+            ;;
+        *) SSH_KEY="" ;;
+    esac
+    FEATURES=$(for f in $FEATURES; do [ "$f" = ssh ] || printf '%s ' "$f"; done)
+    FEATURES=${FEATURES% }
+    return 0
+}
+
+summary() {
+    if [ "$NETWORK" = static ]; then net="$ADDRESS, passerelle ${GATEWAY:-aucune}, DNS $DNS"; else net="DHCP"; fi
+    printf 'Disque      /dev/%s (%s Gio, EFFACÉ)\nNom         %s\nRéseau      %s : %s\nFuseau      %s, clavier %s\nPostes      %s\nInterface   %s\nFonctions   %s\nSSH root    %s\n' \
+        "$DISK" "$(disk_size "$DISK")" "$HOSTNAME" "$INTERFACE" "$net" "$TIMEZONE" "$KEYMAP" "$ALLOW" "${ADMIN_ALLOW:-$ALLOW}" \
+        "${FEATURES:-aucune}" "$( [ -n "$SSH_KEY" ] && echo 'clé publique' || echo désactivé)"
+}
+
+# ---------------------------------------------------------------- installation
+
+step() { echo "==> $*"; console "loco-installer : $*"; }
+
+root_partition() {
+    # setup-disk -m sys -s 0 : démarrage (ou ESP) puis racine, la dernière partition du disque.
+    for p in /sys/block/"$DISK"/"$DISK"*; do [ -e "$p/partition" ] && echo "${p##*/}"; done \
+        | awk '{print length($0), $0}' | sort -n | tail -1 | cut -d' ' -f2
+}
+
+install_system() {
+    set -e
+    trap 'umount "$TARGET/proc" "$TARGET/dev" "$TARGET" 2>/dev/null || true' EXIT
+    step "Clavier, nom et réseau"
+    # shellcheck disable=SC2086
+    setup-keymap $KEYMAP
+    echo "$HOSTNAME" > /etc/hostname
+    hostname "$HOSTNAME"
+    printf '127.0.0.1\tlocalhost\n::1\t\tlocalhost\n' > /etc/hosts
+    if [ "$NETWORK" = static ]; then printf '%s\t%s\n' "${ADDRESS%/*}" "$HOSTNAME" >> /etc/hosts; fi
+    appliance_write_network "" "$INTERFACE" "$NETWORK" "$ADDRESS" "$GATEWAY" "$DNS"
+    echo "root:$ROOT_PASSWORD" | chpasswd
+
+    step "Alpine Linux sur /dev/$DISK (effacement, partitions, noyau)"
+    ERASE_DISKS="/dev/$DISK" setup-disk -m sys -s 0 -k lts "/dev/$DISK" < /dev/null
+
+    step "Paquets de loco (depuis le média d'installation)"
+    part=$(root_partition)
+    [ -n "$part" ] || { echo "Partition système introuvable sur $DISK"; return 1; }
+    mkdir -p "$TARGET"
+    mount "/dev/$part" "$TARGET"
+    mount --bind /dev "$TARGET/dev"
+    mount -t proc proc "$TARGET/proc"
+    # shellcheck disable=SC2046
+    apk add --root "$TARGET" --repositories-file /etc/apk/repositories --no-progress $(cat "$SHARE/packages")
+    umount "$TARGET/proc" "$TARGET/dev"
+
+    step "Configuration du système installé"
+    printf 'https://dl-cdn.alpinelinux.org/alpine/%s/main\nhttps://dl-cdn.alpinelinux.org/alpine/%s/community\n' \
+        "$ALPINE_BRANCH" "$ALPINE_BRANCH" > "$TARGET/etc/apk/repositories"
+    ln -sf "/usr/share/zoneinfo/$TIMEZONE" "$TARGET/etc/localtime"
+    echo "$TIMEZONE" > "$TARGET/etc/timezone"
+    echo "root:$ROOT_PASSWORD" | chroot "$TARGET" chpasswd
+    # Éléments du système live recopiés par setup-disk : installateur et réponses.
+    rm -f "$TARGET/etc/init.d/loco-installer" "$TARGET"/etc/runlevels/*/loco-installer "$TARGET/etc/loco-answers.conf" \
+          "$TARGET/etc/motd" "$TARGET/etc/local.d/loco-installer.start"
+    rm -rf "$TARGET/root/.ssh"
+    mkdir -p "$TARGET/etc/runlevels/boot" "$TARGET/etc/runlevels/default"
+    for s in chronyd:default acpid:default networking:boot local:default; do
+        ln -sf "/etc/init.d/${s%%:*}" "$TARGET/etc/runlevels/${s##*:}/${s%%:*}"
+    done
+    if [ -n "$SSH_KEY" ]; then
+        install -d -m 700 "$TARGET/root/.ssh"
+        printf '%s\n' "$SSH_KEY" > "$TARGET/root/.ssh/authorized_keys"
+        chmod 600 "$TARGET/root/.ssh/authorized_keys"
+        install -d "$TARGET/etc/ssh/sshd_config.d"
+        printf 'PermitRootLogin prohibit-password\nPasswordAuthentication no\nKbdInteractiveAuthentication no\n' \
+            > "$TARGET/etc/ssh/sshd_config.d/loco.conf"
+        if ! grep -q '^Include /etc/ssh/sshd_config.d/' "$TARGET/etc/ssh/sshd_config"; then
+            sed -i '1i Include /etc/ssh/sshd_config.d/*.conf' "$TARGET/etc/ssh/sshd_config"
+        fi
+        ln -sf /etc/init.d/sshd "$TARGET/etc/runlevels/default/sshd"
+    else
+        rm -f "$TARGET/etc/runlevels/default/sshd"
+    fi
+
+    step "Sources de loco $VERSION et premier démarrage"
+    install -d "$TARGET/usr/local/src" "$TARGET/etc/loco"
+    tar --no-same-owner -xzf "$SHARE/loco-$VERSION.tar.gz" -C "$TARGET/usr/local/src"
+    src="/usr/local/src/loco-$VERSION"
+    touch "$TARGET$src/.loco-managed"
+    touch "$TARGET/etc/loco/appliance"
+    install -m 755 "$TARGET$src/linux/iso/loco-firstboot.initd" "$TARGET/etc/init.d/loco-firstboot"
+    ln -sf /etc/init.d/loco-firstboot "$TARGET/etc/runlevels/default/loco-firstboot"
+    # Options d'install.sh, une par ligne (lues sans interprétation) ; supprimées après le premier démarrage.
+    (
+        umask 077
+        {
+            echo "$src"
+            printf '%s\n' --password "$ADMIN_PASSWORD" --allow "$ALLOW" --admin-allow "${ADMIN_ALLOW:-$ALLOW}"
+            if [ "$NETWORK" = static ]; then printf '%s\n' --host "${ADDRESS%/*}"; fi
+            if [ -n "$PROXY" ]; then printf '%s\n' --proxy "$PROXY"; fi
+            for f in http wu rpm flatpak; do
+                case " $FEATURES " in *" $f "*) echo "--$f" ;; *) echo "--no-$f" ;; esac
+            done
+        } > "$TARGET/etc/loco/firstboot.args"
+    )
+    sync
+    umount "$TARGET"
+    trap - EXIT
+    step "Installation terminée"
+}
+
+run_install() {
+    status=/tmp/loco-install.status
+    state=$(mktemp /tmp/loco-install-state.XXXXXX)
+    chmod 600 "$state"
+    for key in $KEYS; do
+        eval "value=\${$key}"
+        printf '%s=%s\n' "$key" "$value" >> "$state"
+    done
+    echo 1 > "$status"
+    # Processus distinct : set -e reste effectif même si l'appelant teste run_install dans un if.
+    if [ "${CLI_YES:-0}" = 1 ]; then
+        sh "$0" --execute "$state" >> "$LOG" 2>&1
+        code=$?
+    else
+        ( sh "$0" --execute "$state"; echo $? > "$status" ) 2>&1 | tee -a "$LOG" \
+            | dialog --backtitle "$TITLE" --title "Installation sur /dev/$DISK" --progressbox 20 76
+        code=$(cat "$status")
+    fi
+    rm -f "$state"
+    return "$code"
+}
+
+finish() {
+    if [ "$1" = unattended ] && [ "${AFTER:-poweroff}" = poweroff ]; then
+        console "loco-installer : installation réussie, arrêt (retirez le média puis démarrez)."
+        poweroff
+    else
+        msg "Terminé" "loco $VERSION est installé sur /dev/$DISK.\n\nRetirez le média d'installation puis validez : le serveur redémarre et termine l'installation de loco (quelques minutes). L'adresse du portail et l'empreinte du certificat s'affichent ensuite sur la console."
+        eject >/dev/null 2>&1 || true
+        reboot
+    fi
+}
+
+main() {
+    : > "$LOG"
+    chmod 600 "$LOG"
+    mode=wizard
+    if [ -n "${CLI_ANSWERS:-}" ]; then ANSWERS_FILE=$CLI_ANSWERS; fi
+    if [ -n "${ANSWERS_FILE:-}" ] || find_answers; then
+        load_answers "$ANSWERS_FILE"
+        rm -f /tmp/loco-answers.conf
+        resolve_interface
+        if [ "$DISK" = auto ]; then DISK=$(auto_disk); fi
+        if [ "$NETWORK" = dhcp ] && [ -n "$INTERFACE" ]; then probe_dhcp "$INTERFACE"; fi
+        if [ -z "$ALLOW" ]; then ALLOW=$(default_networks); fi
+        errors=$(problems)
+        if [ -z "$errors" ]; then
+            console "loco-installer : réponses lues, installation automatique sur /dev/$DISK dans 10 secondes."
+            if [ "${CLI_YES:-0}" = 1 ]; then
+                mode=unattended
+            elif dialog --backtitle "$TITLE" --title "Installation automatique" --pause \
+                "$(summary)\n\nInstallation dans 10 secondes. Annuler : assistant." 20 76 10; then
+                mode=unattended
+            fi
+        else
+            console "loco-installer : réponses invalides :$(printf '%s' "$errors" | tr '\n' ' ')"
+            if [ "${CLI_YES:-0}" = 1 ]; then echo "$errors" >&2; return 1; fi
+            msg "Fichier de réponses" "Réponses invalides, passage à l'assistant :\n$errors"
+        fi
+    fi
+    while :; do
+        if [ "$mode" = wizard ]; then
+            wizard || return 0
+            errors=$(problems)
+            if [ -n "$errors" ]; then msg "Réglages invalides" "$errors"; continue; fi
+            dialog --backtitle "$TITLE" --title "Récapitulatif" --yes-label Installer --no-label Modifier \
+                --yesno "$(summary)\n\nLe disque /dev/$DISK sera ENTIÈREMENT effacé." 18 76 || continue
+        fi
+        if run_install; then
+            finish "$mode"
+            return 0
+        fi
+        console "loco-installer : échec, journal /tmp/loco-install.log"
+        console "$(tail -n 40 "$LOG")"
+        if [ "${CLI_YES:-0}" = 1 ]; then return 1; fi
+        dialog --backtitle "$TITLE" --title "Échec de l'installation" --textbox "$LOG" 22 78
+        mode=wizard
+    done
+}
+
+CLI_YES=0 CLI_ANSWERS=""
+case "${1:-}" in
+    --execute)
+        load_answers "$2"
+        install_system
+        exit 0 ;;
+    --answers)
+        CLI_ANSWERS=${2:?fichier requis}
+        [ "${3:-}" != --yes ] || CLI_YES=1 ;;
+    --help|-h)
+        echo "loco-installer [--answers F [--yes]] : efface le disque validé, installe Alpine puis loco."
+        exit 0 ;;
+    '') ;;
+    *) echo "Option inconnue : $1" >&2; exit 2 ;;
+esac
+main || exit $?
+clear
+echo "Console de l'installateur loco : loco-installer pour recommencer. Autres consoles : Alt+F1."
+exec /bin/sh -l

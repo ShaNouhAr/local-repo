@@ -1,0 +1,9 @@
+[
+  {
+    "id": "alpine-3.24",
+    "os_id": "alpine",
+    "version": "3.24",
+    "image": "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/cloud/alpine-3.24.2-x86_64-cloudinit-metal-r2.qcow2",
+    "checksums": "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/cloud/alpine-3.24.2-x86_64-cloudinit-metal-r2.qcow2.sha512"
+  }
+]

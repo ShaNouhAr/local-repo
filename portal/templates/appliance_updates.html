@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Mises à jour{% endblock %}
+{% block content %}
+<div class="head">
+  <div>
+    <h1>Mises à jour</h1>
+    <p>Versions disponibles, paquets Alpine et historique des opérations. Sur la console : <code>loco-update</code>.</p>
+  </div>
+  <div class="actions">
+    <form method="post" action="{{ url_for('appliance_updates_post') }}" data-ajax>
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="check">
+      <button class="btn" {{ 'disabled' if running or not agent }}><span class="spin"></span>Vérifier maintenant</button>
+    </form>
+  </div>
+</div>
+
+<div class="stack" data-operations="{{ url_for('appliance_operations_state') }}" data-signature="{{ signature }}">
+  {% if not agent %}
+  <p class="note err">L'agent d'administration ne répond pas : les opérations sont indisponibles. Sur la console : <code>rc-service loco-agent restart</code>.</p>
+  {% endif %}
+  {% for e in status.errors or [] %}<p class="note warn">{{ e }}</p>{% endfor %}
+
+  <div class="cols">
+    <section class="panel">
+      <div class="panel-h"><h2>loco</h2>
+        <div class="aside">{% if update_available %}<span class="st warn">{{ latest.version }} disponible</span>{% elif latest %}<span class="st ok">à jour</span>{% endif %}</div>
+      </div>
+      <dl class="kv">
+        <dt>Installé</dt><dd class="mono">{{ version }}</dd>
+        <dt>Dernière publiée</dt><dd class="mono">{% if latest %}{{ latest.version }}{% if latest.published %} <span class="faint">({{ latest.published[:10] }})</span>{% endif %}{% else %}—{% endif %}</dd>
+        <dt>Vérifié le</dt><dd class="mono">{{ status.checked|date_fr if status.checked else 'jamais' }}</dd>
+      </dl>
+      {% if update_available %}
+      <div class="panel-f row">
+        <form method="post" action="{{ url_for('appliance_updates_post') }}" data-ajax data-confirm="Installer loco {{ latest.version }} ?" data-confirm-text="Archive vérifiée par SHA-256, puis installation : le portail redémarre quelques secondes. En cas d'échec, la version {{ version }} est rétablie automatiquement." data-confirm-ok="Mettre à jour">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="update-loco">
+          <button class="btn primary" {{ 'disabled' if running or not agent }}><span class="spin"></span>Installer {{ latest.version }}</button>
+        </form>
+        {% if latest.url %}<a href="{{ latest.url }}" rel="noopener noreferrer" target="_blank">Notes de version</a>{% endif %}
+      </div>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <div class="panel-h"><h2>Système</h2>
+        <div class="aside">
+          {% if status.reboot_required %}<span class="st warn">redémarrage nécessaire</span>
+          {% elif status.system_updates %}<span class="st warn">{{ status.system_updates|length }} paquet(s)</span>
+          {% elif status.checked %}<span class="st ok">à jour</span>{% endif %}
+        </div>
+      </div>
+      <dl class="kv">
+        <dt>Alpine Linux</dt><dd class="mono">{{ alpine_release or '—' }}</dd>
+        <dt>Paquets à mettre à jour</dt><dd>{% if status.system_updates %}<details><summary class="mono">{{ status.system_updates|length }}</summary><span class="mono small">{{ status.system_updates|join(', ') }}</span></details>{% else %}<span class="mono">0</span>{% endif %}</dd>
+      </dl>
+      <div class="panel-f row">
+        {% if status.system_updates %}
+        <form method="post" action="{{ url_for('appliance_updates_post') }}" data-ajax data-confirm="Mettre à jour les paquets Alpine ?" data-confirm-text="apk upgrade, puis redémarrage des services de loco (quelques secondes)." data-confirm-ok="Mettre à jour">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="update-system">
+          <button class="btn primary" {{ 'disabled' if running or not agent }}><span class="spin"></span>Mettre à jour le système</button>
+        </form>
+        {% endif %}
+        <form method="post" action="{{ url_for('appliance_updates_post') }}" data-ajax data-confirm="Redémarrer le serveur ?" data-confirm-text="Les postes perdent l'accès aux dépôts et aux caches pendant le redémarrage (environ une minute)." data-confirm-ok="Redémarrer">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="reboot">
+          <button class="btn {{ 'primary' if status.reboot_required and not status.system_updates else '' }}" {{ 'disabled' if running or not agent }}><span class="spin"></span>Redémarrer</button>
+        </form>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel">
+    <div class="panel-h"><h2>Opérations</h2><div class="aside">vérification automatique chaque jour</div></div>
+    {% if jobs %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Date</th><th>Opération</th><th class="hide-sm">Par</th><th>État</th></tr></thead>
+        <tbody>
+        {% for j in jobs %}
+          <tr class="{{ 'sel' if job and j.id == job.id }}">
+            <td class="mono muted nowrap"><a href="{{ url_for('appliance_updates', operation=j.id) }}">{{ (j.started or j.queued)|date_fr }}</a></td>
+            <td>{{ labels.get(j.action, j.action) }}{% if j.params %}<span class="sub">{% for k, v in j.params.items() %}{{ k }}={{ v }}{{ ' ' if not loop.last }}{% endfor %}</span>{% endif %}</td>
+            <td class="mono muted hide-sm">{{ j.user or '—' }}</td>
+            <td>{% if j.state == 'success' %}<span class="st ok">réussie</span>{% elif j.state == 'failed' %}<span class="st err">échec</span>{% else %}<span class="st warn">en cours</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if job %}
+    <div {% if job.state in ('queued', 'running') %}data-poll="{{ url_for('appliance_job', job_id=job.id) }}" data-poll-kind="job" data-poll-every="2000"{% endif %}>
+      <pre class="log" id="job-log">{{ job_log or 'Journal vide.' }}</pre>
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="empty">Aucune opération pour l'instant.</div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

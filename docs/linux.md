@@ -401,3 +401,25 @@ sont vérifiées par empreinte ; les tests couvrent SELinux actif, firewalld, im
 DNF d’un paquet local, cache APT, refus d’un client hors ACL, relance, sauvegarde/restauration et purge.
 
 Migration depuis local-repo : [guide loco 2.0](migration-loco.md).
+
+## 15. Appliance ISO (Alpine Linux, BusyBox)
+
+L'ISO x86_64 installe Alpine 3.24 et loco en une seule procédure, avec un
+assistant visuel ou un fichier de réponses. Disque, DHCP ou adresse fixe,
+clavier, mots de passe root/admin, réseaux autorisés et fonctions sont choisis
+avant l'installation. Le disque est effacé après confirmation. Les paquets
+sont embarqués : l'installation fonctionne sans Internet.
+
+Après éjection de l'ISO et redémarrage, la console affiche le portail et
+l'empreinte de la CA. `setup-loco` change le réseau, le nom, les mots de passe
+et l'accès SSH. Dans le portail, **Administration → Configuration** et
+**Mises à jour** disposent des équivalents CLI `loco-config` et `loco-update`.
+Les opérations sont revalidées par un agent root séparé ; le portail reste
+sans privilèges. Les installations de loco et réglages en échec disposent d'un
+retour arrière automatique de la configuration et de la base. Les mises à jour
+système suivent `apk upgrade` dans la branche Alpine installée.
+
+Le cache APT passe par nginx ; OpenRC et supervisord remplacent systemd.
+Minimum : 2 Go de RAM, disque de 8 Gio, BIOS ou UEFI sans Secure Boot.
+Les détails, le fichier de réponses, la construction et les tests BIOS/UEFI
+sont dans le [guide de l'appliance](../linux/iso/README.md).

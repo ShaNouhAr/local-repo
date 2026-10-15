@@ -23,8 +23,8 @@ RUN groupadd --system --gid 990 loco \
 
 COPY . /usr/src/loco
 RUN install -m 755 /usr/src/loco/linux/docker/entrypoint.sh /usr/local/sbin/loco-entrypoint \
- && install -m 755 /usr/src/loco/linux/docker/loco-cron /usr/local/sbin/loco-cron \
- && install -m 644 /usr/src/loco/linux/docker/logrotate.conf /etc/loco-logrotate.conf \
+ && install -m 755 /usr/src/loco/linux/conf/loco-cron /usr/local/sbin/loco-cron \
+ && install -m 644 /usr/src/loco/linux/conf/loco-logrotate.conf /etc/loco-logrotate.conf \
  && install -d /var/lib/logrotate
 
 ENV LOCO_RUNTIME=container

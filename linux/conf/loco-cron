@@ -1,5 +1,5 @@
 #!/bin/bash
-# loco (image Docker) : tâches périodiques, à la place des minuteries systemd de l'installation native.
+# loco (image Docker et appliance Alpine) : tâches périodiques, à la place des minuteries systemd.
 #   toutes les 5 s    recharge nginx si la liste des domaines Windows Update change (loco-nginx.path)
 #   toutes les 15 min taille des caches (loco-stats.timer)
 #   chaque jour 03:30 rotation des journaux, puis sauvegarde si BACKUP_KEEP > 0 (loco-backup.timer)

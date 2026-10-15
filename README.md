@@ -26,6 +26,7 @@ Serveur de dépôts et de caches pour un réseau d'entreprise, installé sur Deb
 | **Linux natif** (recommandé) | Debian 12 / 13, Ubuntu 22.04 / 24.04 / 26.04, Rocky Linux 8 / 9 / 10 | `sudo ./install.sh` | [docs/linux.md](docs/linux.md) |
 | **Windows natif** | Windows 11, Windows Server 2022 / 2025 | `windows\install.ps1` | [docs/windows.md](docs/windows.md) |
 | Conteneur LXC | Proxmox VE 7 / 8 / 9 | `linux/lxc/proxmox-lxc.sh` | [docs/linux.md](docs/linux.md) |
+| Appliance ISO | Alpine Linux (BusyBox), BIOS/UEFI | `linux/iso/` (assistant, réponses et portail) | [docs/linux.md](docs/linux.md) |
 | Docker | Docker Engine 26+ et Compose v2 | `linux/docker/` | [docs/linux.md](docs/linux.md) |
 
 Le portail, les dépôts et les caches sont les mêmes partout ; seul le dépôt Flatpak local demande un
@@ -34,7 +35,8 @@ serveur Linux.
 ```text
 portal/     portail web et scripts des postes, communs à Linux et Windows
 conf/       gabarits nginx communs
-linux/      installateur Linux (install.sh, remove.sh), outils d'administration, Docker, conteneur LXC
+linux/      installateur Linux (install.sh, remove.sh), outils d'administration, Docker, conteneur LXC,
+            Alpine (lib/alpine.sh) et fabrique ISO (iso/)
 windows/    installateur Windows (install.ps1, remove.ps1), service Windows, composants vérifiés
 docs/       guides Linux et Windows
 tests/      tests unitaires et de bout en bout (VM Linux, Windows Server)

@@ -1,0 +1,35 @@
+#!/sbin/openrc-run
+# shellcheck shell=sh disable=SC2034
+# Appliance loco (ISO) : installation de loco au premier démarrage du système installé, avec les réglages de
+# l'installateur (/etc/loco/firstboot.args : sources, puis une option d'install.sh par ligne). Supprimé après succès ;
+# en cas d'échec, nouvelle tentative au démarrage suivant (journal : /var/log/loco-firstboot.log).
+name="loco-firstboot"
+description="loco : installation au premier démarrage"
+ARGS=/etc/loco/firstboot.args
+LOG=/var/log/loco-firstboot.log
+
+depend() {
+    need localmount net
+    after networking chronyd
+}
+
+start() {
+    [ -f "$ARGS" ] || return 0
+    ebegin "Installation de loco (premier démarrage, quelques minutes)"
+    src=$(head -n 1 "$ARGS")
+    set --
+    while IFS= read -r arg; do set -- "$@" "$arg"; done <<EOT
+$(tail -n +2 "$ARGS")
+EOT
+    if bash "$src/linux/install.sh" "$@" > "$LOG" 2>&1; then
+        rm -f "$ARGS"
+        rc-update del loco-firstboot default >/dev/null 2>&1
+        rm -f /etc/init.d/loco-firstboot
+        eend 0
+    else
+        tail -n 15 "$LOG" >&2
+        # shellcheck source=linux/lib/appliance.sh
+        . "$src/linux/lib/appliance.sh" && appliance_issue
+        eend 1 "échec : $LOG (nouvelle tentative au prochain démarrage)"
+    fi
+}

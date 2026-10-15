@@ -3,7 +3,7 @@
 import os
 import re
 
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 
 DATA = os.environ.get("LOCO_DATA", "/srv/loco")
 STATE = os.environ.get("LOCO_STATE", "/var/lib/loco")
@@ -14,6 +14,11 @@ ACNG_PORT = os.environ.get("LOCO_ACNG_PORT", "3142")
 CONTAINER = os.environ.get("LOCO_RUNTIME") == "container"
 # Serveur Windows natif : service Windows, nginx et waitress (voir windows/).
 WINDOWS = os.name == "nt" or os.environ.get("LOCO_RUNTIME") == "windows"
+# Appliance Alpine (ISO) : OpenRC lance supervisord ; mises à jour et configuration depuis le portail.
+ALPINE = os.environ.get("LOCO_RUNTIME") == "alpine"
+APPLIANCE = ALPINE
+# Cache APT servi par nginx (pas d'apt-cacher-ng) : Windows et Alpine.
+APT_NGINX = WINDOWS or ALPINE
 GPG = os.environ.get("LOCO_GPG", "gpg")
 
 # Adresse HTTPS (interface, et postes qui font confiance à l'autorité locale).

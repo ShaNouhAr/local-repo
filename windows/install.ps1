@@ -70,7 +70,7 @@ if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { Fail 'Windows 64 bits (x64) requi
 $build = [int]$os.BuildNumber
 if ($os.ProductType -eq 1 -and $build -lt 22000) { Fail 'Windows 11 requis (ou Windows Server 2022 / 2025).' }
 if ($os.ProductType -ne 1 -and $build -lt 20348) { Fail 'Windows Server 2022 ou 2025 requis.' }
-foreach ($f in 'portal\locowin.py', 'conf\nginx-portal.conf', 'windows\conf\nginx-apt-proxy.conf', 'windows\components.json', 'windows\loco.xml') {
+foreach ($f in 'portal\locowin.py', 'conf\nginx-portal.conf', 'conf\nginx-apt-proxy.conf', 'windows\components.json', 'windows\loco.xml') {
     if (-not (Test-Path (Join-Path $Source $f))) { Fail "projet incomplet : $f introuvable dans $Source." }
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
@@ -272,8 +272,6 @@ Remove-Item -Recurse -Force $nginxTmp
 foreach ($d in 'portal', 'conf', 'windows') {
     Copy-Item -Recurse (Join-Path $Source $d) (Join-Path $stage $d)
 }
-# Gabarits nginx propres à Windows (cache APT) à côté des gabarits communs.
-Copy-Item (Join-Path $Source 'windows\conf\*') (Join-Path $stage 'conf')
 Get-ChildItem (Join-Path $stage 'portal') -Recurse -Directory -Filter '__pycache__' | Remove-Item -Recurse -Force
 New-Item -ItemType Directory -Force -Path (Join-Path $stage 'winsw') | Out-Null
 Copy-Item $winsw (Join-Path $stage 'winsw\loco.exe')

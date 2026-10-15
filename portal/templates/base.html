@@ -37,13 +37,15 @@
         </div>
       </details>
       {% if can_edit %}
-      <details class="nav-group nav-admin {{ 'on' if ep.startswith('users') or ep in ('journal', 'system') }}">
+      <details class="nav-group nav-admin {{ 'on' if ep.startswith(('users', 'appliance')) or ep in ('journal', 'system') }}">
         <summary aria-expanded="false" aria-controls="nav-admin">{{ nav_icon('settings') }}<span class="nav-long">Administration</span><span class="nav-short">Admin</span>{{ nav_icon('chevron') }}</summary>
         <div class="nav-dropdown" id="nav-admin">
           <div class="nav-panel">
             <a href="{{ url_for('users') }}" {% if ep.startswith('users') %}aria-current="page"{% endif %}>{{ nav_icon('users') }}<span><strong>Comptes</strong><small>Utilisateurs et permissions</small></span></a>
             <a href="{{ url_for('journal') }}" {% if ep == 'journal' %}aria-current="page"{% endif %}>{{ nav_icon('journal') }}<span><strong>Journal</strong><small>Historique des actions</small></span></a>
             <a href="{{ url_for('system') }}" {% if ep == 'system' %}aria-current="page"{% endif %}>{{ nav_icon('server') }}<span><strong>Système</strong><small>Services et sauvegardes</small></span></a>
+            {% if appliance %}<a href="{{ url_for('appliance_updates') }}" {% if ep.startswith('appliance_updates') or ep == 'appliance_job' %}aria-current="page"{% endif %}>{{ nav_icon('update') }}<span><strong>Mises à jour</strong><small>loco et Alpine Linux</small></span></a>
+            <a href="{{ url_for('appliance_settings') }}" {% if ep.startswith('appliance_settings') %}aria-current="page"{% endif %}>{{ nav_icon('settings') }}<span><strong>Configuration</strong><small>Accès, fonctions et stockage</small></span></a>{% endif %}
           </div>
         </div>
       </details>
@@ -65,11 +67,13 @@
 </header>
 
 <main>
-  {% if ep.startswith('users') or ep in ('journal', 'system') %}
+  {% if ep.startswith(('users', 'appliance')) or ep in ('journal', 'system') %}
   <div class="tabs subnav">
     <a href="{{ url_for('users') }}" class="{{ 'on' if ep.startswith('users') }}">Comptes</a>
     <a href="{{ url_for('journal') }}" class="{{ 'on' if ep == 'journal' }}">Journal</a>
     <a href="{{ url_for('system') }}" class="{{ 'on' if ep == 'system' }}">Système</a>
+    {% if appliance %}<a href="{{ url_for('appliance_updates') }}" class="{{ 'on' if ep.startswith('appliance_updates') }}">Mises à jour</a>
+    <a href="{{ url_for('appliance_settings') }}" class="{{ 'on' if ep.startswith('appliance_settings') }}">Configuration</a>{% endif %}
   </div>
   {% endif %}
   {% block content %}{% endblock %}

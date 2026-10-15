@@ -24,6 +24,12 @@ UNITS = [
 ]
 if config.CONTAINER:
     UNITS = UNITS[:3] + [("loco-cron", "Tâches périodiques : taille des caches, rechargement nginx, sauvegarde")]
+if config.ALPINE:
+    UNITS = [
+        ("loco-portal", "Interface et scripts clients"),
+        ("nginx", "HTTPS, fichiers, caches APT, RPM, Flathub et Windows Update"),
+        ("loco-cron", "Tâches périodiques : taille des caches, rechargement nginx, sauvegarde"),
+    ]
 if config.WINDOWS:
     UNITS = [
         ("loco-portal", "Interface et scripts clients (service Windows loco)"),
@@ -102,6 +108,12 @@ def package_version(name):
     if config.WINDOWS:
         from .util import windows_status
         return windows_status().get("versions", {}).get(name, "")
+    if config.ALPINE:
+        try:
+            out = subprocess.run(["apk", "info", "-e", "-v", name], capture_output=True, text=True, timeout=5)
+            return out.stdout.strip()[len(name) + 1:] if out.returncode == 0 else ""
+        except (OSError, subprocess.SubprocessError):
+            return ""
     try:
         out = subprocess.run(["dpkg-query", "-W", "-f=${Version}", name], capture_output=True, text=True, timeout=5)
         if out.returncode == 0:
@@ -118,6 +130,14 @@ def package_version(name):
     except (OSError, subprocess.SubprocessError):
         pass
     return ""
+
+
+def _alpine_release():
+    try:
+        with open("/etc/alpine-release") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
 
 
 def list_backups():
@@ -147,6 +167,9 @@ def system():
                    "Python": sys.version.split()[0],
                    "Flask": package_version("python3-flask"), "Windows": package_version("windows")}
                   if config.WINDOWS else
+                  {"loco": config.VERSION, "nginx": package_version("nginx"), "Python": sys.version.split()[0],
+                   "Flask": package_version("py3-flask"), "Alpine Linux": _alpine_release()}
+                  if config.ALPINE else
                   {"loco": config.VERSION, "nginx": package_version("nginx"),
                    "apt-cacher-ng": package_version("apt-cacher-ng"), "Python": sys.version.split()[0],
                    "Flask": package_version("python3-flask")}),

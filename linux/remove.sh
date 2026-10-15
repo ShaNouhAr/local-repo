@@ -45,7 +45,14 @@ if [ "$YES" = 0 ]; then
     [[ "$answer" =~ ^[oOyY]$ ]] || { echo "Annulé."; exit 1; }
 fi
 
+# shellcheck disable=SC1091
+. /etc/os-release
 say "Arrêt des services"
+if [ "$ID" = alpine ]; then
+    # shellcheck source=linux/lib/alpine.sh
+    . "$PREFIX/lib/alpine.sh"
+    alpine_remove
+fi
 systemctl disable --now loco-portal loco-stats.timer loco-nginx.path loco-backup.timer \
     >/dev/null 2>&1 || true
 rm -f /etc/systemd/system/loco-portal.service /etc/systemd/system/loco-stats.service \
@@ -58,7 +65,7 @@ rm -f /etc/apt-cacher-ng/zz-loco.conf /usr/local/sbin/loco-user /usr/local/sbin/
 for f in /etc/hosts.allow /etc/hosts.deny; do
     if [ -f "$f" ]; then sed -i '/# loco$/d' "$f"; fi
 done
-systemctl daemon-reload
+systemctl daemon-reload 2>/dev/null || true
 
 say "Configuration nginx"
 if [ -f "$ETC/install-state/nginx-rocky-original.conf" ]; then
@@ -70,7 +77,8 @@ rm -f /etc/nginx/sites-enabled/loco-portal.conf /etc/nginx/sites-available/loco-
       /etc/nginx/sites-enabled/loco-wucache.conf /etc/nginx/sites-available/loco-wucache.conf \
       /etc/nginx/modules-enabled/99-loco-stream.conf /etc/nginx/snippets/loco-clients.conf \
       /etc/nginx/snippets/loco-admin.conf /etc/nginx/snippets/loco-proxy.conf \
-      /etc/nginx/snippets/loco-flathub-proxy.conf /etc/nginx/snippets/loco-rpm-proxy.conf
+      /etc/nginx/snippets/loco-flathub-proxy.conf /etc/nginx/snippets/loco-rpm-proxy.conf \
+      /etc/nginx/sites-enabled/loco-apt.conf /etc/nginx/sites-available/loco-apt.conf
 if [ -f "$STATE/nginx-default-disabled" ]; then
     [ -e /etc/nginx/sites-available/default ] && ln -sf ../sites-available/default /etc/nginx/sites-enabled/default
     rm -f "$STATE/nginx-default-disabled"
@@ -84,9 +92,9 @@ if [ -f "$PACKAGE_RECORD" ]; then mapfile -t PKGS < "$PACKAGE_RECORD"; fi
 if [ ${#PKGS[@]} -gt 0 ]; then
     say "Désinstallation des paquets : ${PKGS[*]}"
     # EPEL peut fournir apt-get sur Rocky : choisir d'après le système, jamais d'après sa présence.
-    # shellcheck disable=SC1091
-    . /etc/os-release
-    if [ "$ID" = rocky ]; then
+    if [ "$ID" = alpine ]; then
+        apk del --no-progress "${PKGS[@]}" >/dev/null || true
+    elif [ "$ID" = rocky ]; then
         dnf remove -y --setopt=clean_requirements_on_remove=False "${PKGS[@]}" >/dev/null
     else
         DEBIAN_FRONTEND=noninteractive apt-get purge -y -q "${PKGS[@]}" >/dev/null || true
@@ -112,7 +120,8 @@ if [ "$PURGE" = 1 ]; then
         rm -rf /var/cache/apt-cacher-ng /var/log/apt-cacher-ng
     fi
     if [ "$ACNG_USER_CREATED" = 1 ]; then userdel apt-cacher-ng; fi
-    userdel loco 2>/dev/null || true
+    if [ "$ID" = alpine ]; then deluser loco 2>/dev/null || true; delgroup loco 2>/dev/null || true
+    else userdel loco 2>/dev/null || true; fi
     BACKUP_DIR=${BACKUP_DIR:-/var/backups/loco}
     if [ -d "$BACKUP_DIR" ]; then
         echo "    Sauvegardes conservées : $BACKUP_DIR (à supprimer à la main si inutiles)"

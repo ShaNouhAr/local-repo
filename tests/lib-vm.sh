@@ -2,7 +2,8 @@
 # Fonctions communes des tests en VM QEMU jetables (sans Docker). À sourcer depuis un script de test.
 # Variables : WORK (dossier de travail), LOG_DIR (journaux), LOCO_VM_IMAGE_CACHE (cache d'images, facultatif).
 
-LIB_VM_HOSTS="cloud.debian.org cloud-images.ubuntu.com dl.rockylinux.org repo.almalinux.org"
+LIB_VM_HOSTS="cloud.debian.org cloud-images.ubuntu.com dl.rockylinux.org repo.almalinux.org dl-cdn.alpinelinux.org"
+# VM_SHELL et VM_PACKAGES : shell du compte ci et paquets installés par cloud-init (images sans bash ni sudo).
 
 # vm_image FICHIER_JSON ID : télécharge l'image officielle (HTTPS), vérifie l'empreinte publiée, affiche son chemin.
 vm_image() {
@@ -25,9 +26,12 @@ PY
     cache=${LOCO_VM_IMAGE_CACHE:-$WORK/images}
     mkdir -p "$cache"
     curl -fsSL --retry 3 "$sums" -o "$WORK/$2.sums"
-    # Formats GNU (« empreinte  fichier ») et BSD (« SHA256 (fichier) = empreinte »).
+    # Formats GNU (« empreinte  fichier »), BSD (« SHA256 (fichier) = empreinte ») ou empreinte seule (Alpine).
     expected=$(python3 - "$WORK/$2.sums" "$name" <<'PY'
 import re, sys
+text = open(sys.argv[1]).read().split()
+if len(text) == 1 and re.fullmatch(r"[0-9a-f]{64}|[0-9a-f]{128}", text[0]):
+    print(text[0]); sys.exit()
 for line in open(sys.argv[1]):
     m = re.match(r"^([0-9a-f]{64}|[0-9a-f]{128})\s+\*?(\S+)$", line.strip()) or None
     if m and m.group(2) == sys.argv[2]:
@@ -59,8 +63,13 @@ vm_start() {
     qemu-img create -q -f qcow2 -F qcow2 -b "$image" "$dir/disk.qcow2"
     qemu-img resize -q "$dir/disk.qcow2" 16G
     ssh-keygen -q -t ed25519 -N '' -f "$dir/key"
-    printf '#cloud-config\nusers:\n  - name: ci\n    sudo: "ALL=(ALL) NOPASSWD:ALL"\n    shell: /bin/bash\n    ssh_authorized_keys:\n      - %s\nssh_pwauth: false\n' \
-        "$(cat "$dir/key.pub")" > "$dir/user-data"
+    printf '#cloud-config\nusers:\n  - name: ci\n    sudo: "ALL=(ALL) NOPASSWD:ALL"\n    shell: %s\n    ssh_authorized_keys:\n      - %s\nssh_pwauth: false\n' \
+        "${VM_SHELL:-/bin/bash}" "$(cat "$dir/key.pub")" > "$dir/user-data"
+    if [ -n "${VM_PACKAGES:-}" ]; then printf 'packages: [%s]\n' "$VM_PACKAGES" >> "$dir/user-data"; fi
+    # Sans PAM (Alpine), OpenSSH refuse les comptes verrouillés, même par clé : compte sans mot de passe (« * »).
+    if [ "${VM_UNLOCK:-0}" = 1 ]; then
+        sed -i 's/^    shell: /    lock_passwd: false\n    hashed_passwd: "*"\n    shell: /' "$dir/user-data"
+    fi
     printf 'instance-id: loco-%s\nlocal-hostname: %s\n' "$name" "$name" > "$dir/meta-data"
     (cd "$dir" && genisoimage -quiet -output seed.iso -volid cidata -joliet -rock user-data meta-data)
     if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then accel=(-accel kvm -cpu host); fi

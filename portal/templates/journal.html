@@ -4,7 +4,7 @@
 <div class="head">
   <div>
     <h1>Journal</h1>
-    <p>Connexions et modifications, avec le compte et l'adresse d'origine. {% if container %}Aussi envoyé au journal du conteneur (<code>docker compose logs loco</code>).{% else %}Aussi envoyé à journald (<code>journalctl -u loco-portal</code>).{% endif %}</p>
+    <p>Connexions et modifications, avec le compte et l'adresse d'origine. {% if container %}Aussi envoyé au journal du conteneur (<code>docker compose logs loco</code>).{% elif alpine %}Aussi écrit dans <code>/var/log/loco/portal.log</code>.{% else %}Aussi envoyé à journald (<code>journalctl -u loco-portal</code>).{% endif %}</p>
   </div>
 </div>
 
