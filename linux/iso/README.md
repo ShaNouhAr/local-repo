@@ -125,6 +125,12 @@ n'est jamais embarquée dans l'ISO. La vérification du média distribué repose
 sur les empreintes de la release téléchargées en HTTPS. Secure Boot n'est pas
 pris en charge.
 
+Les sources embarquées proviennent uniquement des fichiers suivis par Git
+(ajouter les nouveaux fichiers avec `git add` avant de construire). Les fichiers
+locaux non suivis, notamment les réponses privées, sont exclus de l'archive
+source. Depuis une extraction sans Git, fournir `--source-archive` avec
+l'archive officielle correspondante.
+
 La sortie est `out/loco-v3.24-x86_64.iso` et son `.sha256` ; la publication
 renomme l'image avec la version de loco. Le runtime complet figure dans
 [packages](packages), également utilisé par le profil et l'overlay. Le cache

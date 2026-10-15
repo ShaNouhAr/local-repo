@@ -1,4 +1,4 @@
-"""Archive des sources : fichiers Git et nouveaux fichiers non ignorés, sans dossiers locaux ni sorties de build."""
+"""Archive des fichiers suivis par Git, sans fichiers privés locaux ni sorties de build."""
 import os
 import re
 import subprocess
@@ -8,12 +8,12 @@ from pathlib import Path
 
 root, output = Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve()
 version = re.search(r'^VERSION = "([0-9.]+)"', (root / "portal/loco/config.py").read_text(), re.M).group(1)
-if (root / ".git").exists():
-    names = subprocess.check_output(["git", "-C", str(root), "ls-files", "-z", "--cached", "--others", "--exclude-standard"]).split(b"\0")
-    paths = sorted({root / os.fsdecode(n) for n in names if n})
-else:
-    # Archive de release déjà filtrée (construction CI ou sur un serveur sans Git).
-    paths = sorted(p for p in root.rglob("*") if p.is_file() and not any(x in p.parts for x in (".git", "__pycache__", "test-results", "out")))
+if not (root / ".git").exists():
+    sys.exit("Dossier Git requis ; depuis une archive, fournir build.sh --source-archive loco-VERSION.tar.gz.")
+names = subprocess.check_output(["git", "-C", str(root), "ls-files", "-z", "--cached"]).split(b"\0")
+paths = sorted({root / os.fsdecode(n) for n in names if n})
+
+
 def root_owner(member):
     member.uid = member.gid = 0
     member.uname = member.gname = "root"

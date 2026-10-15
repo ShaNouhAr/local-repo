@@ -21,9 +21,9 @@ image=$(vm_image "$ROOT/tests/alpine-platforms.json" alpine-3.24)
 VM_SHELL=/bin/sh VM_UNLOCK=1 VM_PACKAGES='sudo, bash, curl' vm_start iso-builder "$image" "$(free_port)"
 vm_ssh iso-builder 'sudo apk add --no-progress git xorriso squashfs-tools fakeroot abuild alpine-base mkinitfs syslinux grub-bios grub-efi mtools dosfstools python3; sudo addgroup ci abuild; echo "permit nopass ci as root" | sudo tee /etc/doas.d/loco-ci.conf >/dev/null' < /dev/null
 python3 "$ROOT/linux/iso/package.py" "$ROOT" "$WORK/source.tar.gz"
-vm_ssh iso-builder 'mkdir -p src; tar xzf - -C src' < "$WORK/source.tar.gz"
+vm_ssh iso-builder 'cat > /home/ci/loco-source.tar.gz; mkdir -p src; tar xzf /home/ci/loco-source.tar.gz -C src' < "$WORK/source.tar.gz"
 version=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' "$ROOT/portal/loco/config.py")
-vm_ssh iso-builder "cd src/loco-$version && sh linux/iso/build.sh --outdir /home/ci/out" < /dev/null \
+vm_ssh iso-builder "cd src/loco-$version && sh linux/iso/build.sh --outdir /home/ci/out --source-archive /home/ci/loco-source.tar.gz" < /dev/null \
     > "$LOG_DIR/build.log" 2>&1 || { tail -60 "$LOG_DIR/build.log"; exit 1; }
 ISO="$LOG_DIR/loco-v3.24-x86_64.iso"
 vm_ssh iso-builder 'cat /home/ci/out/loco-v3.24-x86_64.iso' < /dev/null > "$ISO"
