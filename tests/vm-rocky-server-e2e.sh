@@ -33,7 +33,7 @@ for id in "$@"; do
     # shellcheck disable=SC2016 # Interpolation dans la VM.
     actual=$(vm_ssh "$id" '. /etc/os-release; echo "$ID-${VERSION_ID%%.*}"' < /dev/null)
     [ "$actual" = "$id" ]
-    tar --exclude=.git --exclude=./loco --exclude=__pycache__ --exclude=./test-results -czf - -C "$ROOT" . |
+    tar --exclude=.git --exclude=./loco --exclude=./local-repo --exclude=__pycache__ --exclude=./test-results -czf - -C "$ROOT" . |
         vm_ssh "$id" 'mkdir -p loco && tar -xzf - -C loco'
     git -C "$ROOT" archive v1.9.0 | gzip | vm_ssh "$id" 'mkdir -p local-repo-legacy && tar -xzf - -C local-repo-legacy'
     printf -v test_command 'cd loco && sudo env LOCO_E2E_LEGACY_SRC=/home/ci/local-repo-legacy LOCO_TEST_ROCKY_MIRROR=%q tests/rocky-server.sh' "${LOCO_TEST_ROCKY_MIRROR:-}"

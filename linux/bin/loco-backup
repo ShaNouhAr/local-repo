@@ -50,7 +50,7 @@ case "${1:-}" in
         if [ "${LOCO_RUNTIME:-}" = container ]; then
             supervisorctl -c /etc/supervisor/loco.conf stop loco-portal >/dev/null 2>&1 || true
         else
-            systemctl stop loco-portal 2>/dev/null || true
+            systemctl stop loco-portal
         fi
         # La configuration propre à ce serveur (IP, ports, réseaux) est conservée ; le reste est restauré.
         "${PYTHON:-python3}" /opt/loco/portal/loco/backup.py "$archive" "$DATA"

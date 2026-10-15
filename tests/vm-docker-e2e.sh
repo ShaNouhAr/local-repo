@@ -28,7 +28,7 @@ trap 'exit 143' TERM
 
 image=$(vm_image "$ROOT/tests/platforms.json" debian-13)
 vm_start docker "$image" "$(free_port)"
-tar --exclude=.git --exclude=./loco --exclude=__pycache__ --exclude=./test-results --exclude=./linux/docker/.env -czf - -C "$ROOT" . | \
+tar --exclude=.git --exclude=./loco --exclude=./local-repo --exclude=__pycache__ --exclude=./test-results --exclude=./linux/docker/.env -czf - -C "$ROOT" . | \
     vm_ssh docker 'mkdir -p loco && tar -xzf - -C loco'
 vm_ssh docker 'sudo apt-get update -q && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q docker.io docker-compose >/dev/null && sudo docker version --format "Docker {{.Server.Version}}" && sudo docker compose version' \
     2>&1 | tee "$LOG_DIR/docker.log"

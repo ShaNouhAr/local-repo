@@ -103,6 +103,13 @@ curl -fsSL "https://$HOST:8443/flatpak/setup.sh" | sudo sh >/dev/null
 flatpak remote-ls --system loco --columns=application | grep -qx org.loco.E2e
 sudo flatpak install --system --noninteractive --no-deps loco org.loco.E2e >/dev/null
 flatpak info --system org.loco.E2e | grep -q loco
+step "Migration d'une application Flatpak dont l'origine porte l'ancien nom"
+sudo flatpak remote-add --system local-repo "https://$HOST:8443/flatpak/local-repo.flatpakrepo"
+sudo flatpak install --system --noninteractive --assumeyes --no-deps --reinstall local-repo org.loco.E2e >/dev/null
+sudo flatpak remote-delete --system --force loco
+curl -fsSL "https://$HOST:8443/flatpak/setup.sh" | sudo sh >/dev/null
+[ "$(flatpak info --system --show-origin org.loco.E2e)" = loco ]
+if flatpak remotes --system --columns=name | grep -qx local-repo; then echo 'Ancien remote Flatpak non migré.' >&2; exit 1; fi
 flatpak remote-info --system flathub org.flatpak.Builder >/dev/null
 curl -fsS "https://$HOST:8443/flathub/repo/summary.idx" -o /dev/null
 sudo flatpak uninstall --system --noninteractive org.loco.E2e >/dev/null

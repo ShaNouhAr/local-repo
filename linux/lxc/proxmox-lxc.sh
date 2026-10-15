@@ -107,7 +107,7 @@ run_install() {
     if [ -n "$SOURCE" ]; then
         local archive
         archive=$(mktemp --suffix=.tar.gz)
-        tar --exclude=.git --exclude=./loco --exclude=__pycache__ --exclude=./test-results --exclude=./.env \
+        tar --exclude=.git --exclude=./loco --exclude=./local-repo --exclude=__pycache__ --exclude=./test-results --exclude=./.env \
             -czf "$archive" -C "$SOURCE" . || return 1
         pct push "$CTID" "$archive" /root/loco.tar.gz || return 1
         rm -f "$archive"

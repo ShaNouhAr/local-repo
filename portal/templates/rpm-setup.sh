@@ -36,7 +36,6 @@ if [ -f /etc/local-repo-rpm.state ]; then
     [ ! -e "$STATE" ] || { echo 'Deux états de dépôts RPM existent ; migration refusée.' >&2; exit 1; }
     mv /etc/local-repo-rpm.state "$STATE"
 fi
-rm -f /etc/yum.repos.d/local-repo.repo /etc/yum.repos.d/local-repo-cache.repo
 if [ -f /etc/pki/ca-trust/source/anchors/local-repo.crt ]; then
     if [ ! -f "$CA" ]; then mv /etc/pki/ca-trust/source/anchors/local-repo.crt "$CA";
     else rm -f /etc/pki/ca-trust/source/anchors/local-repo.crt; fi
@@ -86,6 +85,7 @@ restore_system() {
 if [ "$REMOVE" = 1 ]; then
     restore_system
     rm -f "$LOCAL"
+    rm -f /etc/yum.repos.d/local-repo.repo /etc/yum.repos.d/local-repo-cache.repo
     if [ -f "$CA" ]; then rm -f "$CA"; update-ca-trust extract; fi
     dnf clean all >/dev/null 2>&1 || true
     echo "Configuration loco retirée ; dépôts du système rétablis."
@@ -192,6 +192,8 @@ else
     restore_system
 fi
 
+# Les nouveaux dépôts ont été vérifiés et écrits : l'ancien nom peut être retiré.
+rm -f /etc/yum.repos.d/local-repo.repo /etc/yum.repos.d/local-repo-cache.repo
 dnf -y -q makecache
 echo "Poste configuré pour loco ($BASE) :"
 dnf repolist --enabled

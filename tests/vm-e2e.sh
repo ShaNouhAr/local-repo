@@ -96,7 +96,7 @@ ssh "${SSH_OPTIONS[@]}" ci@127.0.0.1 'cloud-init status --wait' > "$LOG_DIR/clou
 ssh "${SSH_OPTIONS[@]}" ci@127.0.0.1 'cat /etc/os-release' > "$LOG_DIR/os-release"
 grep -qxE "ID=\"?${platform[0]}\"?" "$LOG_DIR/os-release"
 grep -qxE "VERSION_ID=\"?${platform[2]}\"?" "$LOG_DIR/os-release"
-tar --exclude=.git --exclude=./loco --exclude=__pycache__ --exclude=./test-results -czf - -C "$ROOT" . | \
+tar --exclude=.git --exclude=./loco --exclude=./local-repo --exclude=__pycache__ --exclude=./test-results -czf - -C "$ROOT" . | \
     ssh "${SSH_OPTIONS[@]}" ci@127.0.0.1 'mkdir -p loco && tar -xzf - -C loco'
 LEGACY_SRC=""
 if [ -n "${platform[6]}" ]; then
