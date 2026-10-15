@@ -33,7 +33,12 @@ BRANCHES = tuple(EXCLUDE)
 
 
 def git(*args, env=None, input=None):
-    return subprocess.run(["git", *args], check=True, capture_output=True, text=True, env=env, input=input).stdout.strip()
+    # Octets, sans conversion des fins de ligne (Python sous Windows écrirait \r\n dans les entrées de git).
+    out = subprocess.run(["git", *args], capture_output=True, env=env,
+                         input=input.encode("utf-8") if input is not None else None)
+    if out.returncode != 0:
+        sys.exit(f"git {' '.join(args[:2])} : {out.stderr.decode(errors='replace').strip()}")
+    return out.stdout.decode("utf-8").strip()
 
 
 def readme(text, branch):
