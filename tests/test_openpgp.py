@@ -9,7 +9,10 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "portal"))
-from localrepo import openpgp  # noqa: E402
+try:
+    from localrepo import openpgp  # noqa: E402
+except ImportError:   # cryptography absente : module propre au serveur Windows
+    openpgp = None
 
 TEXT = ("Origin: local-repo\nLabel: local-repo debian/trixie\nSuite: trixie\n"
         "- ligne commençant par un tiret\n-----BEGIN PGP piège\nespaces en fin de ligne   \n\n"
@@ -19,6 +22,8 @@ TEXT = ("Origin: local-repo\nLabel: local-repo debian/trixie\nSuite: trixie\n"
 class TestOpenPGP(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        if openpgp is None:
+            raise unittest.SkipTest("bibliothèque cryptography absente (signatures du serveur Windows)")
         for command in ("gpg", "gpgv"):
             if shutil.which(command) is None:
                 raise RuntimeError("Installez gnupg (gpg, gpgv) pour vérifier les signatures.")
