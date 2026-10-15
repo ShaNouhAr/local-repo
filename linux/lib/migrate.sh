@@ -5,6 +5,7 @@ stash_self_client() {
     # Un serveur peut lui-même être branché comme poste : APT doit rester joignable pendant l'arrêt du cache.
     [ -z "${LOCO_CLIENT_STASH:-}" ] || return 0
     LOCO_CLIENT_STASH=$(mktemp -d /var/tmp/loco-client-migration.XXXXXX)
+    # shellcheck disable=SC2317,SC2329  # appelée indirectement par le trap EXIT.
     restore_self_client() {
         local file
         for file in "$LOCO_CLIENT_STASH"/*; do
