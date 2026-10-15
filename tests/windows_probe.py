@@ -53,11 +53,12 @@ def verify(signature, data=None):
         keyring = Path(work, 'local-repo.gpg')
         keyring.write_bytes(get('/apt/local-repo.gpg'))
         Path(work, 'sig').write_bytes(signature)
-        args = [GPGV, '--keyring', str(keyring), str(Path(work, 'sig'))]
+        # Chemins relatifs : le gpgv de Git for Windows prend « C: » pour un préfixe d'URL de trousseau.
+        args = [GPGV, '--keyring', './local-repo.gpg', 'sig']
         if data is not None:
             Path(work, 'data').write_bytes(data)
-            args.append(str(Path(work, 'data')))
-        result = subprocess.run(args, capture_output=True, text=True)
+            args.append('data')
+        result = subprocess.run(args, capture_output=True, text=True, cwd=work)
         assert result.returncode == 0, result.stderr
 
 
