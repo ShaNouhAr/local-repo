@@ -17,6 +17,15 @@ appliance_cidr_ok() {
     python3 -c 'import ipaddress, sys; ipaddress.IPv4Interface(sys.argv[1])' "$1" 2>/dev/null
 }
 
+# Passerelle IPv4 sur le réseau choisi (une adresse fixe IPv4 est utilisée par l'appliance).
+appliance_gateway_ok() {
+    python3 -c '
+import ipaddress, sys
+net = ipaddress.IPv4Interface(sys.argv[1]).network
+gateway = ipaddress.IPv4Address(sys.argv[2])
+sys.exit(0 if gateway in net else 1)' "$1" "$2" 2>/dev/null
+}
+
 # Réseaux séparés par des espaces, normalisés (192.168.1.7/24 -> 192.168.1.0/24) ; échec si l'un est invalide.
 appliance_networks() {
     python3 -c '

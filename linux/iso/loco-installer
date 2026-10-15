@@ -149,7 +149,7 @@ problems() {
         dhcp) ;;
         static)
             appliance_cidr_ok "$ADDRESS" || out="$out\n- adresse invalide : $ADDRESS (forme 192.168.1.10/24)"
-            if [ -n "$GATEWAY" ] && ! appliance_ip_ok "$GATEWAY"; then out="$out\n- passerelle invalide : $GATEWAY"; fi
+            if [ -n "$GATEWAY" ] && ! appliance_gateway_ok "$ADDRESS" "$GATEWAY"; then out="$out\n- passerelle invalide : $GATEWAY"; fi
             for d in $DNS; do appliance_ip_ok "$d" || out="$out\n- DNS invalide : $d"; done
             [ -n "$DNS" ] || out="$out\n- au moins un serveur DNS est requis en adresse fixe"
             ;;
@@ -244,7 +244,7 @@ EOF
             DNS=$(printf '%s\n' "$values" | sed -n 3p)
             err=""
             appliance_cidr_ok "$ADDRESS" || err="Adresse invalide (forme 192.168.1.10/24)."
-            if [ -n "$GATEWAY" ] && ! appliance_ip_ok "$GATEWAY"; then err="Passerelle invalide."; fi
+            if [ -n "$GATEWAY" ] && ! appliance_gateway_ok "$ADDRESS" "$GATEWAY"; then err="Passerelle invalide."; fi
             [ -n "$DNS" ] || err="Au moins un serveur DNS."
             for d in $DNS; do appliance_ip_ok "$d" || err="DNS invalide : $d"; done
             [ -z "$err" ] && break
@@ -334,7 +334,7 @@ install_system() {
     printf '127.0.0.1\tlocalhost\n::1\t\tlocalhost\n' > /etc/hosts
     if [ "$NETWORK" = static ]; then printf '%s\t%s\n' "${ADDRESS%/*}" "$HOSTNAME" >> /etc/hosts; fi
     appliance_write_network "" "$INTERFACE" "$NETWORK" "$ADDRESS" "$GATEWAY" "$DNS"
-    echo "root:$ROOT_PASSWORD" | chpasswd
+    printf '%s\n' "root:$ROOT_PASSWORD" | chpasswd
 
     step "Alpine Linux sur /dev/$DISK (effacement, partitions, noyau)"
     ERASE_DISKS="/dev/$DISK" setup-disk -m sys -s 0 -k lts "/dev/$DISK" < /dev/null
@@ -355,7 +355,7 @@ install_system() {
         "$ALPINE_BRANCH" "$ALPINE_BRANCH" > "$TARGET/etc/apk/repositories"
     ln -sf "/usr/share/zoneinfo/$TIMEZONE" "$TARGET/etc/localtime"
     echo "$TIMEZONE" > "$TARGET/etc/timezone"
-    echo "root:$ROOT_PASSWORD" | chroot "$TARGET" chpasswd
+    printf '%s\n' "root:$ROOT_PASSWORD" | chroot "$TARGET" chpasswd
     # Éléments du système live recopiés par setup-disk : installateur et réponses.
     rm -f "$TARGET/etc/init.d/loco-installer" "$TARGET"/etc/runlevels/*/loco-installer "$TARGET/etc/loco-answers.conf" \
           "$TARGET/etc/motd" "$TARGET/etc/local.d/loco-installer.start"

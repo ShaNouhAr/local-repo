@@ -67,6 +67,9 @@ case "${1:-}" in
         if [ "${LOCO_RUNTIME:-}" = container ]; then
             echo "Archive restaurée. Redémarrez maintenant le conteneur pour régénérer la configuration :"
             echo "    docker compose restart loco"
+        elif [ -f /etc/alpine-release ]; then
+            echo "Archive restaurée. Relancez l'installation pour régénérer services et configuration :"
+            printf '    bash %q/linux/install.sh\n' "$SOURCE_DIR"
         else
             echo "Archive restaurée. Relancez maintenant l'installation pour régénérer services et configuration :"
             echo "    sudo ./install.sh      (depuis le dossier du projet)"

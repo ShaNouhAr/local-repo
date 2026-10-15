@@ -40,7 +40,7 @@ network() {
             dns=$(printf '%s\n' "$values" | sed -n 3p)
             err=""
             appliance_cidr_ok "$cidr" || err="Adresse invalide (forme 192.168.1.10/24)."
-            if [ -n "$gw" ] && ! appliance_ip_ok "$gw"; then err="Passerelle invalide."; fi
+            if [ -n "$gw" ] && ! appliance_gateway_ok "$cidr" "$gw"; then err="Passerelle invalide."; fi
             [ -n "$dns" ] || err="Au moins un serveur DNS."
             for d in $dns; do appliance_ip_ok "$d" || err="DNS invalide : $d"; done
             [ -z "$err" ] && break
