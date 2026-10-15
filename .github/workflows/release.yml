@@ -28,6 +28,7 @@ jobs:
           git show "$revision:portal/loco/config.py" | grep -qx "VERSION = \"$version\""
           run=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$revision&status=success" --jq '.workflow_runs[0].id // empty')
           test -n "$run"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" --jq .head_sha)" = "$revision"
           mkdir -p /tmp/loco-release-iso dist
           gh run download "$run" -n loco-iso -D /tmp/loco-release-iso
           cp /tmp/loco-release-iso/alpine-build/loco-v3.24-x86_64.iso "dist/loco-$version-x86_64.iso"

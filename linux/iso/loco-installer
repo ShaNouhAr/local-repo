@@ -107,7 +107,7 @@ list_disks() {
         [ "$(cat "$path/ro" 2>/dev/null)" = 0 ] || continue
         size=$(( $(cat "$path/size") / 2097152 ))
         [ "$size" -gt 0 ] || continue
-        model=$(cat "$path/device/model" 2>/dev/null | tr -s ' ' | sed 's/ $//')
+        model=$(tr -s ' ' 2>/dev/null < "$path/device/model" | sed 's/ $//')
         echo "$name $size $(cat "$path/removable" 2>/dev/null || echo 0) ${model:-disque}"
     done
 }
