@@ -59,7 +59,7 @@
       <div class="panel-h"><h2>Services</h2></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Unité systemd</th><th class="hide-sm">Rôle</th><th>État</th></tr></thead>
+          <thead><tr><th>Service</th><th class="hide-sm">Rôle</th><th>État</th></tr></thead>
           <tbody>
           {% for unit, desc, active in services %}
             <tr><td class="mono nowrap">{{ unit }}</td><td class="muted hide-sm">{{ desc }}</td><td>{{ service(active) }}</td></tr>
@@ -94,7 +94,7 @@
     {% else %}
     <div class="empty">Aucune sauvegarde pour l'instant.</div>
     {% endif %}
-    <div class="panel-f">Quotidienne (configuration, comptes, clés, dépôt et catalogue ; hors caches). À la main : <code>sudo loco-backup create</code> ; restauration : <code>sudo loco-backup restore ARCHIVE</code>.</div>
+    <div class="panel-f">Quotidienne (configuration, comptes, clés, dépôt et catalogue ; hors caches). À la main : <code>{{ 'loco backup' if windows else ('loco-backup' if alpine else 'sudo loco-backup') }} create</code> ; restauration : <code>{{ 'loco backup' if windows else ('loco-backup' if alpine else 'sudo loco-backup') }} restore ARCHIVE</code>.</div>
   </section>
 </div>
 {% endblock %}

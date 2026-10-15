@@ -48,7 +48,10 @@ case "${1:-}" in
         [ -f "$archive" ] || { echo "Archive introuvable : $archive" >&2; exit 1; }
         tar -tzf "$archive" | grep -qx "portal.db" || { echo "Ce n'est pas une sauvegarde loco." >&2; exit 1; }
         if [ "${LOCO_RUNTIME:-}" = container ] || [ -f /etc/alpine-release ]; then
-            supervisorctl -c /etc/supervisor/loco.conf stop loco-portal >/dev/null 2>&1 || true
+            sup_state=$(supervisorctl -c /etc/supervisor/loco.conf status loco-portal 2>/dev/null || true)
+            if ! grep -qE '^loco-portal[[:space:]]+STOPPED' <<< "$sup_state"; then
+                supervisorctl -c /etc/supervisor/loco.conf stop loco-portal >/dev/null
+            fi
         else
             systemctl stop loco-portal
         fi
@@ -61,7 +64,7 @@ case "${1:-}" in
             if [ -d "$DATA/flatpak" ]; then chown -R loco:loco "$DATA/flatpak"; fi
             if [ -d "$DATA/rpm" ]; then chown -R loco:loco "$DATA/rpm"; fi
         fi
-        if [ "${LOCO_RUNTIME:-}" = container ] || [ -f /etc/alpine-release ]; then
+        if [ "${LOCO_RUNTIME:-}" = container ]; then
             echo "Archive restaurée. Redémarrez maintenant le conteneur pour régénérer la configuration :"
             echo "    docker compose restart loco"
         else

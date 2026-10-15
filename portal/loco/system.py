@@ -29,6 +29,7 @@ if config.ALPINE:
         ("loco-portal", "Interface et scripts clients"),
         ("nginx", "HTTPS, fichiers, caches APT, RPM, Flathub et Windows Update"),
         ("loco-cron", "Tâches périodiques : taille des caches, rechargement nginx, sauvegarde"),
+        ("loco-agent", "Mises à jour et configuration de l'appliance"),
     ]
 if config.WINDOWS:
     UNITS = [

@@ -118,6 +118,9 @@ def service_active(name):
     if config.CONTAINER or config.ALPINE:
         if name == "loco-portal":
             return True
+        if config.ALPINE and name == "loco-agent":
+            import locoadmin
+            return locoadmin.agent_running()
         if config.ALPINE and name == "apt-cacher-ng":
             name = "nginx"     # Alpine : cache APT servi par nginx
         return name in CONTAINER_PROCESSES and process_running(CONTAINER_PROCESSES[name])
