@@ -21,9 +21,9 @@ jobs:
           persist-credentials: false
       - name: Shell et Python
         run: |
-          shellcheck -S style -x install.sh remove.sh lib/*.sh bin/* tests/*.sh docker/entrypoint.sh docker/local-repo-cron lxc/proxmox-lxc.sh portal/templates/setup.sh portal/templates/flatpak-setup.sh portal/templates/rpm-setup.sh
+          shellcheck -S style -x install.sh linux/install.sh linux/remove.sh linux/lib/*.sh linux/bin/* tests/*.sh linux/docker/entrypoint.sh linux/docker/local-repo-cron linux/lxc/proxmox-lxc.sh portal/templates/setup.sh portal/templates/flatpak-setup.sh portal/templates/rpm-setup.sh
           pipx run pyflakes portal tests
-          docker compose config -q
+          docker compose -f linux/docker/docker-compose.yml config -q
       - name: PowerShell (syntaxe des scripts Windows)
         shell: pwsh
         run: |
@@ -35,16 +35,6 @@ jobs:
               if ([IO.File]::ReadAllBytes($file.FullName)[0] -ne 0xEF) { Write-Host "$($file.FullName) : UTF-8 avec BOM requis (Windows PowerShell 5.1)"; $errors++ }
           }
           exit $errors
-      - name: Branches linux et windows générées
-        run: |
-          git config user.name ci && git config user.email ci@example.invalid
-          python3 tools/branches.py HEAD
-          for f in install.sh remove.sh lib/rocky.sh docker/supervisord.conf lxc/proxmox-lxc.sh portal/app.py conf/nginx-portal.conf; do
-              git cat-file -e "linux:$f" || { echo "linux : $f manquant"; exit 1; }
-          done
-          for f in windows/install.ps1 windows/components.json portal/lrwin.py conf/nginx-apt-proxy.conf conf/nginx-portal.conf; do
-              git cat-file -e "windows:$f" || { echo "windows : $f manquant"; exit 1; }
-          done
       - name: Plateformes à tester
         id: platforms
         run: |
@@ -201,12 +191,7 @@ jobs:
         run: |
           # Les images hébergées ont IIS/HTTP.sys actif ; ce runner est jetable.
           Stop-Service HTTP -Force
-          # Installation depuis la branche « windows » telle qu'elle sera publiée.
-          git config user.name ci; git config user.email ci@example.invalid
-          python tools/branches.py HEAD
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-          git worktree add "$env:RUNNER_TEMP\lr-windows" windows
-          .\tests\windows-e2e.ps1 -Fixtures "$env:GITHUB_WORKSPACE\test-results\packages" -Source "$env:RUNNER_TEMP\lr-windows"
+          .\tests\windows-e2e.ps1 -Fixtures "$env:GITHUB_WORKSPACE\test-results\packages"
       - name: Journaux en cas d'échec
         if: failure()
         shell: powershell

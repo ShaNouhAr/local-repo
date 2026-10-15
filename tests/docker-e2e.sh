@@ -7,7 +7,8 @@ work=$(mktemp -d)
 trap 'sudo rm -rf -- "$work"' EXIT
 trap 'echo "Échec du test ligne $LINENO : $BASH_COMMAND" >&2' ERR
 step() { printf '\n\033[1m--- %s\033[0m\n' "$*"; }
-dc() { sudo docker compose "$@"; }
+# Projet Docker : linux/docker (docker-compose.yml et .env).
+dc() { sudo docker compose --project-directory linux/docker -f linux/docker/docker-compose.yml "$@"; }
 healthy() {
     local i
     for (( i=0; i<90; i++ )); do
@@ -26,7 +27,7 @@ printf 'Package: lr-e2e\nVersion: 1.0\nArchitecture: all\nMaintainer: ci <ci@exa
 dpkg-deb --root-owner-group -b "$work/deb" "$work/lr-e2e.deb" >/dev/null
 
 step "Construction et premier démarrage"
-printf 'LR_BACKUP_KEEP=2\nTZ=Europe/Paris\n' > .env
+printf 'LR_BACKUP_KEEP=2\nTZ=Europe/Paris\n' > linux/docker/.env
 dc up -d --build
 healthy
 dc logs local-repo > "$work/first.log"
@@ -85,12 +86,12 @@ sudo apt-get update -q >/dev/null
 sudo apt-get install -y -q --reinstall lr-e2e >/dev/null
 
 step "Réglages par variables : sans Windows Update ni HTTP"
-printf 'LR_BACKUP_KEEP=2\nLR_WU=0\nLR_HTTP=0\n' > .env
+printf 'LR_BACKUP_KEEP=2\nLR_WU=0\nLR_HTTP=0\n' > linux/docker/.env
 dc up -d
 healthy
 if ss -Hltn | grep -qE ':(80|443|8088) '; then fail "ports 80, 443 ou 8088 encore ouverts"; fi
 grep -q "WU_ENABLED=0" <(dc exec -T local-repo cat /etc/local-repo/local-repo.conf)
-printf 'LR_BACKUP_KEEP=2\n' > .env
+printf 'LR_BACKUP_KEEP=2\n' > linux/docker/.env
 dc up -d
 healthy
 ss -Hltn | grep -qE ':80 ' || fail "Windows Update non réactivé quand la variable est retirée"
@@ -99,6 +100,6 @@ step "Nettoyage"
 sudo apt-get purge -y -q lr-e2e >/dev/null
 curl -fsSL "https://$HOST:8443/linux/setup.sh" | sudo sh -s -- --remove
 dc down -v
-rm -f .env
+rm -f linux/docker/.env
 if ss -Hltn | grep -qE ':(8443|8088|3142) '; then fail "ports encore ouverts"; fi
 echo 'Test Docker de bout en bout réussi.'

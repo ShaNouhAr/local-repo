@@ -3,7 +3,7 @@
 import os
 import re
 
-VERSION = "1.8.0"
+VERSION = "1.9.0"
 
 DATA = os.environ.get("LR_DATA", "/srv/local-repo")
 STATE = os.environ.get("LR_STATE", "/var/lib/local-repo")

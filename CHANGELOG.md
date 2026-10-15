@@ -1,5 +1,15 @@
 # Journal des versions
 
+## 1.9.0 — 2026-10-15
+
+- **Organisation du projet par système**, dans une seule branche : `linux/` (installateur, administration,
+  Docker, conteneur LXC Proxmox), `windows/` (installateur et service Windows), `portal/` et `conf/` communs,
+  `docs/linux.md` et `docs/windows.md`. `sudo ./install.sh` reste valable (raccourci vers `linux/install.sh`),
+  ainsi que les mises à jour des installations existantes ; l'arborescence installée ne change pas.
+- Docker : `cd linux/docker && docker compose up -d --build` ; nom de projet fixe, volumes conservés.
+- Conteneur LXC : `linux/lxc/proxmox-lxc.sh`.
+- README : choix de l'installation, puis une partie Serveur Linux et une partie Serveur Windows.
+
 ## 1.8.0 — 2026-10-15
 
 - Serveur natif Windows 11 Professionnel / Entreprise et Windows Server 2022 / 2025 : service Windows, Python embarqué, nginx et Waitress, sans Linux ni Hyper-V. Signatures OpenPGP des dépôts

@@ -1,4 +1,4 @@
-# local-repo en conteneur.
+# local-repo en conteneur, depuis ce dossier (linux/docker) :
 #   cp .env.example .env     puis renseigner au moins LR_HOST
 #   docker compose up -d --build
 #   docker compose logs local-repo     compte initial « admin » et empreinte de l'autorité HTTPS
@@ -6,10 +6,13 @@
 # Réseau de l'hôte : le cache Windows Update écoute sur 80 et 443, et le filtrage par réseau
 # (LR_ALLOW, LR_ADMIN_ALLOW) doit voir la vraie adresse des postes. Ne pas lancer en même temps
 # qu'une installation native de local-repo sur la même machine (mêmes ports).
+name: local-repo    # nom de projet fixe : mêmes volumes quel que soit le dossier
 services:
   local-repo:
-    build: .
-    image: local-repo:1.3.0
+    build:
+      context: ../..
+      dockerfile: linux/docker/Dockerfile
+    image: local-repo:latest
     network_mode: host
     restart: unless-stopped
     stop_grace_period: 30s

@@ -1,4 +1,4 @@
-# Guide d'exploitation
+# Guide d'exploitation : serveur Linux
 
 Ce guide couvre le déploiement de local-repo dans un réseau d'entreprise (lab, site, agence) et son
 exploitation courante. Pour une présentation rapide, voir le [README](../README.md).
@@ -260,10 +260,11 @@ manifeste d'empreintes).
 ## 13. Déploiement Docker
 
 L'image reprend le même code et la même configuration que l'installation native : à chaque démarrage,
-`docker/entrypoint.sh` traduit les variables de `.env` en options d'`install.sh --container`, qui régénère
+`linux/docker/entrypoint.sh` traduit les variables de `.env` en options de `linux/install.sh --container`, qui régénère
 la configuration (nginx, apt-cacher-ng, portail), puis `supervisord` lance les services.
 
 ```bash
+cd linux/docker                 # docker-compose.yml, Dockerfile et .env.example
 cp .env.example .env            # au minimum LR_HOST, l'adresse annoncée aux postes
 docker compose up -d --build
 docker compose logs local-repo  # adresse, empreinte de l'autorité, mot de passe initial (une seule fois)
@@ -317,13 +318,13 @@ des variables (Windows Update et HTTP désactivés puis rétablis).
 
 ## 14. Conteneur LXC Proxmox VE
 
-`lxc/proxmox-lxc.sh` se lance en root sur l'hôte Proxmox VE (7, 8 ou 9, amd64), seul ou depuis une copie
+`linux/lxc/proxmox-lxc.sh` se lance en root sur l'hôte Proxmox VE (7, 8 ou 9, amd64), seul ou depuis une copie
 du projet. Il crée un conteneur **non privilégié** (`nesting=1`, démarré avec l'hôte), attend le réseau, puis
 fait l'installation native d'`install.sh` dans le conteneur : mêmes services systemd, mêmes options, même
 portail que sur une machine Debian.
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/ShaNouhAr/local-repo/main/lxc/proxmox-lxc.sh
+curl -fsSLO https://raw.githubusercontent.com/ShaNouhAr/local-repo/main/linux/lxc/proxmox-lxc.sh
 bash proxmox-lxc.sh --help
 bash proxmox-lxc.sh --hostname local-repo --ip 10.20.0.15/24 --gw 10.20.0.1 --vlan 20 --disk 400 \
     -- --allow "10.20.0.0/16" --admin-allow "10.20.99.0/24" --proxy http://proxy.exemple.lan:3128

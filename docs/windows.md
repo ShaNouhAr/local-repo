@@ -5,9 +5,13 @@
 Windows 11 Professionnel / Entreprise ou Windows Server 2022 / 2025, x64. Windows Server Core
 et Desktop Experience utilisent le même installateur. Prévoir une adresse stable, un volume NTFS local
 avec assez d'espace pour les caches et une connexion Internet pour télécharger les composants.
-Lancer PowerShell 5.1 ou supérieur **en administrateur** depuis les sources du projet :
+Lancer PowerShell 5.1 ou supérieur **en administrateur**, récupérer le projet (archive ZIP ou `git clone`)
+puis lancer l'installateur du dossier `windows` :
 
 ```powershell
+Invoke-WebRequest https://github.com/ShaNouhAr/local-repo/archive/refs/heads/main.zip -OutFile local-repo.zip
+Expand-Archive local-repo.zip -DestinationPath .
+cd local-repo-main
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\windows\install.ps1
 ```
 

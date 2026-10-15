@@ -127,7 +127,7 @@ for _ in 1 2 3; do
     sleep 1
     curl -fsS --max-time 20 --proxy http://127.0.0.1:3142 http://deb.debian.org/debian/dists/stable/Release -o "$work/debian-release"
 done
-./remove.sh --purge -y
+linux/remove.sh --purge -y
 [ ! -e /opt/local-repo ]
 [ ! -e /etc/local-repo ]
 [ ! -e /srv/local-repo ]
@@ -149,7 +149,7 @@ if [ "${VERSION_ID%%.*}" = 8 ]; then
     ./install.sh --host 10.0.2.15 --password "$PW" --no-flatpak --no-rpm > "$install_log" 2>&1
     health
     nginx -V 2>&1 | grep -- '--with-stream_ssl_preread_module' >/dev/null
-    ./remove.sh --purge -y
+    linux/remove.sh --purge -y
     if rpm -q nginx >/dev/null; then echo 'Le nginx ajouté doit être retiré' >&2; exit 1; fi
     module_after=absent
     if [ -f /etc/dnf/modules.d/nginx.module ]; then module_after=$(sha256sum /etc/dnf/modules.d/nginx.module | cut -d' ' -f1); fi

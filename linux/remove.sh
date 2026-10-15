@@ -62,7 +62,7 @@ systemctl daemon-reload
 
 say "Configuration nginx"
 if [ -f "$ETC/install-state/nginx-rocky-original.conf" ]; then
-    # shellcheck source=lib/rocky.sh
+    # shellcheck source=linux/lib/rocky.sh
     . "$PREFIX/lib/rocky.sh"
     rocky_remove
 fi

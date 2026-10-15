@@ -1,9 +1,10 @@
 .git
 .github
-.env
+**/.env
 **/__pycache__
 **/*.pyc
 test-results
 local-repo
 docs
 tests
+windows

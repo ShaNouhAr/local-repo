@@ -2,24 +2,8 @@
 
 [![CI](https://github.com/ShaNouhAr/local-repo/actions/workflows/ci.yml/badge.svg)](https://github.com/ShaNouhAr/local-repo/actions/workflows/ci.yml)
 
-<!-- seulement:main -->
 Serveur de dépôts et de caches pour un réseau d'entreprise, installé sur Debian, Ubuntu, Rocky Linux ou Windows
 (installation native, recommandée), dans un **conteneur LXC Proxmox VE** ou avec **Docker Compose** :
-<!-- /seulement:main -->
-<!-- branche:linux
-> Branche **linux** : installation sur Debian, Ubuntu, Rocky Linux, en conteneur LXC Proxmox ou avec Docker.
-> Serveur Windows : branche [`windows`](https://github.com/ShaNouhAr/local-repo/tree/windows). Développement et tests : branche [`main`](https://github.com/ShaNouhAr/local-repo).
-
-Serveur de dépôts et de caches pour un réseau d'entreprise, installé sur Debian, Ubuntu ou Rocky Linux
-(installation native, recommandée), dans un **conteneur LXC Proxmox VE** ou avec **Docker Compose** :
--->
-<!-- branche:windows
-> Branche **windows** : serveur natif pour Windows 11 et Windows Server 2022 / 2025.
-> Serveur Linux, LXC ou Docker : branche [`linux`](https://github.com/ShaNouhAr/local-repo/tree/linux). Développement et tests : branche [`main`](https://github.com/ShaNouhAr/local-repo).
-
-Serveur de dépôts et de caches pour un réseau d'entreprise, installé nativement sur **Windows 11 ou
-Windows Server 2022 / 2025** (service Windows, sans Linux, WSL, Hyper-V ni Docker) :
--->
 
 - **Paquets Linux** : cache APT pour Debian / Ubuntu (apt-cacher-ng sous Linux, nginx sous Windows)
   et dépôts APT signés pour vos propres `.deb`, séparés par distribution et version.
@@ -35,20 +19,34 @@ Windows Server 2022 / 2025** (service Windows, sans Linux, WSL, Hyper-V ni Docke
 | ![Vue d'ensemble, thème OLED](docs/dashboard-oled.png) | ![Vue d'ensemble, thème clair](docs/dashboard-light.png) |
 | ![Catalogue de logiciels Windows](docs/apps.png) | ![Cache Windows Update](docs/windows-update.png) |
 
-<!-- seulement:main -->
-**Télécharger seulement ce qu'il faut** : la branche [`linux`](https://github.com/ShaNouhAr/local-repo/tree/linux) contient l'installation
-Linux (Debian, Ubuntu, Rocky, LXC Proxmox, Docker), la branche [`windows`](https://github.com/ShaNouhAr/local-repo/tree/windows) le serveur
-Windows ([archive ZIP](https://github.com/ShaNouhAr/local-repo/archive/refs/heads/windows.zip)). Elles sont générées depuis `main` à chaque
-version ; le développement, les tests et la CI se font sur `main`.
-<!-- /seulement:main -->
+## Choisir son installation
 
-## Installation
+| Serveur | Systèmes | Installation | Guide |
+|---|---|---|---|
+| **Linux natif** (recommandé) | Debian 12 / 13, Ubuntu 22.04 / 24.04 / 26.04, Rocky Linux 8 / 9 / 10 | `sudo ./install.sh` | [docs/linux.md](docs/linux.md) |
+| **Windows natif** | Windows 11, Windows Server 2022 / 2025 | `windows\install.ps1` | [docs/windows.md](docs/windows.md) |
+| Conteneur LXC | Proxmox VE 7 / 8 / 9 | `linux/lxc/proxmox-lxc.sh` | [docs/linux.md](docs/linux.md) |
+| Docker | Docker Engine 26+ et Compose v2 | `linux/docker/` | [docs/linux.md](docs/linux.md) |
 
-<!-- seulement:linux -->
-### Native sur Linux
+Le portail, les dépôts et les caches sont les mêmes partout ; seul le dépôt Flatpak local demande un
+serveur Linux.
+
+```text
+portal/     portail web et scripts des postes, communs à Linux et Windows
+conf/       gabarits nginx communs
+linux/      installateur Linux (install.sh, remove.sh), outils d'administration, Docker, conteneur LXC
+windows/    installateur Windows (install.ps1, remove.ps1), service Windows, composants vérifiés
+docs/       guides Linux et Windows
+tests/      tests unitaires et de bout en bout (VM Linux, Windows Server)
+install.sh  raccourci vers linux/install.sh
+```
+
+## Serveur Linux
+
+### Installation native (recommandée)
 
 ```bash
-git clone --branch linux https://github.com/ShaNouhAr/local-repo.git
+git clone https://github.com/ShaNouhAr/local-repo.git
 cd local-repo
 sudo ./install.sh
 ```
@@ -80,39 +78,12 @@ Options principales (toutes : `sudo ./install.sh --help`) :
 | `--tls-cert F --tls-key F` | certificat d'entreprise au lieu de l'autorité locale |
 | `--backup-keep N` | sauvegardes quotidiennes gardées (défaut 3, 0 = aucune) |
 
-<!-- /seulement:linux -->
-
-<!-- seulement:windows -->
-### Native sur Windows
-
-Windows 11 Professionnel / Entreprise et Windows Server 2022 / 2025, en x64, avec PowerShell 5.1
-ou supérieur. Dans une console PowerShell **administrateur**, depuis les sources du projet :
-
-```powershell
-Invoke-WebRequest https://github.com/ShaNouhAr/local-repo/archive/refs/heads/windows.zip -OutFile local-repo.zip
-Expand-Archive local-repo.zip -DestinationPath .
-cd local-repo-windows
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\windows\install.ps1
-```
-
-L'application tourne dans le service Windows `local-repo`, avec ses composants Windows natifs :
-Python et nginx ; les dépôts sont signés par le programme lui-même (OpenPGP). Aucune VM Linux, WSL,
-Hyper-V ou installation Docker n'est nécessaire.
-Relancer le même script met à jour le programme en conservant les comptes, les clés et les dépôts.
-
-Les dépôts APT/RPM signés, les caches APT/RPM/Flathub, le catalogue Windows et Windows Update
-sont disponibles. Le **dépôt Flatpak local** reste réservé aux serveurs Linux. Pour un réseau important,
-consulter les limites du nginx Windows et le dimensionnement dans le [guide Windows](docs/windows.md).
-
-<!-- /seulement:windows -->
-
-<!-- seulement:linux -->
 ### Conteneur LXC sur Proxmox VE
 
 Sur n'importe quel hôte Proxmox VE 7, 8 ou 9, en root :
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/ShaNouhAr/local-repo/main/lxc/proxmox-lxc.sh
+curl -fsSLO https://raw.githubusercontent.com/ShaNouhAr/local-repo/main/linux/lxc/proxmox-lxc.sh
 bash proxmox-lxc.sh                                   # DHCP, 100 Go, 2 processeurs, 2 Go de mémoire
 bash proxmox-lxc.sh --ip 192.168.10.20/24 --gw 192.168.10.1 --disk 300 -- --allow "192.168.10.0/24"
 ```
@@ -127,27 +98,96 @@ l'adresse, l'empreinte de l'autorité et le mot de passe initial. Mise à jour :
 
 ```bash
 git clone https://github.com/ShaNouhAr/local-repo.git
-cd local-repo
+cd local-repo/linux/docker
 cp .env.example .env          # réglages : LR_HOST, LR_ALLOW, LR_PROXY, LR_WU…
 docker compose up -d --build
 docker compose logs local-repo   # adresse, empreinte de l'autorité, mot de passe initial de « admin »
 ```
 
 Même portail, mêmes fonctions et même configuration que l'installation native : au démarrage, le
-conteneur applique les variables de `.env` avec `install.sh --container`, puis `supervisord` lance nginx,
+conteneur applique les variables de `.env` avec `linux/install.sh --container`, puis `supervisord` lance nginx,
 apt-cacher-ng, le portail et les tâches périodiques. Le conteneur utilise le **réseau de l'hôte** (ports
 8443, 8088, 3142, et 80/443 pour Windows Update) : ne pas l'associer à une installation native sur la même
 machine. Les données sont dans des volumes Docker (`LR_DATA_DIR` : dossier de l'hôte pour les dépôts et
-caches). Mise à jour : `git pull && docker compose up -d --build`.
+caches). Mise à jour : `git pull && docker compose up -d --build` (dans `linux/docker`).
 
 L'installation native reste recommandée en production : elle confine chaque service avec systemd
 (détails dans [SECURITY.md](SECURITY.md)). Docker Engine 26 ou plus récent avec Compose v2 (validé avec
 les paquets `docker.io` et `docker-compose` de Debian 13).
 
 Déploiement en entreprise (réseau, GPO, proxy, sauvegardes, supervision, LXC, Docker, dépannage) :
-**[guide d'exploitation](docs/EXPLOITATION.md)**.
+**[guide Linux](docs/linux.md)**.
 
-<!-- /seulement:linux -->
+### Administration
+
+```bash
+sudo local-repo-user list | add NOM [admin|viewer] | passwd NOM   # comptes (accès perdu : passwd admin)
+sudo local-repo-backup create | list | restore ARCHIVE             # sauvegardes
+sudo /opt/local-repo/remove.sh [--purge]                           # désinstallation
+```
+
+Dans un conteneur LXC, depuis l'hôte Proxmox : `pct exec N -- local-repo-user list`, etc.
+Avec Docker, les mêmes commandes passent par le conteneur : `docker compose exec local-repo local-repo-user list`,
+`docker compose exec local-repo local-repo-backup create`. Désinstallation : `docker compose down`
+(ajouter `-v` pour effacer aussi les données).
+
+### Architecture
+
+| Élément | Emplacement | Port |
+|---|---|---|
+| Portail (Flask + gunicorn, unité `local-repo-portal`, confinée) | `/opt/local-repo` | 8089, local |
+| nginx : interface et fichiers des postes (HTTPS) | `/etc/nginx/sites-available/local-repo-portal.conf` | 8443 |
+| nginx : amorçage HTTP (optionnel) | même fichier | 8088 |
+| nginx : cache Windows Update, relais HTTPS (SNI) | `local-repo-wucache.conf`, `modules-enabled/99-local-repo-stream.conf` | 80, 443 |
+| apt-cacher-ng | `/var/cache/apt-cacher-ng` | 3142 |
+| Données : dépôts, catalogue, caches | `/srv/local-repo` | — |
+| Base, clé GPG, statistiques | `/var/lib/local-repo` | — |
+| Configuration, autorité et certificats | `/etc/local-repo` | — |
+
+Sur Debian / Ubuntu, les dépendances viennent des dépôts officiels (`nginx`, `apt-cacher-ng`, `python3-flask`, `gunicorn`,
+`gnupg`, `flatpak`, `ostree`, `createrepo-c`, `rpm`) : les correctifs de sécurité arrivent avec `apt upgrade`.
+Sur Rocky, les paquets système sont suivis par `dnf upgrade` ; le runtime Python isolé et les composants
+compilés sont figés et mis à jour avec les versions de local-repo.
+
+## Serveur Windows
+
+### Installation
+
+Windows 11 Professionnel / Entreprise et Windows Server 2022 / 2025, en x64, avec PowerShell 5.1
+ou supérieur. Dans une console PowerShell **administrateur**, depuis les sources du projet :
+
+```powershell
+Invoke-WebRequest https://github.com/ShaNouhAr/local-repo/archive/refs/heads/main.zip -OutFile local-repo.zip
+Expand-Archive local-repo.zip -DestinationPath .
+cd local-repo-main
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\windows\install.ps1
+```
+
+L'application tourne dans le service Windows `local-repo`, avec ses composants Windows natifs :
+Python et nginx ; les dépôts sont signés par le programme lui-même (OpenPGP). Aucune VM Linux, WSL,
+Hyper-V ou installation Docker n'est nécessaire.
+Relancer le même script met à jour le programme en conservant les comptes, les clés et les dépôts.
+
+Les dépôts APT/RPM signés, les caches APT/RPM/Flathub, le catalogue Windows et Windows Update
+sont disponibles. Le **dépôt Flatpak local** reste réservé aux serveurs Linux. Pour un réseau important,
+consulter les limites du nginx Windows et le dimensionnement dans le [guide Windows](docs/windows.md).
+
+### Administration
+
+Dans une console administrateur :
+
+```powershell
+$lr = "$env:ProgramFiles\local-repo\local-repo.cmd"
+& $lr user list ; & $lr user passwd admin ; & $lr backup create ; & $lr status
+powershell -ExecutionPolicy Bypass -File "$env:ProgramFiles\local-repo\windows\remove.ps1"   # -Purge : tout effacer
+```
+
+### Architecture
+
+Service `local-repo` (compte `NT SERVICE\local-repo`) qui lance nginx et le portail
+(Waitress, 8089 en local) ; programme dans `%ProgramFiles%\local-repo`, données, configuration et journaux
+dans `%ProgramData%\local-repo`. Ports : 8443 (HTTPS), 8088 (amorçage HTTP), 3142 (cache APT), 80 et 443
+(Windows Update). Détails : [guide Windows](docs/windows.md).
 
 ## Brancher les postes
 
@@ -192,65 +232,15 @@ n'existe pas, il s'arrête avant de remplacer la configuration. Les dérivées p
 L'action *Copier vers un autre dépôt* conserve les originaux. Vérifiez la compatibilité de chaque paquet,
 puis relancez le script sur les postes. `--legacy` permet de conserver explicitement l'ancien dépôt partagé.
 
-## Administration
+## Supervision
 
-<!-- seulement:linux -->
-```bash
-sudo local-repo-user list | add NOM [admin|viewer] | passwd NOM   # comptes (accès perdu : passwd admin)
-sudo local-repo-backup create | list | restore ARCHIVE             # sauvegardes
-sudo /opt/local-repo/remove.sh [--purge]                           # désinstallation
-```
-
-Dans un conteneur LXC, depuis l'hôte Proxmox : `pct exec N -- local-repo-user list`, etc.
-Avec Docker, les mêmes commandes passent par le conteneur : `docker compose exec local-repo local-repo-user list`,
-`docker compose exec local-repo local-repo-backup create`. Désinstallation : `docker compose down`
-(ajouter `-v` pour effacer aussi les données).
-
-<!-- /seulement:linux -->
-<!-- seulement:windows -->
-Serveur Windows, dans une console administrateur :
-
-```powershell
-$lr = "$env:ProgramFiles\local-repo\local-repo.cmd"
-& $lr user list ; & $lr user passwd admin ; & $lr backup create ; & $lr status
-powershell -ExecutionPolicy Bypass -File "$env:ProgramFiles\local-repo\windows\remove.ps1"   # -Purge : tout effacer
-```
-
-<!-- /seulement:windows -->
 Supervision : `https://<ip>:8443/metrics` (Prometheus) et `/healthz`.
-
-## Architecture
-
-<!-- seulement:linux -->
-| Élément | Emplacement | Port |
-|---|---|---|
-| Portail (Flask + gunicorn, unité `local-repo-portal`, confinée) | `/opt/local-repo` | 8089, local |
-| nginx : interface et fichiers des postes (HTTPS) | `/etc/nginx/sites-available/local-repo-portal.conf` | 8443 |
-| nginx : amorçage HTTP (optionnel) | même fichier | 8088 |
-| nginx : cache Windows Update, relais HTTPS (SNI) | `local-repo-wucache.conf`, `modules-enabled/99-local-repo-stream.conf` | 80, 443 |
-| apt-cacher-ng | `/var/cache/apt-cacher-ng` | 3142 |
-| Données : dépôts, catalogue, caches | `/srv/local-repo` | — |
-| Base, clé GPG, statistiques | `/var/lib/local-repo` | — |
-| Configuration, autorité et certificats | `/etc/local-repo` | — |
-
-Sur Debian / Ubuntu, les dépendances viennent des dépôts officiels (`nginx`, `apt-cacher-ng`, `python3-flask`, `gunicorn`,
-`gnupg`, `flatpak`, `ostree`, `createrepo-c`, `rpm`) : les correctifs de sécurité arrivent avec `apt upgrade`.
-Sur Rocky, les paquets système sont suivis par `dnf upgrade` ; le runtime Python isolé et les composants
-compilés sont figés et mis à jour avec les versions de local-repo.
-<!-- /seulement:linux -->
-<!-- seulement:windows -->
-Serveur Windows : service `local-repo` (compte `NT SERVICE\local-repo`) qui lance nginx et le portail
-(Waitress, 8089 en local) ; programme dans `%ProgramFiles%\local-repo`, données, configuration et journaux
-dans `%ProgramData%\local-repo`. Ports : 8443 (HTTPS), 8088 (amorçage HTTP), 3142 (cache APT), 80 et 443
-(Windows Update). Détails : [guide Windows](docs/windows.md).
-<!-- /seulement:windows -->
 
 ## Sécurité
 
 Comptes à rôles, HTTPS, CSP stricte, CSRF, blocage des tentatives, audit, filtrage réseau, processus
 confiné, dépôts signés. Détails et limites : [SECURITY.md](SECURITY.md).
 
-<!-- seulement:main -->
 ## Développement
 
 ```bash
@@ -275,19 +265,6 @@ Les images des VM sont vérifiées par leur empreinte avant le démarrage.
 Les tests couvrent la mise à jour depuis 1.0.0 sur les systèmes déjà pris en charge, la détection du poste,
 l'isolation des paquets, Flatpak, une restauration et la désinstallation. Le workflow est publié et actif sur GitHub.
 Historique : [CHANGELOG.md](CHANGELOG.md).
-<!-- /seulement:main -->
-<!-- branche:linux
-## Développement
-
-Cette branche est générée depuis [`main`](https://github.com/ShaNouhAr/local-repo) à chaque version : proposer les modifications sur `main`,
-où se trouvent les tests et la CI. Historique : [CHANGELOG.md](CHANGELOG.md).
--->
-<!-- branche:windows
-## Développement
-
-Cette branche est générée depuis [`main`](https://github.com/ShaNouhAr/local-repo) à chaque version : proposer les modifications sur `main`,
-où se trouvent les tests et la CI (Windows Server 2022 et 2025). Historique : [CHANGELOG.md](CHANGELOG.md).
--->
 
 ## Licence
 

@@ -38,5 +38,5 @@ if [ -n "${LR_RPM_CACHE_SIZE:-}" ]; then args+=(--rpm-cache-size "$LR_RPM_CACHE_
 # Certificat d'entreprise : fichiers montés en lecture seule dans le conteneur.
 if [ -n "${LR_TLS_CERT:-}${LR_TLS_KEY:-}" ]; then args+=(--tls-cert "${LR_TLS_CERT:-}" --tls-key "${LR_TLS_KEY:-}"); fi
 
-/usr/src/local-repo/install.sh "${args[@]}"
+/usr/src/local-repo/linux/install.sh "${args[@]}"
 exec /usr/bin/supervisord -c /etc/supervisor/local-repo.conf

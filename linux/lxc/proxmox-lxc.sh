@@ -2,7 +2,7 @@
 # local-repo dans un conteneur LXC Proxmox VE (7, 8, 9) : crée un conteneur Debian non privilégié et y fait
 # l'installation native (install.sh). À lancer en root sur n'importe quel hôte Proxmox :
 #
-#   curl -fsSLO https://raw.githubusercontent.com/ShaNouhAr/local-repo/main/lxc/proxmox-lxc.sh
+#   curl -fsSLO https://raw.githubusercontent.com/ShaNouhAr/local-repo/main/linux/lxc/proxmox-lxc.sh
 #   bash proxmox-lxc.sh [options] [-- options d'install.sh]
 #   bash proxmox-lxc.sh --ctid N --update      met à jour le conteneur N (dernière version publiée)
 #
@@ -29,7 +29,7 @@ warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31mErreur :\033[0m %s\n' "$*" >&2; exit 1; }
 usage() {
     if [ -f "$0" ]; then sed -n '2,/^set -euo/{/^#/p;}' "$0" | sed 's/^# \{0,1\}//'
-    else echo "Aide : https://github.com/$REPO/blob/main/docs/EXPLOITATION.md (conteneur LXC Proxmox)"; fi
+    else echo "Aide : https://github.com/$REPO/blob/main/docs/linux.md (conteneur LXC Proxmox)"; fi
 }
 
 [ "$(id -u)" -eq 0 ] || die "lancez ce script en root sur l'hôte Proxmox."
@@ -43,8 +43,8 @@ if [ -z "$PVE_MAJOR" ] || [ "$PVE_MAJOR" -lt 7 ]; then die "Proxmox VE 7 ou plus
 # Copie locale du projet : celle qui contient ce script, s'il est lancé depuis le projet.
 SOURCE=""
 if [ -f "${BASH_SOURCE[0]:-}" ]; then
-    here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-    if [ -f "$here/install.sh" ] && [ -f "$here/lxc/proxmox-lxc.sh" ]; then SOURCE=$here; fi
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+    if [ -f "$here/install.sh" ] && [ -f "$here/linux/lxc/proxmox-lxc.sh" ]; then SOURCE=$here; fi
 fi
 
 CTID="" NAME=local-repo STORAGE="" DISK=100 CORES=2 MEMORY=2048 BRIDGE="" VLAN="" IP=dhcp GW="" DNS=""

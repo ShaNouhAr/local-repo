@@ -1,5 +1,6 @@
-# local-repo en conteneur : voir docker-compose.yml et la section Docker du README.
-# La configuration est faite au démarrage par install.sh --container (docker/entrypoint.sh).
+# local-repo en conteneur : voir docker-compose.yml (même dossier) et la section Docker du README.
+# Contexte de construction : la racine du projet. La configuration est faite au démarrage par
+# linux/install.sh --container (linux/docker/entrypoint.sh).
 FROM debian:13-slim
 LABEL org.opencontainers.image.title="local-repo" \
       org.opencontainers.image.source="https://github.com/ShaNouhAr/local-repo" \
@@ -21,9 +22,9 @@ RUN groupadd --system --gid 990 localrepo \
  && rm -rf /var/lib/apt/lists/* /etc/nginx/sites-enabled/default /usr/sbin/policy-rc.d
 
 COPY . /usr/src/local-repo
-RUN install -m 755 /usr/src/local-repo/docker/entrypoint.sh /usr/local/sbin/local-repo-entrypoint \
- && install -m 755 /usr/src/local-repo/docker/local-repo-cron /usr/local/sbin/local-repo-cron \
- && install -m 644 /usr/src/local-repo/docker/logrotate.conf /etc/local-repo-logrotate.conf \
+RUN install -m 755 /usr/src/local-repo/linux/docker/entrypoint.sh /usr/local/sbin/local-repo-entrypoint \
+ && install -m 755 /usr/src/local-repo/linux/docker/local-repo-cron /usr/local/sbin/local-repo-cron \
+ && install -m 644 /usr/src/local-repo/linux/docker/logrotate.conf /etc/local-repo-logrotate.conf \
  && install -d /var/lib/logrotate
 
 ENV LR_RUNTIME=container
