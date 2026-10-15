@@ -214,6 +214,7 @@ if [ "$WU_ENABLED" = 1 ]; then
 fi
 
 # ---------------------------------------------------------------- paquets
+stash_self_client
 if [ "$FLATPAK_ENABLED" = 1 ]; then PACKAGES+=(flatpak ostree); fi
 if [ "$RPM_ENABLED" = 1 ]; then PACKAGES+=(createrepo-c rpm); fi
 mkdir -p "$STATE"

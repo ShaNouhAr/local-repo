@@ -1,6 +1,27 @@
 #!/bin/bash
 # Migration local-repo -> loco. Chargé par l'installateur, avant de lire ses réglages.
 # Les déplacements gardent les UID, clés et données ; une copie de secours est créée avant l'arrêt.
+stash_self_client() {
+    # Un serveur peut lui-même être branché comme poste : APT doit rester joignable pendant l'arrêt du cache.
+    [ -z "${LOCO_CLIENT_STASH:-}" ] || return 0
+    LOCO_CLIENT_STASH=$(mktemp -d /var/tmp/loco-client-migration.XXXXXX)
+    restore_self_client() {
+        local file
+        for file in "$LOCO_CLIENT_STASH"/*; do
+            [ -f "$file" ] || continue
+            case "${file##*/}" in
+                01*) mv "$file" /etc/apt/apt.conf.d/ ;;
+                *) mv "$file" /etc/apt/sources.list.d/ ;;
+            esac
+        done
+        rmdir "$LOCO_CLIENT_STASH"
+    }
+    trap restore_self_client EXIT
+    for path in /etc/apt/sources.list.d/{local-repo,loco}.{list,sources} /etc/apt/apt.conf.d/01{local-repo,loco}-proxy; do
+        if [ -f "$path" ]; then mv "$path" "$LOCO_CLIENT_STASH/"; fi
+    done
+}
+
 migrate_local_repo() {
     local old=/etc/local-repo legacy_data legacy_backup old_uid new_uid path unit
     [ -f "$old/local-repo.conf" ] || return 0
@@ -20,6 +41,7 @@ migrate_local_repo() {
     if [ -x /usr/local/sbin/local-repo-backup ]; then
         /usr/local/sbin/local-repo-backup create
     fi
+    stash_self_client
     if [ "$CONTAINER" = 0 ]; then
         for unit in local-repo-portal local-repo-stats.timer local-repo-nginx.path local-repo-backup.timer local-repo-acng-maintenance.timer; do
             systemctl disable --now "$unit" >/dev/null 2>&1 || true

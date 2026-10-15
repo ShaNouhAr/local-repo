@@ -18,7 +18,7 @@ if [ -n "$legacy" ]; then
     docker exec "$legacy" local-repo-backup create
     docker stop "$legacy" >/dev/null
     created=()
-    # shellcheck disable=SC2329  # appelée par le trap EXIT pendant la migration.
+    # shellcheck disable=SC2317,SC2329  # appelée par le trap EXIT pendant la migration.
     rollback() {
         rc=$?
         if [ "$rc" -ne 0 ]; then
