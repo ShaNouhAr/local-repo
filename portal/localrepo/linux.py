@@ -10,7 +10,7 @@ import threading
 from flask import abort, flash, render_template, request
 from werkzeug.utils import secure_filename
 
-from . import app, config, debpkg
+from . import app, config, debpkg, signing
 from .auth import admin_required, audit, login_required
 from .db import transaction
 from .util import back, download, explain, read_stats, service_active, sha256_of
@@ -119,9 +119,12 @@ def rebuild_apt(repository=LEGACY):
                                               "stable" if repository == LEGACY else suite, suite)
             with open(os.path.join(stage, "Release"), "wb") as f:
                 f.write(release)
-            for args in (["--clearsign", "-o", "InRelease"], ["-abs", "-o", "Release.gpg"]):
-                subprocess.run([config.GPG, "--batch", "--yes"] + args + ["Release"], cwd=stage,
-                               env=env, check=True, capture_output=True, timeout=60)
+            if config.WINDOWS:
+                signing.sign_release(stage)
+            else:
+                for args in (["--clearsign", "-o", "InRelease"], ["-abs", "-o", "Release.gpg"]):
+                    subprocess.run([config.GPG, "--batch", "--yes"] + args + ["Release"], cwd=stage,
+                                   env=env, check=True, capture_output=True, timeout=60)
             for name in ("Packages", "Packages.gz", "Release", "Release.gpg", "InRelease"):
                 os.chmod(os.path.join(stage, name), 0o644)
                 os.replace(os.path.join(stage, name), os.path.join(root, name))

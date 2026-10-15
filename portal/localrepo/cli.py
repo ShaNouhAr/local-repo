@@ -119,8 +119,12 @@ def main(argv):
         import subprocess
         from . import rpmrepo
         os.makedirs(config.RPM_DIR, exist_ok=True)
-        key = subprocess.run([config.GPG, "--batch", "--armor", "--export"], env=dict(os.environ, GNUPGHOME=config.GNUPGHOME),
-                             check=True, capture_output=True).stdout
+        if config.WINDOWS:
+            from . import signing
+            key = signing.public_key(armored=True)
+        else:
+            key = subprocess.run([config.GPG, "--batch", "--armor", "--export"],
+                                 env=dict(os.environ, GNUPGHOME=config.GNUPGHOME), check=True, capture_output=True).stdout
         tmp = os.path.join(config.RPM_DIR, ".local-repo.asc.tmp")
         with open(tmp, "wb") as f:
             f.write(key)

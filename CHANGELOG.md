@@ -1,8 +1,9 @@
 # Journal des versions
 
-## 1.8.0 — 2026-10-14
+## 1.8.0 — 2026-10-15
 
-- Serveur natif Windows 11 Professionnel / Entreprise et Windows Server 2022 / 2025 : service Windows, Python embarqué, nginx, Waitress et GnuPG, sans Linux ni Hyper-V.
+- Serveur natif Windows 11 Professionnel / Entreprise et Windows Server 2022 / 2025 : service Windows, Python embarqué, nginx et Waitress, sans Linux ni Hyper-V. Signatures OpenPGP des dépôts
+  (clé RSA 4096) produites en Python : pas de GnuPG à installer, aucune modification du `PATH`.
 - Installateur PowerShell relançable, composants vérifiés par SHA-256, compte de service virtuel, ACL et règles du pare-feu limitées aux réseaux autorisés.
 - Dépôts APT et RPM indexés et signés sous Windows avec des lecteurs Python, comparés aux outils natifs Linux ; lecture des métadonnées sans charger tout le paquet en mémoire.
 - Cache APT nginx, caches RPM/Flathub/Windows Update et catalogue Windows ; le dépôt Flatpak local reste réservé à Linux.

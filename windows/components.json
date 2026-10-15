@@ -1,5 +1,5 @@
 {
-  "_comment": "Composants téléchargés par install.ps1 : sources officielles, empreintes SHA-256 vérifiées avant usage. nginx et GnuPG : signatures PGP des éditeurs vérifiées lors de la mise à jour de ce fichier.",
+  "_comment": "Composants téléchargés par install.ps1 : sources officielles, empreintes SHA-256 vérifiées avant usage. nginx : signature PGP de l'éditeur vérifiées lors de la mise à jour de ce fichier.",
   "python": {
     "version": "3.14.8",
     "url": "https://www.python.org/ftp/python/3.14.8/python-3.14.8-embed-amd64.zip",
@@ -9,11 +9,6 @@
     "version": "1.30.5",
     "url": "https://nginx.org/download/nginx-1.30.5.zip",
     "sha256": "e5afe28b6a50bec92c478bfe1a4d3758206b80fb77159277bc5c4e88955c2a35"
-  },
-  "gnupg": {
-    "version": "2.5.24",
-    "url": "https://gnupg.org/ftp/gcrypt/binary/gnupg-w32-2.5.24_20260923.exe",
-    "sha256": "ea6f9dee2cccd83287432625b8b399173805add81d27067fcaf019c0c4da1ad8"
   },
   "winsw": {
     "version": "2.12.0",

@@ -5,9 +5,9 @@
     Désinstalle local-repo (serveur Windows). Par défaut, garde les données, la configuration, les comptes
     et les clés pour une réinstallation ; -Purge efface aussi tout cela (dépôts, caches, sauvegardes).
 .EXAMPLE
-    & 'C:\Program Files\local-repo\windows\remove.ps1'
+    powershell -ExecutionPolicy Bypass -File "C:\Program Files\local-repo\windows\remove.ps1"
 .EXAMPLE
-    & 'C:\Program Files\local-repo\windows\remove.ps1' -Purge
+    powershell -ExecutionPolicy Bypass -File "C:\Program Files\local-repo\windows\remove.ps1" -Purge
 #>
 [CmdletBinding()]
 param([switch]$Purge, [switch]$Yes)
@@ -43,12 +43,6 @@ Say 'Règles du pare-feu'
 Get-NetFirewallRule -Group 'local-repo' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 
 Say 'Programme'
-$gpgUninstall = Join-Path $Program 'gnupg\gnupg-uninstall.exe'
-if (Test-Path $gpgUninstall) {
-    Start-Process -FilePath $gpgUninstall -ArgumentList '/S' -Wait
-    # Le désinstalleur NSIS se recopie puis rend la main : on attend qu'il ait fini.
-    for ($i = 0; $i -lt 60 -and (Test-Path (Join-Path $Program 'gnupg\bin\gpg.exe')); $i++) { Start-Sleep 1 }
-}
 if (Test-Path $Program) {
     # Ce script peut se trouver dans le dossier supprimé : PowerShell l'a déjà chargé.
     Remove-Item -Recurse -Force $Program -ErrorAction SilentlyContinue

@@ -10,6 +10,7 @@ import http.server
 import os
 from pathlib import Path
 import re
+import shutil
 import ssl
 import subprocess
 import sys
@@ -34,6 +35,30 @@ opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.coo
 def get(path):
     with opener.open(base + path, timeout=90) as response:
         return response.read()
+
+
+# gpgv indépendant de local-repo (celui de Git for Windows sur les machines de CI) : les signatures produites
+# en Python par le serveur sont vérifiées par un outil OpenPGP de référence.
+GPGV = next((g for g in (os.environ.get('LR_GPGV'), shutil.which('gpgv'),
+                          r'C:\Program Files\Git\usr\bin\gpgv.exe') if g and os.path.exists(g)), None)
+if GPGV is None and os.environ.get('CI'):
+    sys.exit('gpgv introuvable : vérification des signatures impossible.')
+
+
+def verify(signature, data=None):
+    if GPGV is None:
+        print('gpgv absent : signature non vérifiée sur ce poste')
+        return
+    with tempfile.TemporaryDirectory() as work:
+        keyring = Path(work, 'local-repo.gpg')
+        keyring.write_bytes(get('/apt/local-repo.gpg'))
+        Path(work, 'sig').write_bytes(signature)
+        args = [GPGV, '--keyring', str(keyring), str(Path(work, 'sig'))]
+        if data is not None:
+            Path(work, 'data').write_bytes(data)
+            args.append(str(Path(work, 'data')))
+        result = subprocess.run(args, capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
 
 
 def csrf(page):
@@ -84,10 +109,8 @@ for compression in ('xz', 'gzip', 'zstd'):
     assert gzip.decompress(get(root + 'Packages.gz')) == packages
     path = re.search(rb'^Filename: (.+)$', packages, re.M).group(1).decode()
     assert get(root + path) == (fixtures / (compression + '.deb')).read_bytes()
-    with tempfile.TemporaryDirectory() as work:
-        Path(work, 'InRelease').write_bytes(get(root + 'InRelease'))
-        subprocess.run([cfg['gpg'], '--batch', '--homedir', str(Path(cfg['state_dir'], 'gnupg')),
-                        '--verify', str(Path(work, 'InRelease'))], check=True, capture_output=True)
+    verify(get(root + 'InRelease'))
+    verify(get(root + 'Release.gpg'), get(root + 'Release'))
 print('APT gzip/xz/zstd, paquets et signatures : OK')
 
 upload('rpm', 'el9', fixtures / 'test.rpm')
@@ -96,11 +119,7 @@ ns = {'r': 'http://linux.duke.edu/metadata/repo'}
 for node in ET.fromstring(repomd).findall('r:data', ns):
     payload = get('/rpm/el9/' + node.find('r:location', ns).get('href'))
     assert hashlib.sha256(payload).hexdigest() == node.findtext('r:checksum', namespaces=ns)
-with tempfile.TemporaryDirectory() as work:
-    Path(work, 'repomd.xml').write_bytes(repomd)
-    Path(work, 'repomd.xml.asc').write_bytes(get('/rpm/el9/repodata/repomd.xml.asc'))
-    subprocess.run([cfg['gpg'], '--batch', '--homedir', str(Path(cfg['state_dir'], 'gnupg')), '--verify',
-                    str(Path(work, 'repomd.xml.asc')), str(Path(work, 'repomd.xml'))], check=True, capture_output=True)
+verify(get('/rpm/el9/repodata/repomd.xml.asc'), repomd)
 print('RPM, index et signature : OK')
 
 

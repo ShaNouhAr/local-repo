@@ -226,7 +226,6 @@ function Get-Component($Item) {
 Say 'Téléchargement et vérification des composants'
 $pythonZip = Get-Component $components.python
 $nginxZip = Get-Component $components.nginx
-$gnupgSetup = Get-Component $components.gnupg
 $winsw = Get-Component $components.winsw
 $wheels = @($components.wheels | ForEach-Object { Get-Component $_ })
 
@@ -236,9 +235,6 @@ if ($service -and $service.Status -ne 'Stopped') {
     Stop-Service $ServiceName -Force
     (Get-Service $ServiceName).WaitForStatus('Stopped', '00:01:00')
 }
-# Démons GnuPG du compte de service : arrêtés pour que la configuration (administrateur) ait la main.
-Get-Process gpg-agent, keyboxd, dirmngr -ErrorAction SilentlyContinue |
-    Where-Object { try { $_.Path -like "$Program\gnupg\*" } catch { $false } } | Stop-Process -Force
 
 # ---------------------------------------------------------------- programme
 Say "Installation du programme dans $Program"
@@ -284,7 +280,7 @@ Copy-Item (Join-Path $Source 'windows\local-repo.cmd') (Join-Path $stage 'local-
 & (Join-Path $stage 'python\python.exe') -m compileall -q (Join-Path $stage 'portal') | Out-Null
 if ($LASTEXITCODE -ne 0) { Fail 'le nouveau programme contient une erreur Python ; remplacement interrompu.' }
 
-# Remplacement du programme ; GnuPG (installé à part) est conservé.
+# Remplacement du programme.
 foreach ($d in 'python', 'nginx', 'portal', 'conf', 'windows', 'winsw') {
     $target = Join-Path $Program $d
     if (Test-Path $target) { Remove-Item -Recurse -Force $target }
@@ -292,15 +288,6 @@ foreach ($d in 'python', 'nginx', 'portal', 'conf', 'windows', 'winsw') {
 }
 Move-Item -Force (Join-Path $stage 'local-repo.cmd') (Join-Path $Program 'local-repo.cmd')
 Remove-Item -Recurse -Force $stage
-
-$gpgDir = Join-Path $Program 'gnupg'
-$gpgExe = Join-Path $gpgDir 'bin\gpg.exe'
-$gpgVersion = if (Test-Path $gpgExe) { (& $gpgExe --version | Select-Object -First 1) -replace '^.* ', '' } else { '' }
-if ($gpgVersion -ne $components.gnupg.version) {
-    Say "Installation de GnuPG $($components.gnupg.version)"
-    $p = Start-Process -FilePath $gnupgSetup -ArgumentList '/S', "/D=$gpgDir" -Wait -PassThru
-    if ($p.ExitCode -ne 0 -or -not (Test-Path $gpgExe)) { Fail "installation de GnuPG impossible (code $($p.ExitCode))." }
-}
 
 # ---------------------------------------------------------------- service et droits
 $exe = Join-Path $Program 'winsw\local-repo.exe'
@@ -347,7 +334,6 @@ $state = [ordered]@{
     max_upload = $cfg.max_upload; backup_keep = [int]$cfg.backup_keep
     program_dir = $Program; data_dir = $cfg.data_dir; backup_dir = $cfg.backup_dir
     state_dir = (Join-Path $Root 'state'); etc_dir = $Etc; log_dir = (Join-Path $Root 'logs'); nginx_dir = (Join-Path $Root 'nginx')
-    gpg = $gpgExe
 }
 New-Item -ItemType Directory -Force -Path $Etc | Out-Null
 [IO.File]::WriteAllText($ConfigPath, ($state | ConvertTo-Json -Depth 4), (New-Object Text.UTF8Encoding($false)))
@@ -425,4 +411,4 @@ if ($cfg.rpm) { Write-Host "    Famille Red Hat    : curl -fsSL $($result.admin_
 if ($cfg.flatpak) { Write-Host "    Flatpak (Flathub)  : curl -fsSL $($result.admin_url)/flatpak/setup.sh | sudo sh" }
 if ([int]$cfg.backup_keep -gt 0) { Write-Host "    Sauvegardes        : quotidiennes dans $($cfg.backup_dir) ($($cfg.backup_keep) conservées)" }
 Write-Host "    Données            : $($cfg.data_dir)"
-Write-Host "    Désinstaller       : & '$Program\windows\remove.ps1'"
+Write-Host "    Désinstaller       : powershell -ExecutionPolicy Bypass -File `"$Program\windows\remove.ps1`""

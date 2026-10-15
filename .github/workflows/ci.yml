@@ -24,6 +24,17 @@ jobs:
           shellcheck -S style -x install.sh remove.sh lib/*.sh bin/* tests/*.sh docker/entrypoint.sh docker/local-repo-cron lxc/proxmox-lxc.sh portal/templates/setup.sh portal/templates/flatpak-setup.sh portal/templates/rpm-setup.sh
           pipx run pyflakes portal tests
           docker compose config -q
+      - name: PowerShell (syntaxe des scripts Windows)
+        shell: pwsh
+        run: |
+          $errors = 0
+          foreach ($file in Get-ChildItem windows, tests -Recurse -Filter *.ps1) {
+              $found = $null
+              [void][Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$null, [ref]$found)
+              foreach ($e in $found) { Write-Host "$($file.FullName):$($e.Extent.StartLineNumber): $($e.Message)"; $errors++ }
+              if ([IO.File]::ReadAllBytes($file.FullName)[0] -ne 0xEF) { Write-Host "$($file.FullName) : UTF-8 avec BOM requis (Windows PowerShell 5.1)"; $errors++ }
+          }
+          exit $errors
       - name: Plateformes à tester
         id: platforms
         run: |

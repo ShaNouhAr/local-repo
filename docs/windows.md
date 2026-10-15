@@ -11,8 +11,9 @@ Lancer PowerShell 5.1 ou supérieur **en administrateur** depuis les sources du 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\windows\install.ps1
 ```
 
-Les archives des composants proviennent de Python, nginx, GnuPG, WinSW et PyPI ; leurs versions
-et SHA-256 sont fixés dans `windows/components.json` et vérifiés avant installation. Le Python embarqué
+Les archives des composants proviennent de Python, nginx, WinSW et PyPI ; leurs versions
+et SHA-256 sont fixés dans `windows/components.json` et vérifiés avant installation. Aucun autre logiciel
+n'est installé sur le système : ni GnuPG, ni modification du `PATH`. Le Python embarqué
 reste privé à l'application. Le service `local-repo` démarre automatiquement sous le compte virtuel
 `NT SERVICE\local-repo` ; le portail est servi par Waitress et nginx. Les tâches de sauvegarde, de
 renouvellement du certificat et de calcul des statistiques font partie du service.
@@ -57,8 +58,10 @@ L'installateur refuse les ports déjà occupés, notamment par IIS/HTTP.sys. Lib
 Les commandes du portail sont communes aux serveurs Windows et Linux. Les dépôts APT sont organisés
 par distribution et nom de version ; les dépôts RPM par version majeure `el8`, `el9`, `el10`.
 Ajouter une version Debian/Ubuntu dans l'interface ne demande pas de modifier le programme.
-Les nouveaux paquets sont indexés et signés avec GnuPG ; les signatures des éditeurs sont conservées
-pour les contenus des caches. Le cache APT Windows est fourni par nginx à la place d'apt-cacher-ng.
+Les nouveaux paquets sont indexés et signés par le programme : signatures OpenPGP (clé RSA 4096,
+`%ProgramData%\local-repo\state\signing-key.json`, lisible par le seul service et les administrateurs),
+vérifiées par les postes avec gpgv, sqv (apt de Debian 13) ou dnf comme pour un serveur Linux. Les signatures
+des éditeurs sont conservées pour les contenus des caches. Le cache APT Windows est fourni par nginx à la place d'apt-cacher-ng.
 
 Windows Update se branche par les réglages DNS proposés dans le portail. Les téléchargements HTTP
 sont mis en cache ; le HTTPS est relayé au serveur Microsoft sans déchiffrement. Aucun rôle WSUS
@@ -97,11 +100,14 @@ la page *Système* du portail.
 
 ```powershell
 # Retire le service et le programme ; garde les données, comptes, clés et sauvegardes.
-& "$env:ProgramFiles\local-repo\windows\remove.ps1"
+powershell -ExecutionPolicy Bypass -File "$env:ProgramFiles\local-repo\windows\remove.ps1"
 
 # Effacement complet, avec confirmation.
-& "$env:ProgramFiles\local-repo\windows\remove.ps1" -Purge
+powershell -ExecutionPolicy Bypass -File "$env:ProgramFiles\local-repo\windows\remove.ps1" -Purge
 ```
+
+Windows 11 bloque par défaut l'exécution des scripts PowerShell : `-ExecutionPolicy Bypass` l'autorise
+pour cette seule commande, sans changer la stratégie de la machine.
 
 Après une désinstallation simple, relancer l'installateur depuis les sources retrouve les données.
 `-Purge -Yes` permet un effacement sans interaction pour les déploiements automatisés.
@@ -116,5 +122,7 @@ Voir les [limites officielles de nginx Windows](https://nginx.org/en/docs/window
 La CI exécute l'installation native sur Windows Server 2022 et 2025, avec de vrais paquets construits
 sur Linux : imports par HTTPS, contrôle des signatures, cache APT MISS/HIT, sauvegarde/restauration,
 relance, réinstallation, désinstallation conservant les données et purge. Les lecteurs de paquets
-Python sont également comparés aux outils Debian/RPM sur Linux. Windows 11 est vérifié dans une
-machine de test distincte.
+Python sont également comparés aux outils Debian/RPM sur Linux, et les signatures OpenPGP vérifiées par
+gpg, gpgv et sqv. Windows 11 (25H2) a été vérifié dans une machine de test distincte, avec de vrais postes :
+Debian 13 (dépôt local HTTPS vérifié par sqv, paquets Debian via le cache APT) et Rocky Linux 9 (dépôt `el9`
+vérifié par dnf, BaseOS via le cache RPM), ainsi qu'une mise à jour Windows de 88 Mo servie par le cache.

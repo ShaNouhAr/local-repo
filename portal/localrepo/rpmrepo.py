@@ -13,7 +13,7 @@ import xml.etree.ElementTree as ET
 from flask import abort, flash, render_template, request
 from werkzeug.utils import secure_filename
 
-from . import app, config, rpmpkg
+from . import app, config, rpmpkg, signing
 from .auth import admin_required, audit, login_required
 from .db import transaction
 from .util import back, download, explain, read_stats, sha256_of
@@ -109,8 +109,11 @@ def rebuild(name):
             else:
                 rpmpkg.createrepo(root, stage)
             new = os.path.join(stage, "repodata")
-            subprocess.run([config.GPG, "--batch", "--yes", "--armor", "--detach-sign", "-o", "repomd.xml.asc",
-                            "repomd.xml"], cwd=new, env=env, check=True, capture_output=True, timeout=60)
+            if config.WINDOWS:
+                signing.detach_sign_armored(os.path.join(new, "repomd.xml"), os.path.join(new, "repomd.xml.asc"))
+            else:
+                subprocess.run([config.GPG, "--batch", "--yes", "--armor", "--detach-sign", "-o", "repomd.xml.asc",
+                                "repomd.xml"], cwd=new, env=env, check=True, capture_output=True, timeout=60)
             for entry in os.listdir(new):
                 os.chmod(os.path.join(new, entry), 0o644)
             os.chmod(new, 0o755)

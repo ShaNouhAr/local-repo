@@ -63,7 +63,7 @@ def apply_environment(cfg):
         "LR_RUNTIME": "windows", "LR_DATA": cfg["data_dir"], "LR_STATE": cfg["state_dir"], "LR_ETC": cfg["etc_dir"],
         "LR_HOST": cfg["host"], "LR_ADMIN_URL": https, "LR_PUBLIC_URL": http, "LR_BACKUP_DIR": cfg["backup_dir"],
         "LR_ACNG_PORT": str(cfg["acng_port"]), "LR_FLATPAK": "1" if cfg.get("flatpak", True) else "0",
-        "LR_RPM": "1" if cfg.get("rpm", True) else "0", "LR_GPG": cfg.get("gpg", "gpg"),
+        "LR_RPM": "1" if cfg.get("rpm", True) else "0",
         "LR_WU_LOG": os.path.join(cfg["log_dir"], "local-repo-wu.log"), "TEMP": tmp, "TMP": tmp,
     })
     if cfg.get("proxy"):
@@ -337,42 +337,29 @@ def ensure_secret(cfg):
             json.dump(data, f)
 
 
-def gpg(cfg, *args, check=True):
-    env = dict(os.environ, GNUPGHOME=os.path.join(cfg["state_dir"], "gnupg"))
-    return subprocess.run([cfg.get("gpg", "gpg"), *args], env=env, capture_output=True, timeout=600,
-                          creationflags=NO_WINDOW, check=check)
-
-
-def gpgconf_kill(cfg):
-    gpgconf = os.path.join(os.path.dirname(cfg.get("gpg", "gpg")), "gpgconf.exe")
-    if os.path.exists(gpgconf):
-        subprocess.run([gpgconf, "--homedir", os.path.join(cfg["state_dir"], "gnupg"), "--kill", "all"],
-                       capture_output=True, timeout=60, creationflags=NO_WINDOW)
-
-
 def configure(cfg, password=""):
     """Équivalent d'install.sh pour Windows ; relançable (mise à jour, changement de réglages)."""
     for d in ("apt/pool", "apt/repositories", "win", "rpm", "wucache", "aptcache", "rpmcache", "flatpakcache", ".tmp"):
         os.makedirs(os.path.join(cfg["data_dir"], d), exist_ok=True)
-    for d in (os.path.join(cfg["state_dir"], "gnupg"), os.path.join(cfg["state_dir"], "nginx"),
+    for d in (os.path.join(cfg["state_dir"], "nginx"),
               os.path.join(cfg["etc_dir"], "tls"), cfg["log_dir"], cfg["backup_dir"]):
         os.makedirs(d, exist_ok=True)
     ensure_secret(cfg)
-    from localrepo import app, auth, cli, config
+    from localrepo import app, auth, cli, config, signing
     from localrepo.db import transaction
     with app.app_context():
         cli.main(["init"])
-        if b"sec" not in gpg(cfg, "--batch", "--list-secret-keys", check=False).stdout:
+        # Clé OpenPGP des dépôts (RSA 4096), gérée en Python : pas de GnuPG sous Windows.
+        if signing.ensure_key():
             say("Création de la clé de signature des dépôts")
-            gpg(cfg, "--batch", "--quiet", "--pinentry-mode", "loopback", "--passphrase", "", "--quick-gen-key",
-                f"local-repo ({hostname()}) <localrepo@{hostname()}>", "rsa4096", "sign", "never")
-        gpg(cfg, "--batch", "--yes", "--export", "-o", os.path.join(config.APT_DIR, "local-repo.gpg"))
+        with open(os.path.join(config.APT_DIR, "local-repo.gpg.new"), "wb") as f:
+            f.write(signing.public_key())
+        os.replace(os.path.join(config.APT_DIR, "local-repo.gpg.new"), os.path.join(config.APT_DIR, "local-repo.gpg"))
         say("Dépôts APT et RPM")
         cli.main(["rebuild-apt"])
         cli.main(["write-maps"])
         if cfg.get("rpm", True):
             cli.main(["rpm-init"])
-    gpgconf_kill(cfg)
     say("Certificat HTTPS")
     ensure_tls(cfg)
     say("Configuration de nginx")
@@ -586,11 +573,9 @@ class Service:
         import platform
         out = nginx(self.cfg, "-v", check=False)
         self.versions["nginx"] = (out.stderr or out.stdout).strip().split("/")[-1]
-        try:
-            first = gpg(self.cfg, "--version", check=False).stdout.decode(errors="replace").splitlines()[0]
-            self.versions["gnupg"] = first.split()[-1]
-        except (OSError, IndexError, subprocess.SubprocessError):
-            pass
+        from importlib.metadata import version
+        self.versions["cryptography"] = version("cryptography")
+        self.versions["waitress"] = version("waitress")
         self.versions["windows"] = f"{platform.release()} ({platform.version()})"
 
     def tasks(self):
@@ -669,7 +654,6 @@ class Service:
             self.stop_nginx()
             server.close()
             tasks.join(10)
-            gpgconf_kill(self.cfg)
             self.write_status()
 
 

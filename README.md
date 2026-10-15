@@ -66,7 +66,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\windows\install.ps1
 ```
 
 L'application tourne dans le service Windows `local-repo`, avec ses composants Windows natifs :
-Python, nginx et GnuPG. Aucune VM Linux, WSL, Hyper-V ou installation Docker n'est nécessaire.
+Python et nginx ; les dépôts sont signés par le programme lui-même (OpenPGP). Aucune VM Linux, WSL,
+Hyper-V ou installation Docker n'est nécessaire.
 Relancer le même script met à jour le programme en conservant les comptes, les clés et les dépôts.
 
 Les dépôts APT/RPM signés, les caches APT/RPM/Flathub, le catalogue Windows et Windows Update

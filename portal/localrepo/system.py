@@ -143,7 +143,8 @@ def system():
         cert=cert_info(os.path.join(config.TLS_DIR, "server.crt")),
         ca=cert_info(os.path.join(config.TLS_DIR, "ca.crt")),
         versions=({"local-repo": config.VERSION, "nginx": package_version("nginx"),
-                   "GnuPG": package_version("gnupg"), "Python": sys.version.split()[0],
+                   "waitress": package_version("waitress"), "cryptography (signatures, TLS)": package_version("cryptography"),
+                   "Python": sys.version.split()[0],
                    "Flask": package_version("python3-flask"), "Windows": package_version("windows")}
                   if config.WINDOWS else
                   {"local-repo": config.VERSION, "nginx": package_version("nginx"),
