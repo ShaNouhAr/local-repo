@@ -1,5 +1,6 @@
 """Appliance Alpine : réglages, mise à jour vérifiée avec retour arrière, demandes de l'agent, pages du portail."""
 
+import contextlib
 import hashlib
 import io
 import json
@@ -141,9 +142,10 @@ class TestUpdateLoco(TempAgent):
         import sqlite3
         os.makedirs(locoadmin.STATE)
         db = os.path.join(locoadmin.STATE, "portal.db")
-        with sqlite3.connect(db) as conn:
+        with contextlib.closing(sqlite3.connect(db)) as conn:
             conn.execute("CREATE TABLE original(value)")
             conn.execute("INSERT INTO original VALUES ('conservé')")
+            conn.commit()
         with open(self.conf) as f:
             original = f.read()
         calls = []
@@ -153,12 +155,13 @@ class TestUpdateLoco(TempAgent):
             if len(calls) == 1:
                 with open(self.conf, "w") as f:
                     f.write("SOURCE_DIR=/bad\n")
-                with sqlite3.connect(db) as conn:
+                with contextlib.closing(sqlite3.connect(db)) as conn:
                     conn.execute("DROP TABLE original")
+                    conn.commit()
                 return 1
             with open(self.conf) as f:
                 self.assertEqual(f.read(), original)
-            with sqlite3.connect(db) as conn:
+            with contextlib.closing(sqlite3.connect(db)) as conn:
                 self.assertEqual(conn.execute("SELECT value FROM original").fetchone()[0], "conservé")
             return 0
 

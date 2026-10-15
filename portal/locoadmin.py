@@ -255,11 +255,11 @@ def _update_status(**values):
 def _run(cmd, log, **kw):
     log("$ " + " ".join(shlex.quote(c) for c in cmd))
     kw.setdefault("env", _system_env())
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                            text=True, errors="replace", **kw)
-    for line in proc.stdout:
-        log(line.rstrip("\n"))
-    return proc.wait()
+    with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                          text=True, errors="replace", **kw) as proc:
+        for line in proc.stdout:
+            log(line.rstrip("\n"))
+        return proc.wait()
 
 
 def check(log=print):
@@ -331,8 +331,10 @@ def _snapshot():
         shutil.copy2(CONF, os.path.join(work, "loco.conf"))
         db = os.path.join(STATE, "portal.db")
         if os.path.isfile(db):
-            with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as src, sqlite3.connect(os.path.join(work, "portal.db")) as dst:
+            with contextlib.closing(sqlite3.connect(f"file:{db}?mode=ro", uri=True)) as src, \
+                    contextlib.closing(sqlite3.connect(os.path.join(work, "portal.db"))) as dst:
                 src.backup(dst)
+                dst.commit()
         yield work
 
 
