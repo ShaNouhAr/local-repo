@@ -13,7 +13,8 @@ en conservant son UID et déplace la configuration, l'état et le programme vers
 Les dossiers de données et de sauvegardes personnalisés restent à leur emplacement.
 
 Les commandes sont `loco-user`, `loco-apt` et `loco-backup`. Adapter les tâches d'administration
-externes qui appelaient les anciens noms. L'adresse et les ports du portail ne changent pas.
+externes qui appelaient les anciens noms. Les métriques portent le préfixe `loco_` et l'en-tête de
+diagnostic des caches devient `X-Loco-Cache`. L'adresse et les ports du portail ne changent pas.
 Les dépôts existants conservent leur identité APT signée pour éviter un refus de changement d'Origin
 sur les postes ; les dépôts créés ensuite portent le nom loco.
 
