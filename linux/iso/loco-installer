@@ -7,6 +7,7 @@ set -u
 TERM=${TERM:-linux}
 [ "$TERM" != dumb ] || TERM=linux
 export TERM
+[ "$(id -u)" -eq 0 ] || { echo "Lancez loco-installer en root." >&2; exit 1; }
 # shellcheck source=linux/lib/appliance.sh
 . /usr/local/lib/loco/appliance.sh
 
@@ -429,9 +430,15 @@ run_install() {
 }
 
 finish() {
-    if [ "$1" = unattended ] && [ "${AFTER:-poweroff}" = poweroff ]; then
-        console "loco-installer : installation réussie, arrêt (retirez le média puis démarrez)."
-        poweroff
+    if [ "$1" = unattended ]; then
+        if [ "${AFTER:-poweroff}" = poweroff ]; then
+            console "loco-installer : installation réussie, arrêt (retirez le média puis démarrez)."
+            poweroff
+        else
+            console "loco-installer : installation réussie, redémarrage sur disque."
+            eject >/dev/null 2>&1 || true
+            reboot
+        fi
     else
         msg "Terminé" "loco $VERSION est installé sur /dev/$DISK.\n\nRetirez le média d'installation puis validez : le serveur redémarre et termine l'installation de loco (quelques minutes). L'adresse du portail et l'empreinte du certificat s'affichent ensuite sur la console."
         eject >/dev/null 2>&1 || true

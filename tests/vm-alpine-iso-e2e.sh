@@ -99,7 +99,7 @@ for mode in ${LOCO_ISO_MODES:-bios uefi}; do
     }
     boot_disk
     wait_health
-    access 'rc-service loco status; rc-service loco-agent status; test -x /usr/local/sbin/setup-loco; test -x /usr/local/sbin/loco-config; test -x /usr/local/sbin/loco-update; grep -q "https://10.0.2.15:8443" /etc/issue; test ! -e /etc/local.d/loco-installer.start; test ! -e /etc/loco-answers.conf; ! grep -q "root::" /etc/shadow; loco-config set BACKUP_KEEP=5 >/dev/null; grep -qx BACKUP_KEEP=5 /etc/loco/loco.conf; loco-backup create' \
+    access 'set -eu; rc-service loco status; rc-service loco-agent status; test -x /usr/local/sbin/setup-loco; test -x /usr/local/sbin/loco-config; test -x /usr/local/sbin/loco-update; grep -q "https://10.0.2.15:8443" /etc/issue; test ! -e /etc/local.d/loco-installer.start; test ! -e /etc/loco-answers.conf; ! grep -q "root::" /etc/shadow; loco-config set BACKUP_KEEP=5 >/dev/null; grep -qx BACKUP_KEEP=5 /etc/loco/loco.conf; loco-backup create' \
         > "$LOG_DIR/$mode-installed.log" 2>&1
     # Vérifie réellement le mot de passe choisi et les deux pages avec la CA installée.
     access "python3 - '$adminpw'" <<'PY'
@@ -123,7 +123,7 @@ PY
     boot_disk
     wait_health
     [ "$(access 'sha256sum /etc/loco/tls/ca.crt')" = "$ca" ]
-    access 'grep -qx BACKUP_KEEP=5 /etc/loco/loco.conf; poweroff'
+    access 'set -eu; grep -qx BACKUP_KEEP=5 /etc/loco/loco.conf; poweroff'
     wait "$pid"; pid=""
     echo "$mode : installation, premier démarrage, GUI/CLI et deuxième démarrage OK"
 done
