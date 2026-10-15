@@ -185,6 +185,8 @@ nets() {
 import ipaddress, sys
 out = ["127.0.0.0/8", "::1"]
 for item in sys.argv[1].split():
+    if "%" in item:
+        sys.exit("zone IPv6 non prise en charge dans les réseaux autorisés")
     try:
         n = str(ipaddress.ip_network(item, strict=False))
     except ValueError:

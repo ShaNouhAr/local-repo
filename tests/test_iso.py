@@ -20,3 +20,8 @@ class TestNetworkAnswers(unittest.TestCase):
         self.assertTrue(self.accepts('appliance_gateway_ok', '192.168.43.10/24', '192.168.43.1'))
         for gateway in ('192.168.42.1', '2001:db8::1', 'not-an-address'):
             self.assertFalse(self.accepts('appliance_gateway_ok', '192.168.43.10/24', gateway), gateway)
+
+    def test_scoped_addresses_cannot_reach_shell_configuration(self):
+        self.assertFalse(self.accepts('appliance_networks', 'fe80::%$(id)/64'))
+        self.assertFalse(self.accepts('appliance_ip_ok', 'fe80::%$(id)'))
+        self.assertTrue(self.accepts('appliance_networks', '10.0.0.0/8 fd00::/8'))

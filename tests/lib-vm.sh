@@ -82,7 +82,7 @@ vm_start() {
     for (( i=0; i<150; i++ )); do
         kill -0 "$(cat "$dir/pid")" 2>/dev/null || { cat "$LOG_DIR/$name-qemu.log" >&2; return 1; }
         if vm_ssh "$name" true 2>/dev/null; then
-            vm_ssh "$name" 'sudo cloud-init status --wait' > "$LOG_DIR/$name-cloud-init.log" 2>&1 || true
+            vm_ssh "$name" 'cloud-init status --wait' > "$LOG_DIR/$name-cloud-init.log" 2>&1 || true
             return 0
         fi
         sleep 2

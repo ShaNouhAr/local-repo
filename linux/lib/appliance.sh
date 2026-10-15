@@ -8,6 +8,7 @@ appliance_true() {
 }
 
 appliance_ip_ok() {
+    case "$1" in *%*) return 1 ;; esac
     python3 -c 'import ipaddress, sys; ipaddress.ip_address(sys.argv[1])' "$1" 2>/dev/null
 }
 
@@ -31,7 +32,7 @@ appliance_networks() {
     python3 -c '
 import ipaddress, sys
 items = sys.argv[1].split()
-if not items:
+if not items or any("%" in n for n in items):
     sys.exit(1)
 print(" ".join(str(ipaddress.ip_network(n, strict=False)) for n in items))' "$1" 2>/dev/null
 }

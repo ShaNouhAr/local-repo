@@ -64,7 +64,8 @@ class TestSettings(TempAgent):
     def test_values_that_could_reach_the_shell_are_refused(self):
         for key, value in (("UPSTREAM_PROXY", "http://$(reboot):3128"), ("UPSTREAM_PROXY", "http://a`id`:1"),
                            ("UPSTREAM_PROXY", 'http://a" b'), ("ALLOW", "10.0.0.0/8; reboot"),
-                           ("RESOLVERS", "1.1.1.1 $(id)"), ("MAX_UPLOAD", "8t"), ("BACKUP_KEEP", "0"),
+                           ("RESOLVERS", "1.1.1.1 $(id)"), ("RESOLVERS", "fe80::%$(id)"),
+                           ("ALLOW", "fe80::%$(id)/64"), ("ADMIN_ALLOW", "fe80::%eth0/64"), ("MAX_UPLOAD", "8t"), ("BACKUP_KEEP", "0"),
                            ("HTTP_ENABLED", "yes"), ("DATA", "/tmp"), ("WU_CACHE_SIZE", "50 g")):
             with self.subTest(key=key, value=value), self.assertRaises(ValueError):
                 locoadmin.validate({key: value})

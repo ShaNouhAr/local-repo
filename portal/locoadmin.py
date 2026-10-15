@@ -56,12 +56,20 @@ UPLOAD_RE = re.compile(r"^[0-9]+[kKmMgG]?$")
 PROXY_RE = re.compile(r"^http://([A-Za-z0-9._~%!*+,;=:-]+@)?([A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(:[0-9]{1,5})?/?$")
 
 
+def _unscoped(value):
+    # Les zones IPv6 ne sont pas utilisables dans les ACL / résolveurs nginx ;
+    # ipaddress accepte sinon des suffixes libres qui ne doivent pas atteindre loco.conf.
+    if "%" in value:
+        raise ValueError("zone IPv6 non prise en charge")
+    return True
+
+
 def _networks(value):
     items = value.split()
     if not items:
         raise ValueError("au moins un réseau attendu")
     try:
-        return " ".join(str(ipaddress.ip_network(n, strict=False)) for n in items)
+        return " ".join(str(ipaddress.ip_network(n, strict=False)) for n in items if _unscoped(n))
     except ValueError:
         raise ValueError("réseau invalide (ex. 192.168.1.0/24)") from None
 
@@ -71,7 +79,7 @@ def _ips(value):
     if not items:
         raise ValueError("au moins une adresse attendue")
     try:
-        return " ".join(str(ipaddress.ip_address(i)) for i in items)
+        return " ".join(str(ipaddress.ip_address(i)) for i in items if _unscoped(i))
     except ValueError:
         raise ValueError("adresse IP invalide") from None
 
