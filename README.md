@@ -2,16 +2,32 @@
 
 [![CI](https://github.com/ShaNouhAr/local-repo/actions/workflows/ci.yml/badge.svg)](https://github.com/ShaNouhAr/local-repo/actions/workflows/ci.yml)
 
+<!-- seulement:main -->
 Serveur de dépôts et de caches pour un réseau d'entreprise, installé sur Debian, Ubuntu, Rocky Linux ou Windows
 (installation native, recommandée), dans un **conteneur LXC Proxmox VE** ou avec **Docker Compose** :
+<!-- /seulement:main -->
+<!-- branche:linux
+> Branche **linux** : installation sur Debian, Ubuntu, Rocky Linux, en conteneur LXC Proxmox ou avec Docker.
+> Serveur Windows : branche [`windows`](https://github.com/ShaNouhAr/local-repo/tree/windows). Développement et tests : branche [`main`](https://github.com/ShaNouhAr/local-repo).
 
-- **Paquets Linux** : cache [apt-cacher-ng](https://www.unix-ag.uni-kl.de/~bloch/acng/) pour Debian / Ubuntu
+Serveur de dépôts et de caches pour un réseau d'entreprise, installé sur Debian, Ubuntu ou Rocky Linux
+(installation native, recommandée), dans un **conteneur LXC Proxmox VE** ou avec **Docker Compose** :
+-->
+<!-- branche:windows
+> Branche **windows** : serveur natif pour Windows 11 et Windows Server 2022 / 2025.
+> Serveur Linux, LXC ou Docker : branche [`linux`](https://github.com/ShaNouhAr/local-repo/tree/linux). Développement et tests : branche [`main`](https://github.com/ShaNouhAr/local-repo).
+
+Serveur de dépôts et de caches pour un réseau d'entreprise, installé nativement sur **Windows 11 ou
+Windows Server 2022 / 2025** (service Windows, sans Linux, WSL, Hyper-V ni Docker) :
+-->
+
+- **Paquets Linux** : cache APT pour Debian / Ubuntu (apt-cacher-ng sous Linux, nginx sous Windows)
   et dépôts APT signés pour vos propres `.deb`, séparés par distribution et version.
 - **Famille Red Hat** : cache des miroirs Rocky Linux, AlmaLinux et EPEL, et dépôts RPM signés par
   version majeure (`el8`, `el9`, `el10`) pour RHEL, Rocky Linux et AlmaLinux.
 - **Windows Update** : cache des téléchargements de mises à jour (même principe que [lancache](https://lancache.net)).
 - **Logiciels Windows** : catalogue d'installeurs (`exe`, `msi`, `msu`, `ps1`) installés en silence par PowerShell.
-- **Flatpak** : cache Flathub et dépôt Flatpak local signé pour les applications de l'entreprise.
+- **Flatpak** : cache Flathub et, sur un serveur Linux, dépôt Flatpak local signé pour les applications de l'entreprise.
 - **Portail web** en HTTPS : comptes nommés, journal d'audit, supervision, sauvegardes ; thème OLED (par défaut) ou clair.
 
 | | |
@@ -19,12 +35,20 @@ Serveur de dépôts et de caches pour un réseau d'entreprise, installé sur Deb
 | ![Vue d'ensemble, thème OLED](docs/dashboard-oled.png) | ![Vue d'ensemble, thème clair](docs/dashboard-light.png) |
 | ![Catalogue de logiciels Windows](docs/apps.png) | ![Cache Windows Update](docs/windows-update.png) |
 
+<!-- seulement:main -->
+**Télécharger seulement ce qu'il faut** : la branche [`linux`](https://github.com/ShaNouhAr/local-repo/tree/linux) contient l'installation
+Linux (Debian, Ubuntu, Rocky, LXC Proxmox, Docker), la branche [`windows`](https://github.com/ShaNouhAr/local-repo/tree/windows) le serveur
+Windows ([archive ZIP](https://github.com/ShaNouhAr/local-repo/archive/refs/heads/windows.zip)). Elles sont générées depuis `main` à chaque
+version ; le développement, les tests et la CI se font sur `main`.
+<!-- /seulement:main -->
+
 ## Installation
 
+<!-- seulement:linux -->
 ### Native sur Linux
 
 ```bash
-git clone https://github.com/ShaNouhAr/local-repo.git
+git clone --branch linux https://github.com/ShaNouhAr/local-repo.git
 cd local-repo
 sudo ./install.sh
 ```
@@ -56,12 +80,18 @@ Options principales (toutes : `sudo ./install.sh --help`) :
 | `--tls-cert F --tls-key F` | certificat d'entreprise au lieu de l'autorité locale |
 | `--backup-keep N` | sauvegardes quotidiennes gardées (défaut 3, 0 = aucune) |
 
+<!-- /seulement:linux -->
+
+<!-- seulement:windows -->
 ### Native sur Windows
 
 Windows 11 Professionnel / Entreprise et Windows Server 2022 / 2025, en x64, avec PowerShell 5.1
 ou supérieur. Dans une console PowerShell **administrateur**, depuis les sources du projet :
 
 ```powershell
+Invoke-WebRequest https://github.com/ShaNouhAr/local-repo/archive/refs/heads/windows.zip -OutFile local-repo.zip
+Expand-Archive local-repo.zip -DestinationPath .
+cd local-repo-windows
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\windows\install.ps1
 ```
 
@@ -74,6 +104,9 @@ Les dépôts APT/RPM signés, les caches APT/RPM/Flathub, le catalogue Windows e
 sont disponibles. Le **dépôt Flatpak local** reste réservé aux serveurs Linux. Pour un réseau important,
 consulter les limites du nginx Windows et le dimensionnement dans le [guide Windows](docs/windows.md).
 
+<!-- /seulement:windows -->
+
+<!-- seulement:linux -->
 ### Conteneur LXC sur Proxmox VE
 
 Sur n'importe quel hôte Proxmox VE 7, 8 ou 9, en root :
@@ -113,6 +146,8 @@ les paquets `docker.io` et `docker-compose` de Debian 13).
 
 Déploiement en entreprise (réseau, GPO, proxy, sauvegardes, supervision, LXC, Docker, dépannage) :
 **[guide d'exploitation](docs/EXPLOITATION.md)**.
+
+<!-- /seulement:linux -->
 
 ## Brancher les postes
 
@@ -159,6 +194,7 @@ puis relancez le script sur les postes. `--legacy` permet de conserver explicite
 
 ## Administration
 
+<!-- seulement:linux -->
 ```bash
 sudo local-repo-user list | add NOM [admin|viewer] | passwd NOM   # comptes (accès perdu : passwd admin)
 sudo local-repo-backup create | list | restore ARCHIVE             # sauvegardes
@@ -170,10 +206,22 @@ Avec Docker, les mêmes commandes passent par le conteneur : `docker compose exe
 `docker compose exec local-repo local-repo-backup create`. Désinstallation : `docker compose down`
 (ajouter `-v` pour effacer aussi les données).
 
+<!-- /seulement:linux -->
+<!-- seulement:windows -->
+Serveur Windows, dans une console administrateur :
+
+```powershell
+$lr = "$env:ProgramFiles\local-repo\local-repo.cmd"
+& $lr user list ; & $lr user passwd admin ; & $lr backup create ; & $lr status
+powershell -ExecutionPolicy Bypass -File "$env:ProgramFiles\local-repo\windows\remove.ps1"   # -Purge : tout effacer
+```
+
+<!-- /seulement:windows -->
 Supervision : `https://<ip>:8443/metrics` (Prometheus) et `/healthz`.
 
 ## Architecture
 
+<!-- seulement:linux -->
 | Élément | Emplacement | Port |
 |---|---|---|
 | Portail (Flask + gunicorn, unité `local-repo-portal`, confinée) | `/opt/local-repo` | 8089, local |
@@ -189,12 +237,20 @@ Sur Debian / Ubuntu, les dépendances viennent des dépôts officiels (`nginx`, 
 `gnupg`, `flatpak`, `ostree`, `createrepo-c`, `rpm`) : les correctifs de sécurité arrivent avec `apt upgrade`.
 Sur Rocky, les paquets système sont suivis par `dnf upgrade` ; le runtime Python isolé et les composants
 compilés sont figés et mis à jour avec les versions de local-repo.
+<!-- /seulement:linux -->
+<!-- seulement:windows -->
+Serveur Windows : service `local-repo` (compte `NT SERVICE\local-repo`) qui lance nginx et le portail
+(Waitress, 8089 en local) ; programme dans `%ProgramFiles%\local-repo`, données, configuration et journaux
+dans `%ProgramData%\local-repo`. Ports : 8443 (HTTPS), 8088 (amorçage HTTP), 3142 (cache APT), 80 et 443
+(Windows Update). Détails : [guide Windows](docs/windows.md).
+<!-- /seulement:windows -->
 
 ## Sécurité
 
 Comptes à rôles, HTTPS, CSP stricte, CSRF, blocage des tentatives, audit, filtrage réseau, processus
 confiné, dépôts signés. Détails et limites : [SECURITY.md](SECURITY.md).
 
+<!-- seulement:main -->
 ## Développement
 
 ```bash
@@ -219,6 +275,19 @@ Les images des VM sont vérifiées par leur empreinte avant le démarrage.
 Les tests couvrent la mise à jour depuis 1.0.0 sur les systèmes déjà pris en charge, la détection du poste,
 l'isolation des paquets, Flatpak, une restauration et la désinstallation. Le workflow est publié et actif sur GitHub.
 Historique : [CHANGELOG.md](CHANGELOG.md).
+<!-- /seulement:main -->
+<!-- branche:linux
+## Développement
+
+Cette branche est générée depuis [`main`](https://github.com/ShaNouhAr/local-repo) à chaque version : proposer les modifications sur `main`,
+où se trouvent les tests et la CI. Historique : [CHANGELOG.md](CHANGELOG.md).
+-->
+<!-- branche:windows
+## Développement
+
+Cette branche est générée depuis [`main`](https://github.com/ShaNouhAr/local-repo) à chaque version : proposer les modifications sur `main`,
+où se trouvent les tests et la CI (Windows Server 2022 et 2025). Historique : [CHANGELOG.md](CHANGELOG.md).
+-->
 
 ## Licence
 
