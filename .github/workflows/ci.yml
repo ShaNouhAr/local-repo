@@ -22,7 +22,7 @@ jobs:
       - name: Shell et Python
         run: |
           shellcheck -S style -x install.sh linux/install.sh linux/remove.sh linux/lib/*.sh linux/bin/* tests/*.sh linux/docker/*.sh linux/docker/loco-cron linux/lxc/proxmox-lxc.sh portal/templates/setup.sh portal/templates/flatpak-setup.sh portal/templates/rpm-setup.sh
-          pipx run pyflakes portal tests
+          pipx run pyflakes portal tests linux/docker/migrate-env.py
           docker compose -f linux/docker/docker-compose.yml config -q
       - name: PowerShell (syntaxe des scripts Windows)
         shell: pwsh

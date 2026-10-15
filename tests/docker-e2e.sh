@@ -30,7 +30,7 @@ step "Construction et premier démarrage"
 printf 'LOCO_BACKUP_KEEP=2\nTZ=Europe/Paris\n' > linux/docker/.env
 if [ -n "${LOCO_E2E_LEGACY_SRC:-}" ]; then
     oldc() { sudo docker compose --project-directory "$LOCO_E2E_LEGACY_SRC/linux/docker" -f "$LOCO_E2E_LEGACY_SRC/linux/docker/docker-compose.yml" "$@"; }
-    printf 'LR_BACKUP_KEEP=2\nTZ=Europe/Paris\n' > "$LOCO_E2E_LEGACY_SRC/linux/docker/.env"
+    printf 'LR_BACKUP_KEEP=2\nLR_MAX_UPLOAD=7g\nTZ=Europe/Paris\nLR_BACKUP_DIR=%s/backups\n' "$work" > "$LOCO_E2E_LEGACY_SRC/linux/docker/.env"
     oldc up -d --build
     for (( i=0; i<90; i++ )); do
         [ "$(sudo docker inspect -f '{{.State.Health.Status}}' "$(oldc ps -q local-repo)")" = healthy ] && break
@@ -47,6 +47,9 @@ healthy
 if [ -n "${old_ca:-}" ]; then
     [ "$(curl -fsS http://127.0.0.1:8088/ca.crt | sha256sum | cut -d' ' -f1)" = "$old_ca" ] || fail 'CA changée par la migration'
     dc exec -T loco test -f /srv/loco/apt/pool/lr-e2e_1.0_all.deb
+    dc exec -T loco grep -qx MAX_UPLOAD=7g /etc/loco/loco.conf
+    # Le dossier bind des sauvegardes est repris même dans un nouveau dossier de sources.
+    grep -Fq "$work/backups" linux/docker/.env
 fi
 dc logs loco > "$work/first.log"
 if [ -z "${old_ca:-}" ]; then grep -q "Compte initial     : admin / " "$work/first.log" || fail "mot de passe initial absent du journal"; fi

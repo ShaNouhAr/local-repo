@@ -31,7 +31,8 @@ réappliqués. La commande d'administration devient `%ProgramFiles%\loco\loco.cm
 ## Docker
 
 Dans `linux/docker`, lancer **`sudo ./up.sh`** pour migrer ; ne pas lancer un deuxième projet à la main.
-Le script convertit les variables `LR_` de `.env` en `LOCO_` et garde `.env.before-loco`. Il construit
+Python 3 doit être présent sur l'hôte. Le script reprend les réglages du conteneur existant, convertit
+les variables `LR_` de `.env` en `LOCO_` et garde `.env.before-loco`. Il construit
 l'image, sauvegarde et arrête l'ancien conteneur, puis copie ses volumes nommés vers ceux du projet
 `loco`. Les dossiers bind personnalisés restent les mêmes. Prévoir assez d'espace pour cette copie.
 

@@ -4,7 +4,9 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 legacy=$(docker ps -aq --filter label=com.docker.compose.project=local-repo --filter label=com.docker.compose.service=local-repo)
 [ "$(printf '%s\n' "$legacy" | sed '/^$/d' | wc -l)" -le 1 ] || { echo 'Plusieurs conteneurs historiques trouvés.' >&2; exit 1; }
-if [ -f .env ] && grep -q '^LR_' .env; then
+if [ -n "$legacy" ]; then
+    docker inspect "$legacy" | python3 migrate-env.py .env
+elif [ -f .env ] && grep -q '^LR_' .env; then
     [ ! -e .env.before-loco ] || { echo '.env.before-loco existe déjà ; conversion refusée.' >&2; exit 1; }
     cp -p .env .env.before-loco
     sed -i 's/^LR_/LOCO_/' .env
