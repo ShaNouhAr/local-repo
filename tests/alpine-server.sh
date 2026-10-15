@@ -41,6 +41,8 @@ url=http://deb.debian.org/debian/dists/stable/Release
 first=$(curl -fsS -x http://127.0.0.1:3142 -D - -o /dev/null "$url" | tr -d '\r' | awk -F': ' 'tolower($1) == "x-loco-cache" {print $2}')
 second=$(curl -fsS -x http://127.0.0.1:3142 -D - -o /dev/null "$url" | tr -d '\r' | awk -F': ' 'tolower($1) == "x-loco-cache" {print $2}')
 echo "Release : $first puis $second"
+loco-stats
+python3 -c 'import json; assert json.load(open("/var/lib/loco/stats.json"))["acng"] > 0, "taille du cache APT"' 
 [ "$second" = HIT ] || fail "cache APT (attendu HIT, obtenu $second)"
 [ "$(curl -s -o /dev/null -w '%{http_code}' -x http://127.0.0.1:3142 http://example.com/)" = 403 ] || fail "proxy APT ouvert"
 [ "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: example.com' http://127.0.0.1/)" = 403 ] || fail "relais Windows Update ouvert"
