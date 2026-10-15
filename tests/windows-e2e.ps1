@@ -2,17 +2,18 @@
 #Requires -RunAsAdministrator
 # Machine Windows JETABLE : installation, requêtes réelles, sauvegarde, relance et désinstallation.
 [CmdletBinding()]
-param([Parameter(Mandatory = $true)][string]$Fixtures)
+# -Source : arbre à installer (défaut : ce dépôt ; la CI passe la branche « windows » générée).
+param([Parameter(Mandatory = $true)][string]$Fixtures, [string]$Source = (Split-Path -Parent $PSScriptRoot))
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-$source = Split-Path -Parent $PSScriptRoot
+$tests = $PSScriptRoot
 $program = Join-Path $env:ProgramFiles 'local-repo'
 $root = Join-Path $env:ProgramData 'local-repo'
 if (Test-Path "$root\etc\local-repo.json") { throw 'Test réservé à une machine sans installation existante.' }
 $env:LR_E2E_PASSWORD = 'Native-E2e-' + [guid]::NewGuid().ToString()
 $password = ConvertTo-SecureString $env:LR_E2E_PASSWORD -AsPlainText -Force
 function Install {
-    & "$source\windows\install.ps1" -HostAddress 127.0.0.1 -Password $password
+    & "$Source\windows\install.ps1" -HostAddress 127.0.0.1 -Password $password
     if ((Get-Service local-repo).Status -ne 'Running') { throw 'Service non démarré.' }
 }
 function Python {
@@ -29,8 +30,8 @@ function Ready {
 }
 Install
 $env:LR_CONFIG = "$root\etc\local-repo.json"
-Python -m unittest discover -s "$source\tests" -p test_windows_runtime.py -v
-Python "$source\tests\windows_probe.py" $Fixtures
+Python -m unittest discover -s $tests -p test_windows_runtime.py -v
+Python "$tests\windows_probe.py" $Fixtures
 $ca = (Get-FileHash "$root\etc\tls\ca.crt").Hash
 $secret = (Get-FileHash "$root\etc\portal.secret").Hash
 $configAcl = Get-Acl "$root\etc\local-repo.json"
@@ -54,12 +55,12 @@ if ((Get-FileHash "$root\etc\tls\ca.crt").Hash -ne $ca -or (Get-FileHash "$root\
 & "$program\local-repo.cmd" restart
 if ($LASTEXITCODE -ne 0) { throw 'Redémarrage en échec.' }
 Ready
-& "$source\windows\remove.ps1" -Yes
+& "$Source\windows\remove.ps1" -Yes
 if (Get-Service local-repo -ErrorAction SilentlyContinue) { throw 'Service non désinstallé.' }
 if (-not (Test-Path $package.FullName)) { throw 'La désinstallation simple a effacé les données.' }
 Install
 if ((Get-FileHash "$root\etc\tls\ca.crt").Hash -ne $ca) { throw 'La réinstallation a changé la CA.' }
-& "$source\windows\remove.ps1" -Purge -Yes
+& "$Source\windows\remove.ps1" -Purge -Yes
 if ((Test-Path $root) -or (Test-Path $program)) { throw 'Purge incomplète.' }
 if (Get-NetFirewallRule -Group local-repo -ErrorAction SilentlyContinue) { throw 'Règles pare-feu restantes.' }
 Remove-Item Env:\LR_E2E_PASSWORD
