@@ -1,8 +1,9 @@
 {% extends "base.html" %}
+{% from "_software_logo.html" import software_logo %}
 {% block title %}{{ doc.get('PackageName') or package_id }} · Store{% endblock %}
 {% block content %}
 <div class="head"><div><p class="small"><a href="{{ url_for('software_store') }}">← Store logiciels</a></p>
-  <h1>{{ doc.get('PackageName') or package_id }}</h1><p class="mono muted">{{ package_id }}</p></div>
+  <div class="store-card-top">{{ software_logo(package_id, doc.get('PackageName') or package_id, 'large') }}<div><h1>{{ doc.get('PackageName') or package_id }}</h1><p class="mono muted">{{ package_id }}</p></div></div></div>
   {% if known %}<a class="btn" href="{{ url_for('windows_apps') }}">Déjà dans le catalogue local</a>
   {% elif info %}<form method="post" action="{{ url_for('winget_add') }}" data-ajax><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="id" value="{{ package_id }}"><button class="btn primary"><span class="spin"></span>Ajouter à loco</button></form>{% endif %}
 </div>

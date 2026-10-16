@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_software_logo.html" import software_logo %}
 {% block title %}Store logiciels{% endblock %}
 {% block content %}
 <div class="head">
@@ -17,7 +18,7 @@
   <div class="store-heading"><h2>{{ 'Résultats pour « ' ~ query ~ ' »' if query else categories[category][0] }} <span class="h-count">{{ total }} logiciel(s)</span></h2><a href="{{ url_for('windows_apps') }}">Voir le catalogue local →</a></div>
   <div class="store-grid">
     {% for r in results %}<article class="panel store-card">
-      <div class="store-card-top"><span class="store-monogram" aria-hidden="true">{{ r.name[:1]|upper }}</span><div><h3><a href="{{ url_for('software_store_detail', package_id=r.id) }}">{{ r.name }}</a></h3><span class="sub mono">{{ r.id }}</span></div></div>
+      <div class="store-card-top">{{ software_logo(r.id, r.name) }}<div><h3><a href="{{ url_for('software_store_detail', package_id=r.id) }}">{{ r.name }}</a></h3><span class="sub mono">{{ r.id }}</span></div></div>
       <p class="muted">Version {{ r.version }}</p>
       <div class="store-card-actions"><a class="btn sm" href="{{ url_for('software_store_detail', package_id=r.id) }}">Voir la fiche</a>
       {% if r.id in known %}<span class="st {{ 'ok' if known[r.id].status == 'ready' else 'warn' }}">{{ 'Dans loco' if known[r.id].status == 'ready' else 'Importé · ' ~ known[r.id].status }}</span>{% endif %}</div>

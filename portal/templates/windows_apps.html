@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import cmd %}
+{% from "_software_logo.html" import software_logo %}
 {% block title %}Logiciels Windows{% endblock %}
 {% block content %}
 <div class="head">
@@ -39,7 +40,7 @@
         <tr class="{{ 'has-note' if note }}" data-slug="{{ a.slug }}" data-status="{{ a.status }}">
           <td class="chk"><input type="checkbox" class="pick" value="{{ a.slug }}" aria-label="{{ a.name }}" {{ 'disabled' if a.status != 'ready' }}></td>
           {% set used = usage.get(a.slug, [0, 0]) %}
-          <td>{{ a.name }}<span class="sub">{{ a.slug }}{% if a.winget_id %} · winget {{ a.winget_id }}{% endif %}{% if used[0] %} · <a href="{{ url_for('fleet') }}">{{ used[0] }} poste(s)</a>{% if used[1] %}, <span class="st warn">{{ used[1] }} à mettre à jour</span>{% endif %}{% endif %}</span></td>
+          <td><div class="store-card-top">{{ software_logo(a.winget_id, a.name, 'small') }}<div>{{ a.name }}<span class="sub">{{ a.slug }}{% if a.winget_id %} · winget {{ a.winget_id }}{% endif %}{% if used[0] %} · <a href="{{ url_for('fleet') }}">{{ used[0] }} poste(s)</a>{% if used[1] %}, <span class="st warn">{{ used[1] }} à mettre à jour</span>{% endif %}{% endif %}</span></div></div></td>
           <td class="mono">{{ a.version or '—' }}</td>
           <td class="mono muted">{{ a.kind }}</td>
           <td class="mono muted">{{ a.args or '—' }}</td>

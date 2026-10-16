@@ -1,0 +1,3 @@
+{% macro software_logo(package_id, name, size='') -%}
+<span class="app-logo-box {{ size }}" aria-hidden="true"><span class="app-logo-initial">{{ name[:1]|upper }}</span>{% if package_id %}<img data-app-logo src="{{ url_for('software_icon', package_id=package_id) }}" loading="lazy" decoding="async" alt="">{% endif %}</span>
+{%- endmacro %}

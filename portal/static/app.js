@@ -5,6 +5,15 @@
   var $ = function (sel, root) { return (root || document).querySelector(sel); };
   var $$ = function (sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
 
+  function appLogo(img) {
+    if (img.matches && img.matches("img[data-app-logo]")) {
+      img.parentNode.classList.toggle("has-logo", img.complete && img.naturalWidth > 0);
+    }
+  }
+  document.addEventListener("load", function (e) { appLogo(e.target); }, true);
+  document.addEventListener("error", function (e) { appLogo(e.target); }, true);
+  $$("img[data-app-logo]").forEach(appLogo);
+
   /* ---------------------------------------------------------------- navigation */
 
   var navGroups = $$(".nav-group");

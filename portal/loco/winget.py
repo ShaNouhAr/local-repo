@@ -7,6 +7,7 @@ des versions installées sur le parc).
 """
 
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -18,10 +19,10 @@ import urllib.parse
 import urllib.request
 import zipfile
 
-from flask import flash, render_template, request
+from flask import flash, render_template, request, send_file
 
 from . import app, config
-from .auth import admin_required, audit
+from .auth import admin_required, audit, login_required
 from .db import db
 from .util import back, now, slugify
 
@@ -38,6 +39,22 @@ _LOCK = threading.Lock()
 SILENT = {"msi": "/qn /norestart", "wix": "/qn /norestart", "nullsoft": "/S",
           "inno": "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-", "burn": "/quiet /norestart"}
 SUPPORTED = ("msi", "wix", "nullsoft", "inno", "burn", "exe")
+MAX_ICON = 4 * 1024 * 1024
+ICON_TYPES = {"png": "image/png", "jpeg": "image/jpeg", "ico": "image/x-icon"}
+# Complément provenant de l'éditeur lorsque WinGet ne fournit pas encore son logo.
+PUBLISHER_ICONS = {
+    "VideoLAN.VLC": "https://images.videolan.org/images/favicon.ico",
+    "Audacity.Audacity": "https://www.audacityteam.org/favicon.ico",
+    "BlenderFoundation.Blender": "https://www.blender.org/favicon.ico",
+    "Git.Git": "https://git-scm.com/favicon.ico",
+    "Google.Chrome": "https://www.google.com/chrome/static/images/favicons/favicon.ico",
+    "Inkscape.Inkscape": "https://inkscape.org/favicon.ico",
+    "KeePassXCTeam.KeePassXC": "https://keepassxc.org/favicon.ico",
+    "SumatraPDF.SumatraPDF": "https://www.sumatrapdfreader.org/favicon.ico",
+    "TheDocumentFoundation.LibreOffice": "https://www.libreoffice.org/favicon.ico",
+}
+_ICON_LOCKS = {}
+_ICON_GUARD = threading.Lock()
 
 
 # --------------------------------------------------------------------------- YAML (sous-ensemble des manifestes)
@@ -298,6 +315,102 @@ def describe(package_id):
     detect = inst["display_name"] or re.sub(r"\s*\([^)]*\)\s*$", "", name) or name
     return {"id": package_id, "name": name, "publisher": doc.get("Publisher") or "",
             "version": inst["display_version"] or str(doc.get("PackageVersion") or ""), "detect": detect, **inst}
+
+
+# --------------------------------------------------------------------------- logos
+
+def _icon_valid(data, kind):
+    return bool(data) and len(data) <= MAX_ICON and (
+        (kind == "png" and data.startswith(b"\x89PNG\r\n\x1a\n")) or
+        (kind == "jpeg" and data.startswith(b"\xff\xd8\xff")) or
+        (kind == "ico" and data.startswith(b"\0\0\1\0")))
+
+
+def package_icon(package_id):
+    """Logo du manifeste vérifié, cache local par contenu ; aucun lien externe dans le navigateur."""
+    if not ID_RE.fullmatch(package_id):
+        return None
+    directory = os.path.join(INDEX_DIR, "icons")
+    record = os.path.join(directory, hashlib.sha256(package_id.encode()).hexdigest() + ".json")
+    with _ICON_GUARD:
+        lock = _ICON_LOCKS.setdefault(package_id, threading.Lock())
+    with lock:
+        cached, metadata = None, {}
+        try:
+            with open(record) as f:
+                metadata = json.load(f)
+            name = metadata.get("file", "")
+            if re.fullmatch(r"[0-9a-f]{64}\.(png|jpeg|ico)", name):
+                path = os.path.join(directory, name)
+                with open(path, "rb") as f:
+                    data = f.read(MAX_ICON + 1)
+                kind = name.rsplit(".", 1)[1]
+                if _icon_valid(data, kind) and hashlib.sha256(data).hexdigest() == name.split(".")[0]:
+                    cached = (path, ICON_TYPES[kind])
+            if time.time() - float(metadata.get("updated", 0)) < float(metadata.get("ttl", MAX_AGE)):
+                if cached or (name == "" and metadata.get("publisher", "") == PUBLISHER_ICONS.get(package_id, "")):
+                    return cached
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
+        try:
+            doc = manifest(package_id)
+            icons = [i for i in (doc.get("Icons") or []) if isinstance(i, dict)]
+            icons.sort(key=lambda i: (i.get("IconTheme", "default") == "default",
+                                     i.get("IconFileType") == "png", i.get("IconResolution") in ("64x64", "96x96")), reverse=True)
+            name = ""
+            for icon in icons:
+                kind = icon.get("IconFileType")
+                url = icon.get("IconUrl", "")
+                # Les icônes enrichies par Microsoft ont une adresse immuable portant leur empreinte.
+                match = re.fullmatch(r"https://cdn\.winget\.microsoft\.com/icons/([0-9a-fA-F]{64})\.(png|jpeg|ico)", url)
+                if kind not in ICON_TYPES or not match or match[2] != kind:
+                    continue
+                expected = (icon.get("IconSha256") or match[1]).lower()
+                if expected != match[1].lower():
+                    continue
+                data = _fetch(url, MAX_ICON, timeout=15)
+                if not _icon_valid(data, kind) or hashlib.sha256(data).hexdigest() != expected:
+                    raise ValueError("logo winget invalide ou empreinte incorrecte")
+                name = expected + "." + kind
+                break
+            if not name and package_id in PUBLISHER_ICONS:
+                data = _fetch(PUBLISHER_ICONS[package_id], MAX_ICON, timeout=15)
+                if _icon_valid(data, "ico"):
+                    name = hashlib.sha256(data).hexdigest() + ".ico"
+            os.makedirs(directory, exist_ok=True)
+            if name:
+                fd, tmp = tempfile.mkstemp(dir=directory, prefix=".icon-")
+                try:
+                    with os.fdopen(fd, "wb") as f:
+                        f.write(data)
+                    os.replace(tmp, os.path.join(directory, name))
+                finally:
+                    if os.path.exists(tmp):
+                        os.unlink(tmp)
+            fd, tmp = tempfile.mkstemp(dir=directory, prefix=".meta-")
+            try:
+                with os.fdopen(fd, "w") as f:
+                    json.dump({"file": name, "updated": time.time(), "ttl": MAX_AGE if name else 3600,
+                               "publisher": PUBLISHER_ICONS.get(package_id, "")}, f)
+                os.replace(tmp, record)
+            finally:
+                if os.path.exists(tmp):
+                    os.unlink(tmp)
+            return (os.path.join(directory, name), ICON_TYPES[name.rsplit(".", 1)[1]]) if name else None
+        except (OSError, ValueError, sqlite3.Error, zipfile.BadZipFile):
+            return cached
+
+
+@app.route("/windows-apps/icons/<package_id>")
+@login_required
+def software_icon(package_id):
+    icon = package_icon(package_id)
+    if icon is None:
+        return "", 204, {"Cache-Control": "private, max-age=900"}
+    response = send_file(icon[0], mimetype=icon[1], conditional=True, max_age=MAX_AGE)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Cache-Control"] = "private, max-age=86400"
+    return response
 
 
 # --------------------------------------------------------------------------- portail

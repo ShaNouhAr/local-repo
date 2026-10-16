@@ -378,7 +378,12 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
 .store-card-top > div { min-width: 0; }
 .store-card h3 { margin: 0 0 4px; font-size: 17px; overflow-wrap: anywhere; }
 .store-card .sub { overflow-wrap: anywhere; font-size: 11px; }
-.store-monogram { display: grid; place-items: center; flex: 0 0 44px; height: 44px; border: 1px solid var(--line-2); border-radius: 10px; font-weight: 600; font-size: 24px; background: var(--sel); }
+.app-logo-box { position: relative; display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; border: 1px solid var(--line-2); border-radius: 10px; font-weight: 600; font-size: 24px; background: var(--sel); overflow: hidden; }
+.app-logo-box img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; padding: 5px; opacity: 0; }
+.app-logo-box.has-logo img { opacity: 1; }
+.app-logo-box.has-logo .app-logo-initial { visibility: hidden; }
+.app-logo-box.small { flex-basis: 32px; width: 32px; height: 32px; border-radius: 6px; font-size: 18px; }
+.app-logo-box.large { flex-basis: 64px; width: 64px; height: 64px; font-size: 32px; }
 .store-card-actions { margin-top: auto; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
 .store-description { white-space: pre-line; }
 .store-pagination { justify-content: center; }

@@ -389,6 +389,40 @@ ManifestType: merged
 
 
 class TestWinget(FleetTest):
+    def test_verified_logos_are_cached_and_corrupt_images_are_rejected(self):
+        image = b"\x89PNG\r\n\x1a\n" + b"test image"
+        sha = hashlib.sha256(image).hexdigest()
+        doc = {"Icons": [{"IconFileType": "png", "IconSha256": sha,
+                          "IconUrl": f"https://cdn.winget.microsoft.com/icons/{sha}.png"}]}
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(winget, "INDEX_DIR", tmp), \
+                mock.patch.object(winget, "manifest", return_value=doc) as manifest, \
+                mock.patch.object(winget, "_fetch", return_value=image) as fetch:
+            r = self.admin.c.get("/windows-apps/icons/Example.Tool")
+            self.assertEqual(r.status_code, 200)
+            self.assertEqual(r.mimetype, "image/png")
+            self.assertEqual(r.get_data(), image)
+            self.assertEqual(r.headers["X-Content-Type-Options"], "nosniff")
+            r.close()
+            r = self.admin.c.get("/windows-apps/icons/Example.Tool")
+            self.assertEqual(r.get_data(), image)
+            r.close()
+            self.assertEqual((manifest.call_count, fetch.call_count), (1, 1))
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(winget, "INDEX_DIR", tmp), \
+                mock.patch.object(winget, "manifest", return_value=doc), \
+                mock.patch.object(winget, "_fetch", return_value=b"<html>not an icon</html>"):
+            self.assertEqual(self.admin.c.get("/windows-apps/icons/Example.Tool").status_code, 204)
+
+    def test_missing_logo_is_cached_and_a_letter_is_kept_in_the_page(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(winget, "INDEX_DIR", tmp), \
+                mock.patch.object(winget, "manifest", return_value={}) as manifest:
+            for _ in range(2):
+                self.assertEqual(self.admin.c.get("/windows-apps/icons/Example.Tool").status_code, 204)
+            self.assertEqual(manifest.call_count, 1)
+        with mock.patch.object(winget, "browse", return_value=([{"id": "Example.Tool", "name": "Example", "version": "1"}], 1, 1, 1)):
+            page = self.admin.c.get("/windows-apps/store").get_data(as_text=True)
+        self.assertIn('class="app-logo-initial">E</span>', page)
+        self.assertIn('/windows-apps/icons/Example.Tool', page)
+
     def test_manifest_subset_is_parsed(self):
         doc = winget.parse_yaml(MANIFEST)
         self.assertEqual(doc["Publisher"], "Example © Corp")

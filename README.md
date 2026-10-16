@@ -242,7 +242,7 @@ puis relancez le script sur les postes. `--legacy` permet de conserver explicite
 
 ## Store logiciels Windows
 
-Dans **Windows → Store logiciels**, parcourez le catalogue communautaire Microsoft WinGet, recherchez une application ou ouvrez une sélection par catégorie. Les fiches indiquent l'éditeur, la version, la licence et l'installeur silencieux disponible. **Ajouter à loco** télécharge l'installeur officiel et vérifie son empreinte SHA-256 ; le déploiement sur les postes reste une action d'administration dans **Mon parc**. L'index est renouvelé chaque jour ; son dernier exemplaire valide reste consultable si Internet est momentanément indisponible.
+Dans **Windows → Store logiciels**, parcourez le catalogue communautaire Microsoft WinGet, recherchez une application ou ouvrez une sélection par catégorie. Les cartes et fiches affichent les logos disponibles dans WinGet, vérifiés puis mis en cache sur loco. Une initiale reste affichée si aucun logo n'est disponible. Les fiches indiquent aussi l'éditeur, la version, la licence et l'installeur silencieux disponible. **Ajouter à loco** télécharge l'installeur officiel et vérifie son empreinte SHA-256 ; le déploiement sur les postes reste une action d'administration dans **Mon parc**. L'index est renouvelé chaque jour ; son dernier exemplaire valide reste consultable si Internet est momentanément indisponible.
 
 ## Mon parc : agent des postes
 
