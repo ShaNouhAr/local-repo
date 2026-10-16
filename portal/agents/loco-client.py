@@ -63,7 +63,10 @@ def save(path, data, mode=0o600):
 
 def context():
     ctx = ssl.create_default_context(cafile=CA if os.path.isfile(CA) else None)
-    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    if hasattr(ssl, "TLSVersion"):
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    else:  # Python 3.6 livré avec Rocky / RHEL 8
+        ctx.options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
     return ctx
 
 
@@ -111,7 +114,7 @@ def family():
 def addresses():
     out = []
     try:
-        text = subprocess.run(["ip", "-o", "addr", "show", "scope", "global"], capture_output=True, text=True,
+        text = subprocess.run(["ip", "-o", "addr", "show", "scope", "global"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
                               timeout=10).stdout
         for line in text.splitlines():
             fields = line.split()
@@ -131,7 +134,7 @@ def identity():
 def run(cmd, timeout=7200):
     """(code, sortie) ; la sortie est tronquée au début pour garder la fin, la plus utile."""
     try:
-        p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace",
+        p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, errors="replace",
                            env=ENV, timeout=timeout, stdin=subprocess.DEVNULL)
         return p.returncode, p.stdout
     except FileNotFoundError:
@@ -263,11 +266,11 @@ def self_update(conf, wanted):
 
 
 def remove_local():
-    subprocess.run(["systemctl", "disable", "--now", "loco-client.timer"], capture_output=True)
+    subprocess.run(["systemctl", "disable", "--now", "loco-client.timer"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     for path in UNITS:
         if os.path.exists(path):
             os.unlink(path)
-    subprocess.run(["systemctl", "daemon-reload"], capture_output=True)
+    subprocess.run(["systemctl", "daemon-reload"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     for path in (ETC, os.path.dirname(STATE), os.path.dirname(PROGRAM)):
         shutil.rmtree(path, ignore_errors=True)
     for link in ("/usr/local/sbin/loco-client",):
@@ -327,12 +330,12 @@ def service():
                    out + ("\nRedémarrage dans une minute." if reboot else ""), code, inv)
             if reboot:
                 save(STATE, state)
-                subprocess.run(["shutdown", "-r", "+1", "loco : redémarrage après mise à jour"], capture_output=True)
+                subprocess.run(["shutdown", "-r", "+1", "loco : redémarrage après mise à jour"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 return 0
         elif action == "reboot":
             report(conf, cmd["id"], "success", "Redémarrage dans une minute.", 0)
             save(STATE, state)
-            subprocess.run(["shutdown", "-r", "+1", "loco : redémarrage demandé"], capture_output=True)
+            subprocess.run(["shutdown", "-r", "+1", "loco : redémarrage demandé"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             return 0
         elif action == "uninstall":
             report(conf, cmd["id"], "success", "Agent retiré du poste.", 0)

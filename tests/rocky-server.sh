@@ -49,6 +49,7 @@ CA=/etc/loco/tls/ca.crt
 BASE=https://127.0.0.1:8443
 health() { curl -fsS --cacert "$CA" "$BASE/healthz" | grep -x ok > /dev/null; }
 health
+python3 tests/linux_agent_smoke.py
 /usr/local/lib/loco/venv/bin/python tests/https_redirect.py "$BASE"
 apt_binary_stamp=""
 if [ "${VERSION_ID%%.*}" = 8 ]; then
