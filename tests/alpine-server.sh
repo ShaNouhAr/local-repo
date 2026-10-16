@@ -65,6 +65,9 @@ for _ in $(seq 1 120); do grep -qx 'RPM_CACHE_SIZE=25g' /etc/loco/loco.conf && b
 grep -qx 'RPM_CACHE_SIZE=25g' /etc/loco/loco.conf || { tail -30 /var/lib/loco-agent/jobs/*.log; fail "réglage du portail non appliqué"; }
 for _ in $(seq 1 60); do grep -l '"action": "configure"' /var/lib/loco-agent/jobs/*.json | xargs grep -q '"state": "success"' && break; sleep 2; done
 grep -l '"action": "configure"' /var/lib/loco-agent/jobs/*.json | xargs grep -q '"state": "success"' || fail "opération de l'agent"
+# Le worker rafraîchit encore l'état des versions après le succès du réglage.
+# Attendre la libération de son verrou avant de lancer une opération CLI concurrente.
+flock -w 180 /var/lib/loco-agent/lock true || fail "agent encore occupé après le réglage"
 ready
 # Le compte loco ne doit rien pouvoir demander d'autre qu'une action connue aux valeurs validées.
 # shellcheck disable=SC2016 # Code Python littéral, pas d'interpolation shell.
