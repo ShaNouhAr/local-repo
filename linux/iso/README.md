@@ -33,6 +33,11 @@ L'assistant est une interface texte avec fenêtres, utilisable au clavier sur la
 console locale ou la console d'une VM. L'administration courante dispose d'une
 interface graphique web et de commandes CLI.
 
+Dans l'assistant, **Échap** ou **Accueil** revient au menu de départ sans lancer
+l'installation. La console root s'ouvre uniquement avec **Console de dépannage** ;
+taper `exit` y ramène à l'assistant. **Alt+F1** ouvre une console de connexion
+indépendante, **Alt+F7** retrouve l'assistant.
+
 ## Installation automatique et CLI
 
 Copier [answers.example](answers.example), renseigner les deux mots de passe

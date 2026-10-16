@@ -2,6 +2,7 @@
 import hashlib
 import io
 from pathlib import Path
+import re
 import tarfile
 from unittest import mock
 import sys
@@ -23,7 +24,8 @@ def release(version, broken=False):
             name = str(path.relative_to(source))
             data = path.read_bytes()
             if name == 'portal/loco/config.py':
-                data = data.replace(b'VERSION = "2.1.0"', f'VERSION = "{version}"'.encode())
+                data, count = re.subn(rb'^VERSION = "[0-9.]+"', f'VERSION = "{version}"'.encode(), data, flags=re.M)
+                assert count == 1
             if broken and name == 'linux/install.sh':
                 data = b'#!/bin/bash\necho "WU_ENABLED=0" > /etc/loco/loco.conf\nexit 1\n'
             member = tarfile.TarInfo(f'loco-{version}/{name}')
@@ -37,10 +39,13 @@ def release(version, broken=False):
         return locoadmin.update_loco(log=lambda _line: None)
 
 
-assert release('2.1.1')
-assert locoadmin.current_version() == '2.1.1'
-assert not release('2.1.2', broken=True)
-assert locoadmin.current_version() == '2.1.1'
+major, minor, patch = map(int, locoadmin.current_version().split('.'))
+next_version = f'{major}.{minor}.{patch + 1}'
+broken_version = f'{major}.{minor}.{patch + 2}'
+assert release(next_version)
+assert locoadmin.current_version() == next_version
+assert not release(broken_version, broken=True)
+assert locoadmin.current_version() == next_version
 assert locoadmin.read_conf()['WU_ENABLED'] == conf['WU_ENABLED']
 assert hashlib.sha256(Path('/etc/loco/tls/ca.crt').read_bytes()).hexdigest() == ca
 print('Archives vérifiées : installation réelle puis retour arrière après échec, configuration et CA conservées.')

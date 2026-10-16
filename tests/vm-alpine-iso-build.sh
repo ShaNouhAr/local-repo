@@ -39,5 +39,6 @@ test -s "$WORK/overlay/usr/share/loco/loco-$version.tar.gz"
 test ! -e "$WORK/overlay/root/.ssh/authorized_keys"
 test ! -e "$WORK/overlay/etc/loco-answers.conf"
 test ! -e "$WORK/overlay/etc/runlevels/default/sshd"
+python3 "$ROOT/tests/iso-console.py" "$ISO"
 "$ROOT/tests/vm-alpine-iso-e2e.sh" "$ISO"
 echo 'ISO construite et installée en BIOS / UEFI ; redémarrages sans média réussis.'

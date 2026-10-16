@@ -27,8 +27,15 @@ KEYS="DISK HOSTNAME KEYMAP TIMEZONE INTERFACE NETWORK ADDRESS GATEWAY DNS ROOT_P
       ADMIN_ALLOW FEATURES PROXY SSH_KEY AFTER"
 
 # dialog écrit le choix sur la sortie d'erreur : échange des descripteurs pour le récupérer.
-ask() { dialog --backtitle "$TITLE" "$@" 3>&1 1>&2 2>&3; }
+ask() { dialog --backtitle "$TITLE" --cancel-label Accueil "$@" 3>&1 1>&2 2>&3; }
 msg() { dialog --backtitle "$TITLE" --title "$1" --msgbox "$2" 0 0; }
+restore_terminal() { stty sane 2>/dev/null || true; clear; }
+installer_shell() {
+    restore_terminal
+    printf '%s\n' "Console de dépannage loco. Tapez exit pour revenir à l'assistant."
+    /bin/sh -i
+    restore_terminal
+}
 # Messages pour la console série (installation automatique suivie à distance, tests) et la console 1.
 console() {
     for tty in /dev/ttyS0 /dev/tty1; do printf '%s\n' "$*" > "$tty" 2>/dev/null || true; done
@@ -186,9 +193,13 @@ default_networks() {
 # ---------------------------------------------------------------- assistant
 
 wizard() {
-    choice=$(ask --title "Bienvenue" --menu "Installation de loco $VERSION, serveur de dépôts et de caches (Alpine Linux).\n\nLe disque choisi sera entièrement effacé." 14 70 2 \
-        install "Installer loco" shell "Console (root)") || choice=shell
-    if [ "$choice" = shell ]; then return 1; fi
+    choice=$(ask --title "Bienvenue" --nocancel --menu "Installation de loco $VERSION, serveur de dépôts et de caches (Alpine Linux).\n\nLe disque choisi sera entièrement effacé. Échap : retour à cet accueil." 15 74 2 \
+        install "Installer loco" shell "Console de dépannage (root)") || return 1
+    case "$choice" in
+        install) ;;
+        shell) installer_shell; return 1 ;;
+        *) return 1 ;;
+    esac
 
     KEYMAP=$(ask --title "Clavier" --default-item "$KEYMAP" --menu "Disposition du clavier :" 15 50 7 \
         "fr fr" "Français (AZERTY)" "be be" "Belge" "ch ch-fr" "Suisse romand" "ca ca-fr" "Canadien français" \
@@ -286,12 +297,13 @@ EOF
     done
 
     on() { case " $FEATURES " in *" $1 "*) echo on ;; *) echo off ;; esac; }
-    FEATURES=$(ask --title "Fonctions" --separate-output --checklist "Fonctions activées (modifiables ensuite dans le portail) :" 14 74 5 \
+    values=$(ask --title "Fonctions" --separate-output --checklist "Fonctions activées (modifiables ensuite dans le portail) :" 14 74 5 \
         http "Accès HTTP des postes (port 8088)" "$(on http)" \
         wu "Cache Windows Update (ports 80 et 443)" "$(on wu)" \
         rpm "Famille Red Hat : dépôts et cache RPM" "$(on rpm)" \
         flatpak "Flatpak : cache Flathub et dépôt local" "$(on flatpak)" \
-        ssh "Accès SSH root par clé publique" "$( [ -n "$SSH_KEY" ] && echo on || echo off)" | tr '\n' ' ') || return 1
+        ssh "Accès SSH root par clé publique" "$( [ -n "$SSH_KEY" ] && echo on || echo off)") || return 1
+    FEATURES=$(printf '%s\n' "$values" | tr '\n' ' ')
     case " $FEATURES " in
         *" ssh "*)
             while :; do
@@ -475,7 +487,7 @@ main() {
     fi
     while :; do
         if [ "$mode" = wizard ]; then
-            wizard || return 0
+            wizard || continue
             errors=$(problems)
             if [ -n "$errors" ]; then msg "Réglages invalides" "$errors"; continue; fi
             dialog --backtitle "$TITLE" --title "Récapitulatif" --yes-label Installer --no-label Modifier \
@@ -508,7 +520,5 @@ case "${1:-}" in
     '') ;;
     *) echo "Option inconnue : $1" >&2; exit 2 ;;
 esac
+trap restore_terminal EXIT
 main || exit $?
-clear
-echo "Console de l'installateur loco : loco-installer pour recommencer. Autres consoles : Alt+F1."
-exec /bin/sh -l

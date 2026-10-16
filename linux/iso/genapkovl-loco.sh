@@ -23,7 +23,8 @@ cp "$sources" "$tmp/usr/share/loco/loco-$LOCO_VERSION.tar.gz"
 cat > "$tmp/etc/local.d/loco-installer.start" <<'EOF'
 #!/bin/sh
 # L'assistant utilise la console graphique virtuelle 7 ; Alt+F1 ouvre le login live.
-openvt -c 7 -s -- /usr/local/sbin/loco-installer &
+# openvt se détache déjà. « & » ferait hériter SIGINT ignoré au shell de dépannage.
+openvt -c 7 -s -- /usr/local/sbin/loco-installer
 EOF
 chmod 755 "$tmp/etc/local.d/loco-installer.start"
 printf '\nloco : assistant sur Alt+F7 ; relancer avec loco-installer.\n' > "$tmp/etc/motd"

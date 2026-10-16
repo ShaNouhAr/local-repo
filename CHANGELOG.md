@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 2.1.1 — 2026-10-16
+
+- ISO : console de connexion fixée sur tty1 pour empêcher le getty de voler le clavier et l’écran de l’assistant sur tty7.
+- Échap et Accueil reviennent au menu sans ouvrir de shell ; la console de dépannage est explicite et `exit` ramène à l’assistant.
+- Annulation de la sélection des fonctions respectée ; test du clavier, des annulations et de la console dans une VM.
+
 ## 2.1.0 — 2026-10-15
 
 - Appliance ISO Alpine 3.24 / BusyBox : assistant visuel, installation automatique par réponses, BIOS et UEFI, paquets embarqués et premier démarrage configuré.
