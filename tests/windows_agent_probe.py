@@ -75,7 +75,7 @@ print('Agent Windows : MSI vérifié et installé, service loco-client démarré
 
 
 def device_id():
-    m = re.search(r'href="/parc/(\d+)" class="mono">' + re.escape(hostname) + '<', get('/parc'))
+    m = re.search(r'href="/parc/(\d+)" class="mono nowrap">' + re.escape(hostname) + '<', get('/parc'))
     return m.group(1) if m else None
 
 
@@ -94,7 +94,7 @@ print('Action à distance : inventaire exécuté et rapporté')
 
 url, html = post(f'/parc/{dev}/action', {'csrf': csrf(get(f'/parc/{dev}')), 'action': 'uninstall'})
 wait('retrait de l\'agent', lambda: powershell('if (Get-Service loco-client -ErrorAction SilentlyContinue) { 1 } else { 0 }').stdout.strip() == '0', 600)
-assert hostname not in re.findall(r'class="mono">([^<]+)<', get('/parc')), 'poste encore dans le parc'
+assert hostname not in re.findall(r'class="mono nowrap">([^<]+)<', get('/parc')), 'poste encore dans le parc'
 installed = powershell("Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*' | "
                        "Where-Object DisplayName -eq 'loco-client' | Measure-Object | Select-Object -ExpandProperty Count")
 assert installed.stdout.strip() == '0', 'MSI loco-client encore installé'

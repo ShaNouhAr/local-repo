@@ -163,6 +163,11 @@ class TestStatus(FleetTest):
         self.assertEqual((color, reason), ("orange", "1 logiciel(s) à mettre à jour"))
         a.checkin({"updates": [], "apps": [{"name": "7-Zip 26.04 (x64 edition)", "version": "26.04.00.0"}]})
         self.assertEqual(status_of(a.uid)[0], "green")
+        # Rouge pour la sécurité, sans masquer les autres raisons.
+        a.checkin({"updates": [{"name": "KB1", "security": True}, {"name": "KB2", "security": False}],
+                   "apps": [{"name": "7-Zip 24.09 (x64 edition)", "version": "24.09.00.0"}], "reboot_required": True})
+        self.assertEqual(status_of(a.uid), ("red", "1 mise(s) à jour de sécurité en attente, 1 autre(s) mise(s) à jour "
+                                                   "du système, 1 logiciel(s) à mettre à jour, redémarrage nécessaire"))
 
     def test_version_comparison_and_name_matching(self):
         self.assertLess(fleet.version_key("24.09"), fleet.version_key("24.10"))

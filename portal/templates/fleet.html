@@ -40,7 +40,7 @@
         <tbody>
         {% for r in rows %}{% set d = r.d %}
           <tr>
-            <td>{{ dot(r.color) }} <a href="{{ url_for('fleet_device', dev_id=d.id) }}" class="mono">{{ d.hostname or d.uid[:8] }}</a>
+            <td>{{ dot(r.color) }} <a href="{{ url_for('fleet_device', dev_id=d.id) }}" class="mono nowrap">{{ d.hostname or d.uid[:8] }}</a>
               <span class="sub">{{ d.os_name or families.get(d.os_family, '') }}</span></td>
             <td class="mono nowrap">{{ d.ip or '—' }}</td>
             <td>{{ r.reason }}

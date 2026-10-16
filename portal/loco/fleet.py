@@ -164,32 +164,51 @@ def last_result(dev_id):
 
 
 def status(dev, apps=None):
-    """(couleur, explication) : vert à jour, orange mises à jour ou redémarrage en attente, rouge à traiter."""
+    """(couleur, explication) : vert à jour, orange mises à jour ou redémarrage en attente, rouge à traiter.
+    L'explication cite toutes les raisons, les plus graves d'abord."""
     if dev["state"] == "removing":
         return "grey", "retrait de l'agent demandé"
     seen = _ago(dev["last_seen"])
     pending_apps = len(app_updates(dev, apps))
     last = last_result(dev["id"])
+    red, orange = [], []
     if seen is None or seen > datetime.timedelta(days=LOST_DAYS):
-        return "red", f"aucun contact depuis plus de {LOST_DAYS} jours"
+        red.append(f"aucun contact depuis plus de {LOST_DAYS} jours")
+    elif seen > datetime.timedelta(days=STALE_DAYS):
+        orange.append(f"aucun contact depuis {seen.days} jour(s)")
     if dev["security_updates"]:
-        return "red", f"{dev['security_updates']} mise(s) à jour de sécurité en attente"
+        red.append(f"{dev['security_updates']} mise(s) à jour de sécurité en attente")
     if last and last["state"] == "failed":
-        return "red", f"échec : {ACTIONS.get(last['action'], last['action']).lower()}"
+        red.append(f"échec : {ACTIONS.get(last['action'], last['action']).lower()}")
+    other = dev["updates"] - dev["security_updates"]
+    if other > 0:
+        orange.append(f"{other} {'autre(s) ' if dev['security_updates'] else ''}mise(s) à jour du système")
+    if pending_apps:
+        orange.append(f"{pending_apps} logiciel(s) à mettre à jour")
+    if dev["reboot_required"]:
+        orange.append("redémarrage nécessaire")
+    if red:
+        return "red", ", ".join(red + orange)
     if not dev["last_scan"]:
         return "grey", "inventaire en cours"
-    reasons = []
-    if dev["updates"]:
-        reasons.append(f"{dev['updates']} mise(s) à jour du système")
-    if pending_apps:
-        reasons.append(f"{pending_apps} logiciel(s) à mettre à jour")
-    if dev["reboot_required"]:
-        reasons.append("redémarrage nécessaire")
-    if seen > datetime.timedelta(days=STALE_DAYS):
-        reasons.append(f"aucun contact depuis {seen.days} jour(s)")
-    if reasons:
-        return "orange", ", ".join(reasons)
+    if orange:
+        return "orange", ", ".join(orange)
     return "green", "à jour"
+
+
+def action_label(cmd):
+    """« Installation : 7-Zip » plutôt que « Installation »."""
+    label = ACTIONS.get(cmd["action"], cmd["action"])
+    try:
+        params = json.loads(cmd["params"] or "{}")
+    except ValueError:
+        params = {}
+    if params.get("slug"):
+        row = db().execute("SELECT name FROM win_apps WHERE slug=?", (params["slug"],)).fetchone()
+        label += " : " + (row["name"] if row else params["slug"])
+    if params.get("reboot"):
+        label += " (avec redémarrage)"
+    return label
 
 
 def needs_update(dev, apps=None):
@@ -584,6 +603,7 @@ def fleet_device(dev_id):
         return {"signature": signature}
     apps = catalog_state(inv) if dev["os_family"] == "windows" else []
     return render_template("fleet_device.html", dev=dev, inv=inv, color=color, reason=reason, history=history,
+                           action_label=action_label,
                            apps=apps, families=FAMILIES, actions=ACTIONS, signature=signature,
                            needs_update=needs_update(dev), pending=pending(dev_id))
 

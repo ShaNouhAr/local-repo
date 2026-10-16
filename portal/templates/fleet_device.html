@@ -126,7 +126,7 @@
         {% for c in history %}
           <tr class="{{ 'has-note' if c.output }}">
             <td class="mono muted nowrap">{{ (c.finished_at or c.created_at)|date_fr }}</td>
-            <td>{{ actions.get(c.action, c.action) }}</td>
+            <td>{{ action_label(c) }}</td>
             <td class="mono muted hide-sm">{{ c.created_by or '—' }}</td>
             <td>{% if c.state == 'success' %}<span class="st ok">réussie</span>{% elif c.state == 'failed' %}<span class="st err">échec</span>{% elif c.state == 'cancelled' %}<span class="st">annulée</span>{% else %}<span class="st warn">{{ 'en cours' if c.state == 'running' else ('transmise' if c.state == 'sent' else 'en attente') }}</span>{% endif %}</td>
           </tr>
