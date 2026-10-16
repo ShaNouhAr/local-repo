@@ -81,20 +81,46 @@ namespace Loco
 
         static void Start(int session)
         {
+            try { using (var process = Launch(session, Executable, "")) { } }
+            catch (Exception e) { Agent.Log("indicateur de session : " + e.Message); }
+        }
+
+        internal static Process StartDesktop(string pipeName)
+        {
+            string file = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "loco-desktop.exe");
+            if (!WindowsIdentity.GetCurrent().IsSystem || !File.Exists(file)) throw new IOException("Compagnon de bureau indisponible.");
+            IntPtr sessions; int count;
+            if (!WTSEnumerateSessions(IntPtr.Zero, 0, 1, out sessions, out count)) throw new Win32Exception();
+            try
+            {
+                int selected = -1, console = (int)WTSGetActiveConsoleSessionId();
+                for (int i = 0; i < count; i++)
+                {
+                    var session = (Session)Marshal.PtrToStructure(IntPtr.Add(sessions, i * Marshal.SizeOf(typeof(Session))), typeof(Session));
+                    if (session.Id > 0 && session.State == 0) { if (selected < 0 || session.Id == console) selected = session.Id; }
+                }
+                if (selected < 0) throw new IOException("Aucune session utilisateur ouverte sur ce poste Windows.");
+                return Launch(selected, file, " --pipe " + pipeName);
+            }
+            finally { WTSFreeMemory(sessions); }
+        }
+
+        static Process Launch(int session, string executable, string arguments)
+        {
             IntPtr token = IntPtr.Zero, environment = IntPtr.Zero;
             try
             {
-                if (!WTSQueryUserToken(session, out token)) return;
-                if (!CreateEnvironmentBlock(out environment, token, false)) return;
+                if (!WTSQueryUserToken(session, out token)) throw new Win32Exception();
+                if (!CreateEnvironmentBlock(out environment, token, false)) throw new Win32Exception();
                 var startup = new Startup { Size = Marshal.SizeOf(typeof(Startup)), Desktop = @"winsta0\default" };
                 ProcessInfo process;
-                if (!CreateProcessAsUser(token, Executable, new StringBuilder("\"" + Executable + "\""),
-                    IntPtr.Zero, IntPtr.Zero, false, 0x400, environment, Path.GetDirectoryName(Executable), ref startup, out process))
+                if (!CreateProcessAsUser(token, executable, new StringBuilder("\"" + executable + "\"" + arguments),
+                    IntPtr.Zero, IntPtr.Zero, false, 0x400, environment, Path.GetDirectoryName(executable), ref startup, out process))
                 {
-                    Agent.Log("indicateur de session : " + new Win32Exception(Marshal.GetLastWin32Error()).Message);
-                    return;
+                    throw new Win32Exception();
                 }
                 CloseHandle(process.Process); CloseHandle(process.Thread);
+                return Process.GetProcessById(process.ProcessId);
             }
             finally { if (environment != IntPtr.Zero) DestroyEnvironmentBlock(environment); if (token != IntPtr.Zero) CloseHandle(token); }
         }
@@ -120,6 +146,7 @@ namespace Loco
         [StructLayout(LayoutKind.Sequential)] struct ProcessInfo { public IntPtr Process, Thread; public int ProcessId, ThreadId; }
         [DllImport("wtsapi32.dll", SetLastError = true)] static extern bool WTSEnumerateSessions(IntPtr server, int reserved, int version, out IntPtr sessions, out int count);
         [DllImport("wtsapi32.dll")] static extern void WTSFreeMemory(IntPtr memory);
+        [DllImport("kernel32.dll")] static extern uint WTSGetActiveConsoleSessionId();
         [DllImport("wtsapi32.dll", SetLastError = true)] static extern bool WTSQueryUserToken(int session, out IntPtr token);
         [DllImport("userenv.dll", SetLastError = true)] static extern bool CreateEnvironmentBlock(out IntPtr environment, IntPtr token, bool inherit);
         [DllImport("userenv.dll")] static extern bool DestroyEnvironmentBlock(IntPtr environment);

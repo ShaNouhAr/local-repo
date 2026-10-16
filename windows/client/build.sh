@@ -14,12 +14,16 @@ printf '[assembly: System.Reflection.AssemblyVersion("%s.0")]\n[assembly: System
     "$VERSION" "$VERSION" > "$WORK/version.cs"
 mcs -nologo -target:exe -platform:anycpu -optimize+ -warnaserror+ -sdk:4.6.2 -out:"$WORK/loco-client.exe" \
     -r:System.ServiceProcess.dll -r:System.Management.dll -r:System.Web.Extensions.dll -r:Microsoft.CSharp.dll \
-    -r:System.Core.dll "$WORK/version.cs" "$HERE/LocoClient.cs" "$HERE/DesktopIndicator.cs" "$HERE/DesktopStatus.cs"
+    -r:System.Core.dll "$WORK/version.cs" "$HERE/LocoClient.cs" "$HERE/DesktopIndicator.cs" "$HERE/DesktopStatus.cs" \
+    "$HERE/RemoteControl.cs" "$HERE/NativeTerminal.cs"
 mcs -nologo -target:winexe -platform:anycpu -optimize+ -warnaserror+ -sdk:4.6.2 -out:"$WORK/loco-tray.exe" \
     -r:System.Windows.Forms.dll -r:System.Drawing.dll -r:System.Web.Extensions.dll \
     "$WORK/version.cs" "$HERE/LocoTray.cs" "$HERE/DesktopStatus.cs"
+mcs -nologo -target:winexe -platform:anycpu -optimize+ -warnaserror+ -sdk:4.6.2 -out:"$WORK/loco-desktop.exe" \
+    -r:System.Windows.Forms.dll -r:System.Drawing.dll -r:System.Core.dll "$WORK/version.cs" "$HERE/LocoDesktop.cs"
 cp "$HERE/loco-client.exe.config" "$WORK/"
 cp "$HERE/loco-client.exe.config" "$WORK/loco-tray.exe.config"
+cp "$HERE/loco-client.exe.config" "$WORK/loco-desktop.exe.config"
 wixl -a x64 -D Version="$VERSION" -D SourceDir="$WORK" -o "$OUT/loco-client.msi" "$HERE/loco-client.wxs"
-cp "$WORK/loco-client.exe" "$WORK/loco-tray.exe" "$OUT/"
+cp "$WORK/loco-client.exe" "$WORK/loco-tray.exe" "$WORK/loco-desktop.exe" "$OUT/"
 echo "$OUT/loco-client.msi ($(wc -c < "$OUT/loco-client.msi") octets)"

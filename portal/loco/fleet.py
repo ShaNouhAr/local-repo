@@ -3,7 +3,8 @@
 L'agent s'inscrit avec la clé d'inscription du serveur, puis s'authentifie avec un jeton qui lui est propre :
 le poste est reconnu par son identifiant, jamais par son adresse IP (un changement d'adresse ne le déconnecte
 pas). Il contacte le serveur toutes les CHECKIN secondes, envoie son inventaire et reçoit les actions en attente.
-Les actions forment une liste fermée (pas de commande libre) ; seule « uninstall » retire l'agent du poste.
+Les actions forment une liste fermée ; les sessions interactives des administrateurs sont gérées par remote.py.
+Seule « uninstall » retire l'agent du poste.
 """
 
 import base64
@@ -630,6 +631,7 @@ def fleet_device(dev_id):
         return {"signature": signature}
     apps = catalog_state(inv) if dev["os_family"] == "windows" else []
     return render_template("fleet_device.html", dev=dev, inv=inv, color=color, reason=reason, history=history,
+                           remote_ready=version_key(dev["agent_version"]) >= (2, 4),
                            action_label=action_label,
                            apps=apps, families=FAMILIES, actions=ACTIONS, signature=signature,
                            needs_update=needs_update(dev), pending=pending(dev_id))

@@ -37,7 +37,7 @@
           </div>
         </div>
       </details>
-      <a href="{{ url_for('fleet') }}" class="{{ 'on' if ep.startswith('fleet') }}" {% if ep.startswith('fleet') %}aria-current="page"{% endif %}>{{ nav_icon('devices') }}<span>Mon parc</span></a>
+      <a href="{{ url_for('fleet') }}" class="{{ 'on' if ep.startswith(('fleet', 'remote')) }}" {% if ep.startswith(('fleet', 'remote')) %}aria-current="page"{% endif %}>{{ nav_icon('devices') }}<span>Mon parc</span></a>
       {% if can_edit %}
       <details class="nav-group nav-admin {{ 'on' if ep.startswith(('users', 'appliance')) or ep in ('journal', 'system') }}">
         <summary aria-expanded="false" aria-controls="nav-admin">{{ nav_icon('settings') }}<span class="nav-long">Administration</span><span class="nav-short">Admin</span>{{ nav_icon('chevron') }}</summary>
@@ -96,5 +96,6 @@
 {% endwith %}
 <div class="toasts" aria-live="polite"></div>
 <script src="{{ url_for('static', filename='app.js') }}?v={{ asset_v }}"></script>
+{% block scripts %}{% endblock %}
 </body>
 </html>

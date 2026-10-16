@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 2.4.0 — 2026-10-16
+
+- **Accès distant via l’agent** : terminal interactif PTY Linux et PowerShell ConPTY natif Windows, avec redimensionnement, arrêt à la fermeture et relais HTTPS sortant. Aucun accès aux consoles Proxmox.
+- **Bureau noVNC** : clavier et souris sur une session Windows ouverte ou un bureau X11 Linux, sans serveur VNC à installer ni port entrant à ouvrir. Compagnon Windows inclus dans le MSI ; bibliothèques du navigateur servies localement.
+- **Fenêtres de session** : plein écran avec barre d’outils et sortie explicite, et ouverture dans un nouvel onglet depuis la fiche du poste ou une session en cours.
+- Accès réservé aux administrateurs, sessions liées à leur connexion, révocation et délais d’expiration, flux acquittés sans rejeu, files temporaires exclues des sauvegardes. Audit des ouvertures et fermetures sans contenu des sessions.
+
 ## 2.3.0 — 2026-10-16
 
 - Store logiciels Windows alimenté par le catalogue communautaire Microsoft WinGet : catégories, recherche paginée, fiches, logos vérifiés et mis en cache, import d'installeurs vérifiés dans loco ; consultation du dernier index valide hors ligne.

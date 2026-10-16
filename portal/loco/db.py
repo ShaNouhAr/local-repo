@@ -116,6 +116,36 @@ MIGRATIONS = [
     ALTER TABLE win_apps ADD COLUMN detect TEXT NOT NULL DEFAULT '';
     ALTER TABLE win_apps ADD COLUMN winget_id TEXT NOT NULL DEFAULT '';
     """,
+    # 9 : sessions distantes, files transitoires acquittées (jamais de transcription conservée).
+    """
+    CREATE TABLE remote_sessions (
+        id TEXT PRIMARY KEY,
+        device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        owner TEXT NOT NULL,
+        pw_version INTEGER NOT NULL,
+        kind TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'waiting',
+        error TEXT NOT NULL DEFAULT '',
+        created REAL NOT NULL,
+        browser_seen REAL NOT NULL,
+        browser_attached INTEGER NOT NULL DEFAULT 0,
+        agent_seen REAL NOT NULL DEFAULT 0,
+        expires REAL NOT NULL,
+        cols INTEGER NOT NULL DEFAULT 100,
+        rows INTEGER NOT NULL DEFAULT 30,
+        input_seq INTEGER NOT NULL DEFAULT 0,
+        output_seq INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX remote_sessions_device ON remote_sessions(device_id, state);
+    CREATE TABLE remote_packets (
+        session_id TEXT NOT NULL REFERENCES remote_sessions(id) ON DELETE CASCADE,
+        direction TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        data BLOB NOT NULL,
+        PRIMARY KEY (session_id, direction, seq)
+    );
+    """,
 ]
 
 

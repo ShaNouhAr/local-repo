@@ -43,7 +43,7 @@ app.config.update(
 logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(levelname)s %(message)s")
 app.logger.setLevel(logging.INFO)
 
-STATIC_FILES = ("style.css", "app.js", "theme.js")
+STATIC_FILES = ("style.css", "app.js", "theme.js", "remote.js")
 ASSET_V = str(int(max(os.path.getmtime(os.path.join(app.static_folder, f)) for f in STATIC_FILES)))
 
 # Politique de contenu stricte : aucun script ni style en ligne.
@@ -55,7 +55,7 @@ PUBLIC_ENDPOINTS = {"linux_setup", "linux_repository_source", "windows_install_s
                     "healthz", "metrics", "static",
                     # Agent des postes (loco-client) : authentifié par sa clé d'inscription puis son jeton.
                     "agent_enroll", "agent_checkin", "agent_result", "agent_linux_installer", "agent_windows_installer",
-                    "agent_file"}
+                    "agent_file", "remote_agent"}
 
 
 @app.before_request
@@ -117,9 +117,9 @@ from . import db as _db  # noqa: E402
 app.teardown_appcontext(_db.close_db)
 
 # Les modules déclarent leurs routes sur `app` (structure « grande application » de Flask).
-from . import auth, dashboard, linux, wupdate, winapps, flatpak, rpmrepo, clients, system, appliance, fleet, winget  # noqa: E402
+from . import auth, dashboard, linux, wupdate, winapps, flatpak, rpmrepo, clients, system, appliance, fleet, winget, remote  # noqa: E402
 
-ROUTE_MODULES = (auth, dashboard, linux, wupdate, winapps, flatpak, rpmrepo, clients, system, appliance, fleet, winget)
+ROUTE_MODULES = (auth, dashboard, linux, wupdate, winapps, flatpak, rpmrepo, clients, system, appliance, fleet, winget, remote)
 
 
 def startup():

@@ -158,6 +158,12 @@ def login():
 @app.route("/logout", methods=["POST"])
 def logout():
     if g.user is not None:
+        # Une console distante ne doit pas survivre à la déconnexion du navigateur.
+        from . import remote
+        owner = remote._owner()
+        for row in db().execute("SELECT id FROM remote_sessions WHERE user_id=? AND owner=? AND state!='closed'",
+                                (g.user["id"], owner)).fetchall():
+            remote._close(row["id"], "Administrateur déconnecté.", g.user["username"])
         audit("deconnexion")
     session.clear()
     return redirect(url_for("login"))

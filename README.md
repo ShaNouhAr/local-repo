@@ -266,7 +266,7 @@ curl -fsSL 'https://<ip>:8443/agent/linux.sh?key=<clé>' | sudo sh
   Un inventaire manquant, incomplet ou un poste sans contact récent est gris, sans fausser le comptage.
 - **Actions** : *Mettre à jour* (un poste) ou *Tout mettre à jour* (tout le parc, tous systèmes), avec redémarrage
   facultatif ; installer ou mettre à jour un logiciel du catalogue ; inventaire ; redémarrage ; retrait de l'agent.
-  Aucune commande libre n'est possible : la liste des actions est fermée.
+  Ces actions utilisent une liste fermée ; les administrateurs disposent aussi du terminal interactif décrit ci-dessous.
 - **Identité** : chaque poste a un identifiant et un jeton propres, indépendants de son adresse. Un poste qui change
   d'IP (DHCP, autre site, VPN) reste dans le parc ; seul *Retirer l'agent*, poussé depuis loco, le détache.
 - **Sécurité** : l'autorité HTTPS de loco est épinglée par l'agent (empreinte SHA-256) sans modifier le magasin de
@@ -283,6 +283,18 @@ curl -fsSL 'https://<ip>:8443/agent/linux.sh?key=<clé>' | sudo sh
 L'agent se met à jour automatiquement avec loco.
 
 Sur Windows, le MSI installe aussi **loco-tray.exe**, lancé dans chaque session utilisateur. Sa pastille reprend l'état de Mon parc : vert sans mise à jour, orange de 1 à 9 mises à jour, rouge à partir de 10 (seuil réglable). Un état indisponible ou ancien est gris. Le menu et le double-clic affichent uniquement des détails : **aucune action de mise à jour n'est accessible à l'utilisateur**. Le compagnon ne contacte pas le serveur et ne lit aucun jeton ; il consulte un fichier d'état public, accessible uniquement en lecture aux utilisateurs standards. Le service privilégié reste seul responsable des actions reçues de loco.
+
+## Sessions distantes via l’agent
+
+Dans la fiche d’un poste de **Mon parc**, un administrateur peut ouvrir un **Terminal / PowerShell** ou le **Bureau noVNC**. Les boutons **Plein écran** et **Nouvel onglet** sont disponibles dans les deux vues ; le plein écran conserve les commandes de session et adapte le terminal ou le bureau à la place disponible. Le nouvel onglet ouvre une connexion indépendante sur le même poste.
+
+L’agent loco 2.4 ou ultérieur établit lui-même les connexions HTTPS sortantes vers loco, avec l’autorité du serveur épinglée. Aucun port entrant sur le poste, compte SSH, serveur VNC distinct ni accès Proxmox n’est nécessaire. Le terminal utilise un vrai PTY Linux ou ConPTY Windows, avec un shell **root** ou **PowerShell SYSTEM** selon le compte du service.
+
+Le bureau partage la session graphique existante : session utilisateur ouverte sous **Windows 11 et Windows Server 2022/2025**, ou bureau **X11** sous Linux (bibliothèques X11 et XTest requises). Le bureau Wayland, l’écran de connexion/verrouillage Windows et le bureau sécurisé UAC ne sont pas pris en charge. Un poste sans session graphique conserve son terminal.
+
+Les sessions sont réservées aux administrateurs et liées à leur connexion au portail. La fermeture de l’onglet, la déconnexion, le retrait de l’agent ou la révocation des droits les coupe. Elles expirent après une heure, après une minute sans navigateur ou après une perte prolongée du contact avec l’agent. Deux sessions de chaque type peuvent coexister par poste, dans une limite de huit sessions pour le serveur. Recharger la page ferme l’ancien flux ; **Nouvelle session** permet de repartir proprement.
+
+Le journal conserve les ouvertures et fermetures, sans enregistrer les frappes ni le contenu des écrans. Les files de transfert sont bornées, acquittées puis effacées ; elles sont exclues des sauvegardes avec les sessions actives.
 
 ## Supervision
 

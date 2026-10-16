@@ -3,7 +3,7 @@
 // Contacte le serveur loco toutes les deux minutes avec son identifiant et son jeton (propres au poste,
 // indépendants de son adresse IP), envoie l'inventaire (Windows Update, logiciels installés) et exécute les
 // actions demandées depuis le portail : inventaire, mise à jour (Windows Update et logiciels du catalogue),
-// installation d'un logiciel du catalogue, redémarrage, retrait de l'agent. Aucune commande libre.
+// installation d'un logiciel du catalogue, redémarrage, retrait de l'agent. Terminal interactif séparé, réservé aux administrateurs du portail.
 // L'autorité HTTPS de loco est épinglée (empreinte SHA-256) sans modifier le magasin de certificats du poste.
 //
 // Réglages d'inscription (installeur MSI ou GPO) : HKLM\SOFTWARE\Policies\loco\Client puis HKLM\SOFTWARE\loco\Client,
@@ -57,6 +57,7 @@ namespace Loco
     {
         readonly ManualResetEvent stopping = new ManualResetEvent(false);
         Thread worker;
+        RemoteControl remote;
 
         public ClientService()
         {
@@ -72,6 +73,7 @@ namespace Loco
             catch (Exception) { }
             worker = new Thread(Loop) { IsBackground = true, Name = "loco-client" };
             worker.Start();
+            remote = new RemoteControl(stopping);
         }
 
         protected override void OnStop()
@@ -79,7 +81,8 @@ namespace Loco
             stopping.Set();
             DesktopIndicator.StopSessions();
             RequestAdditionalTime(30000);
-            if (worker != null) worker.Join(25000);
+            if (remote != null) remote.Join();
+            if (worker != null) worker.Join(10000);
         }
 
         protected override void OnShutdown() { OnStop(); }
@@ -120,7 +123,9 @@ namespace Loco
         static bool firstRun = true;
         static X509Certificate2 ca;
         static readonly object runLock = new object();
-        static readonly JavaScriptSerializer Json = new JavaScriptSerializer { MaxJsonLength = 16 * 1024 * 1024 };
+        static readonly ThreadLocal<JavaScriptSerializer> Serializers = new ThreadLocal<JavaScriptSerializer>(
+            () => new JavaScriptSerializer { MaxJsonLength = 16 * 1024 * 1024 });
+        static JavaScriptSerializer Json { get { return Serializers.Value; } }
 
         // ------------------------------------------------------------ journal et fichiers
 
@@ -210,9 +215,9 @@ namespace Loco
             }
         }
 
-        static Dictionary<string, object> Post(string server, string path, object data, string token)
+        static Dictionary<string, object> Post(string server, string path, object data, string token, int timeout = 120000)
         {
-            var r = Request("POST", server + path, token, 120000, null);
+            var r = Request("POST", server + path, token, timeout, null);
             r.ContentType = "application/json; charset=utf-8";
             byte[] body = new UTF8Encoding(false).GetBytes(Json.Serialize(data));
             r.ContentLength = body.Length;
@@ -239,6 +244,15 @@ namespace Loco
         static void LoadCa()
         {
             ca = File.Exists(CaPath) ? new X509Certificate2(File.ReadAllBytes(CaPath)) : null;
+        }
+
+        internal static Dictionary<string, object> RemoteExchange(object data)
+        {
+            var conf = ReadJson(ConfigPath);
+            if (Str(conf, "token") == "") throw new IOException("Inscription du poste en attente");
+            ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+            if (ca == null) LoadCa();
+            return Post(Str(conf, "server"), "/agent/api/remote", data, Str(conf, "token"), 10000);
         }
 
         // ------------------------------------------------------------ inscription

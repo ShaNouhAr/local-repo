@@ -21,7 +21,7 @@ import os
 import re
 import shlex
 import shutil
-import sqlite3
+import locosnapshot
 import stat
 import subprocess
 import sys
@@ -339,10 +339,7 @@ def _snapshot():
         shutil.copy2(CONF, os.path.join(work, "loco.conf"))
         db = os.path.join(STATE, "portal.db")
         if os.path.isfile(db):
-            with contextlib.closing(sqlite3.connect(f"file:{db}?mode=ro", uri=True)) as src, \
-                    contextlib.closing(sqlite3.connect(os.path.join(work, "portal.db"))) as dst:
-                src.backup(dst)
-                dst.commit()
+            locosnapshot.snapshot(db, os.path.join(work, "portal.db"))
         yield work
 
 

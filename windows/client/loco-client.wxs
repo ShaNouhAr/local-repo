@@ -27,6 +27,8 @@
                   DefaultVersion="$(var.Version).0" KeyPath="yes" />
             <File Id="TrayExe" Name="loco-tray.exe" Source="$(var.SourceDir)/loco-tray.exe" DefaultVersion="$(var.Version).0" />
             <File Id="TrayConfig" Name="loco-tray.exe.config" Source="$(var.SourceDir)/loco-tray.exe.config" />
+            <File Id="DesktopExe" Name="loco-desktop.exe" Source="$(var.SourceDir)/loco-desktop.exe" DefaultVersion="$(var.Version).0" />
+            <File Id="DesktopConfig" Name="loco-desktop.exe.config" Source="$(var.SourceDir)/loco-desktop.exe.config" />
             <File Id="ClientConfig" Name="loco-client.exe.config" Source="$(var.SourceDir)/loco-client.exe.config" />
             <ServiceInstall Id="ClientService" Name="loco-client" DisplayName="loco - agent du parc"
                             Description="Inventaire et mises à jour du poste, piloté depuis le serveur loco."

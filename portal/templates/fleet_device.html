@@ -39,6 +39,22 @@
 </div>
 
 <div class="stack" data-poll="{{ url_for('fleet_device', dev_id=dev.id) }}" data-poll-kind="reload" data-poll-every="10000" data-signature="{{ signature }}">
+  {% if can_edit and dev.state == 'active' %}
+  <section class="panel">
+    <div class="panel-h"><h2>Accès distant</h2><span class="small muted">Via l'agent loco</span></div>
+    <div class="panel-b row">
+      {% for kind, label in [('terminal', 'Terminal PowerShell' if dev.os_family == 'windows' else 'Terminal'), ('desktop', 'Bureau noVNC')] %}
+      <form method="post" action="{{ url_for('remote_open', dev_id=dev.id) }}" class="row" rel="noopener">
+        <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="{{ kind }}">
+        <button class="btn" {% if not remote_ready %}disabled title="Agent 2.4.0 requis"{% endif %}>{{ label }}</button>
+        <button class="btn" formtarget="_blank" aria-label="{{ label }} dans un nouvel onglet" title="Ouvrir dans un nouvel onglet" {% if not remote_ready %}disabled{% endif %}>↗</button>
+      </form>
+      {% endfor %}
+      {% if not remote_ready %}<span class="small muted">Disponible après la mise à jour de l'agent en 2.4.0.</span>{% endif %}
+      <span class="small muted">Session d'administration journalisée · fermeture automatique après déconnexion</span>
+    </div>
+  </section>
+  {% endif %}
   {% if pending %}<p class="note warn">En attente : {% for c in pending %}{{ actions[c.action]|lower }} ({{ 'transmise' if c.state != 'queued' else 'au prochain contact' }}){{ ', ' if not loop.last }}{% endfor %}.</p>{% endif %}
   {% if inv.error %}<p class="note err">{{ inv.error }}</p>{% endif %}
 

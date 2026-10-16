@@ -21,7 +21,7 @@ case "${1:-}" in
         trap 'rm -rf "$work"' EXIT
         chown loco "$work"
         # Copie cohérente de la base, même pendant une écriture.
-        runuser -u loco -- "${PYTHON:-python3}" -c "import sqlite3,sys; s=sqlite3.connect(sys.argv[1]); d=sqlite3.connect(sys.argv[2]); s.backup(d); d.close()" \
+        runuser -u loco -- "${PYTHON:-python3}" -c "import sys; sys.path.insert(0,'/opt/loco/portal'); from locosnapshot import snapshot; snapshot(sys.argv[1],sys.argv[2])" \
             "$STATE/portal.db" "$work/portal.db"
         name="loco-$(hostname)-$(date +%Y%m%d-%H%M%S).tar.gz"
         S="${STATE#/}" D="${DATA#/}"

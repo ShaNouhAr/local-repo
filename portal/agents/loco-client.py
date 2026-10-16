@@ -3,7 +3,7 @@
 
 Lancé toutes les deux minutes par loco-client.timer (root). Contacte le serveur loco avec son identifiant et son
 jeton (indépendants de l'adresse IP du poste), envoie l'inventaire des mises à jour et exécute les actions
-demandées depuis le portail : inventaire, mise à jour, redémarrage, retrait de l'agent. Aucune commande libre.
+demandées depuis le portail : inventaire, mise à jour, redémarrage, retrait de l'agent. Terminal interactif séparé, réservé aux administrateurs du portail.
   loco-client run                         contact du serveur (service)
   loco-client enroll --server URL --key CLÉ
   loco-client status
@@ -11,18 +11,26 @@ demandées depuis le portail : inventaire, mise à jour, redémarrage, retrait d
 Bibliothèque standard de Python uniquement ; autorité du serveur épinglée (/etc/loco-client/ca.crt).
 """
 
+import base64
+import ctypes
 import datetime
 import fcntl
 import json
 import os
 import platform
+import pty
+import pwd
 import re
 import shutil
 import socket
+import signal
+import struct
 import ssl
 import subprocess
 import sys
+import termios
 import time
+import zlib
 import urllib.error
 import urllib.request
 import uuid
@@ -34,7 +42,8 @@ CA = os.path.join(ETC, "ca.crt")
 STATE = "/var/lib/loco-client/state.json"
 LOCK = "/run/loco-client.lock"
 PROGRAM = "/usr/local/lib/loco-client/loco-client.py"
-UNITS = ("/etc/systemd/system/loco-client.service", "/etc/systemd/system/loco-client.timer")
+UNITS = ("/etc/systemd/system/loco-client.service", "/etc/systemd/system/loco-client.timer",
+         "/etc/systemd/system/loco-client-remote.service")
 OUTPUT_LIMIT = 60000
 ENV = dict(os.environ, LC_ALL="C", LANG="C", DEBIAN_FRONTEND="noninteractive")
 
@@ -266,6 +275,7 @@ def self_update(conf, wanted):
 
 
 def remove_local():
+    subprocess.run(["systemctl", "disable", "--now", "loco-client-remote.service"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     subprocess.run(["systemctl", "disable", "--now", "loco-client.timer"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     for path in UNITS:
         if os.path.exists(path):
@@ -288,6 +298,7 @@ def service():
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         return 0
+    ensure_remote_service()
     state = load(STATE)
     data = identity()
     last = state.get("last_scan", 0)
@@ -384,11 +395,388 @@ def status_cmd():
     return 0
 
 
+
+# --------------------------------------------------------------------------- sessions distantes natives
+
+REMOTE_UNIT = """[Unit]
+Description=loco : sessions distantes de l'agent
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+ExecStart=/usr/local/lib/loco-client/loco-client.py remote
+Restart=always
+RestartSec=5
+TimeoutStopSec=10
+KillMode=control-group
+[Install]
+WantedBy=multi-user.target
+"""
+
+
+def ensure_remote_service():
+    path = UNITS[2]
+    try:
+        with open(path) as f:
+            if f.read() == REMOTE_UNIT:
+                return
+    except OSError:
+        pass
+    with open(path, "w") as f:
+        f.write(REMOTE_UNIT)
+    os.chmod(path, 0o644)
+    subprocess.run(["systemctl", "daemon-reload"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    subprocess.run(["systemctl", "enable", "--now", "loco-client-remote.service"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
+class RemoteProcess:
+    """PTY ou flux RFB privé, avec acquittements pour ne pas rejouer une frappe après une coupure."""
+    def __init__(self, descriptor):
+        self.sid, self.kind = descriptor["id"], descriptor["kind"]
+        self.ack, self.seq, self.pending, self.incoming = 0, 0, b"", []
+        self.state, self.error, self.process, self.master = "active", "", None, None
+        try:
+            if self.kind == "terminal":
+                master, slave = pty.openpty()
+                self.master = master
+                try:
+                    home = pwd.getpwuid(os.geteuid()).pw_dir
+                    env = dict(os.environ, TERM="xterm-256color", COLORTERM="truecolor", HOME=home)
+                    shell = "/bin/bash" if os.path.isfile("/bin/bash") else "/bin/sh"
+                    bootstrap = "import fcntl,termios,os; fcntl.ioctl(0,termios.TIOCSCTTY,0); os.execv(%r,[%r,'-l'])" % (shell, shell)
+                    self.process = subprocess.Popen([sys.executable, "-c", bootstrap], stdin=slave, stdout=slave, stderr=slave,
+                                                    start_new_session=True, close_fds=True, env=env, cwd=home)
+                finally:
+                    os.close(slave)
+                self.reader = self.writer = master
+            elif self.kind == "desktop":
+                self.process = subprocess.Popen([sys.executable, PROGRAM, "desktop"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                                stderr=subprocess.PIPE, start_new_session=True, close_fds=True)
+                self.reader, self.writer = self.process.stdout.fileno(), self.process.stdin.fileno()
+            else:
+                raise ValueError("Type de session inconnu")
+            for fd in set((self.reader, self.writer)):
+                fcntl.fcntl(fd, fcntl.F_SETFL, fcntl.fcntl(fd, fcntl.F_GETFL) | os.O_NONBLOCK)
+            self.resize(descriptor)
+        except Exception as e:
+            self.state, self.error = "closed", str(e)[:300]
+            self.close()
+
+    def resize(self, descriptor):
+        if self.master is not None:
+            cols, rows = max(20, min(500, int(descriptor["cols"]))), max(5, min(200, int(descriptor["rows"])))
+            fcntl.ioctl(self.master, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+
+    def update(self, descriptor):
+        if descriptor["ack"] == self.seq:
+            self.pending = b""
+        if descriptor["state"] == "closed":
+            self.close()
+            return
+        if self.state != "active":
+            return
+        self.resize(descriptor)
+        for packet in descriptor["packets"]:
+            seq = packet["seq"]
+            if seq <= self.ack or any(seq == item[0] for item in self.incoming):
+                continue
+            data = base64.b64decode(packet["data"], validate=True)
+            if len(data) > 256 * 1024 or sum(len(item[1]) for item in self.incoming) + len(data) > 2 * 1024 * 1024:
+                raise ValueError("Saisie distante trop volumineuse")
+            self.incoming.append([seq, data])
+        while self.incoming:
+            item = self.incoming[0]
+            try:
+                count = os.write(self.writer, item[1])
+            except BlockingIOError:
+                break
+            item[1] = item[1][count:]
+            if item[1]:
+                break
+            self.ack = item[0]
+            self.incoming.pop(0)
+
+    def payload(self):
+        if self.state == "active" and not self.pending:
+            try:
+                data = os.read(self.reader, 64 * 1024)
+                if data:
+                    self.pending, self.seq = data, self.seq + 1
+                else:
+                    self.state = "closed"
+            except BlockingIOError:
+                pass
+            except OSError:
+                self.state = "closed"
+            if self.process.poll() is not None and not self.pending:
+                self.state = "closed"
+            if self.state == "closed":
+                if self.kind == "desktop" and self.process.stderr:
+                    self.error = self.process.stderr.read(1000).decode("utf-8", "replace").strip()[-300:]
+                self.error = self.error or "Session terminée."
+        return {"id": self.sid, "ack": self.ack, "seq": self.seq,
+                "data": base64.b64encode(self.pending).decode(), "state": self.state, "error": self.error}
+
+    def close(self):
+        self.state = "closed"
+        if self.process:
+            try:
+                os.killpg(self.process.pid, signal.SIGHUP if self.kind == "terminal" else signal.SIGTERM)
+                self.process.wait(timeout=2)
+            except (OSError, subprocess.TimeoutExpired):
+                try:
+                    os.killpg(self.process.pid, signal.SIGKILL)
+                    self.process.wait(timeout=2)
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
+            for stream in (self.process.stdin, self.process.stdout, self.process.stderr):
+                if stream:
+                    stream.close()
+            self.process = None
+        if self.master is not None:
+            os.close(self.master)
+            self.master = None
+
+
+def remote_service():
+    stopping = [False]
+    signal.signal(signal.SIGTERM, lambda *_: stopping.__setitem__(0, True))
+    signal.signal(signal.SIGINT, lambda *_: stopping.__setitem__(0, True))
+    with open("/run/loco-client-remote.lock", "w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return 0
+        sessions, last_ok = {}, time.monotonic()
+        try:
+            while not stopping[0]:
+                delay = 5
+                try:
+                    conf = load(CONFIG)
+                    if not conf.get("token"):
+                        break
+                    answer = call(conf["server"], "/agent/api/remote", {"sessions": [s.payload() for s in sessions.values()]},
+                                  conf["token"], timeout=10)
+                    last_ok = time.monotonic()
+                    descriptors = {d["id"]: d for d in answer["sessions"]}
+                    for sid in list(sessions):
+                        if sid not in descriptors or descriptors[sid]["state"] == "closed":
+                            sessions.pop(sid).close()
+                    for sid, descriptor in descriptors.items():
+                        if descriptor["state"] not in ("waiting", "active"):
+                            continue
+                        if sid not in sessions:
+                            sessions[sid] = RemoteProcess(descriptor)
+                        try:
+                            sessions[sid].update(descriptor)
+                        except (OSError, ValueError) as e:
+                            sessions[sid].error = str(e)[:300]
+                            sessions[sid].close()
+                    delay = 0.1 if sessions else 5
+                except (OSError, ValueError, KeyError) as e:
+                    log("session distante : " + str(e)[:200])
+                    if time.monotonic() - last_ok > 20 or getattr(e, "code", 0) in (401, 403):
+                        for item in sessions.values():
+                            item.close()
+                        sessions.clear()
+                until = time.monotonic() + delay
+                while not stopping[0] and time.monotonic() < until:
+                    time.sleep(min(0.1, max(0, until - time.monotonic())))
+        finally:
+            for item in sessions.values():
+                item.close()
+    return 0
+
+
+class XImage(ctypes.Structure):
+    _fields_ = [(n, t) for n, t in (("width", ctypes.c_int), ("height", ctypes.c_int), ("xoffset", ctypes.c_int),
+                ("format", ctypes.c_int), ("data", ctypes.c_void_p), ("byte_order", ctypes.c_int),
+                ("bitmap_unit", ctypes.c_int), ("bitmap_bit_order", ctypes.c_int), ("bitmap_pad", ctypes.c_int),
+                ("depth", ctypes.c_int), ("bytes_per_line", ctypes.c_int), ("bits_per_pixel", ctypes.c_int),
+                ("red_mask", ctypes.c_ulong), ("green_mask", ctypes.c_ulong), ("blue_mask", ctypes.c_ulong))]
+
+
+def x11_environment():
+    wayland = False
+    # Seulement les displays locaux ; aucun hôte / mot de passe fourni par le navigateur.
+    candidates = [dict(os.environ)]
+    for name in os.listdir("/proc"):
+        if not name.isdigit():
+            continue
+        try:
+            with open("/proc/" + name + "/environ", "rb") as f:
+                values = f.read(65536).split(b"\0")
+            candidates.append(dict(v.decode("utf-8", "replace").split("=", 1) for v in values if b"=" in v))
+        except OSError:
+            pass
+    wayland_displays = {e.get("DISPLAY") for e in candidates if e.get("XDG_SESSION_TYPE") == "wayland"}
+    for env in candidates:
+        if env.get("XDG_SESSION_TYPE") == "wayland":
+            wayland = True
+            continue
+        if env.get("DISPLAY") not in wayland_displays and re.fullmatch(r":[0-9]+(?:\.[0-9]+)?", env.get("DISPLAY", "")):
+            return env
+    raise RuntimeError("Bureau Wayland non pris en charge ; une session X11 est nécessaire." if wayland else
+                       "Aucune session graphique X11 ouverte sur ce poste.")
+
+
+def linux_desktop():
+    """Serveur RFB 3.8 intégré, Tight/RGB compressé, directement sur X11/XTest (aucun port VNC)."""
+    env = x11_environment()
+    os.environ["DISPLAY"] = env["DISPLAY"]
+    if env.get("XAUTHORITY"):
+        os.environ["XAUTHORITY"] = env["XAUTHORITY"]
+    x, xt = ctypes.CDLL("libX11.so.6"), ctypes.CDLL("libXtst.so.6")
+    def bind(lib, name, result, args):
+        fn = getattr(lib, name)
+        fn.restype, fn.argtypes = result, args
+        return fn
+    ptr, integer, ulong = ctypes.c_void_p, ctypes.c_int, ctypes.c_ulong
+    display = bind(x, "XOpenDisplay", ptr, [ctypes.c_char_p])(env["DISPLAY"].encode())
+    if not display:
+        raise RuntimeError("La session X11 n'est pas accessible à l'agent.")
+    root = bind(x, "XDefaultRootWindow", ulong, [ptr])(display)
+    screen = bind(x, "XDefaultScreen", integer, [ptr])(display)
+    width = bind(x, "XDisplayWidth", integer, [ptr, integer])(display, screen)
+    height = bind(x, "XDisplayHeight", integer, [ptr, integer])(display, screen)
+    if not 1 <= width <= 4096 or not 1 <= height <= 2160:
+        raise RuntimeError("Résolution X11 supérieure à 4096 × 2160.")
+    get_image = bind(x, "XGetImage", ctypes.POINTER(XImage), [ptr, ulong, integer, integer, ctypes.c_uint, ctypes.c_uint, ulong, integer])
+    destroy = bind(x, "XDestroyImage", integer, [ctypes.POINTER(XImage)])
+    keycode = bind(x, "XKeysymToKeycode", ctypes.c_ubyte, [ptr, ulong])
+    key = bind(xt, "XTestFakeKeyEvent", integer, [ptr, ctypes.c_uint, integer, ulong])
+    button = bind(xt, "XTestFakeButtonEvent", integer, [ptr, ctypes.c_uint, integer, ulong])
+    motion = bind(xt, "XTestFakeMotionEvent", integer, [ptr, integer, integer, integer, ulong])
+    flush = bind(x, "XFlush", integer, [ptr])
+    close = bind(x, "XCloseDisplay", integer, [ptr])
+    inp, out = sys.stdin.buffer, sys.stdout.buffer
+    def read(n):
+        data = b""
+        while len(data) < n:
+            part = inp.read(n - len(data))
+            if not part:
+                raise EOFError()
+            data += part
+        return data
+    def write(data):
+        out.write(data)
+        out.flush()
+    def compact(n):
+        data = bytes([(n & 127) | (128 if n > 127 else 0)])
+        if n > 127:
+            data += bytes([((n >> 7) & 127) | (128 if n > 16383 else 0)])
+        if n > 16383:
+            data += bytes([(n >> 14) & 255])
+        return data
+    pressed, mask, tight, last_frame, rgb_order = set(), 0, False, 0, False
+    try:
+        write(b"RFB 003.008\n")
+        if read(12) != b"RFB 003.008\n":
+            raise ValueError("Version RFB non prise en charge")
+        write(b"\x01\x01")
+        if read(1) != b"\x01":
+            raise ValueError("Négociation RFB invalide")
+        write(b"\0\0\0\0")
+        read(1)
+        name = socket.gethostname().encode()
+        pixel = struct.pack(">BBBBHHHBBBxxx", 32, 24, 0, 1, 255, 255, 255, 16, 8, 0)
+        write(struct.pack(">HH", width, height) + pixel + struct.pack(">I", len(name)) + name)
+        while True:
+            kind = read(1)[0]
+            if kind == 0:
+                fmt = read(19)[3:]
+                if fmt[:10] != pixel[:10] or fmt[10:13] not in (b"\x10\x08\x00", b"\x00\x08\x10"):
+                    raise ValueError("Format de pixels RFB non pris en charge")
+                rgb_order = fmt[10] == 0
+            elif kind == 2:
+                count = struct.unpack(">xH", read(3))[0]
+                if count > 128:
+                    raise ValueError("Trop d'encodages RFB")
+                tight = 7 in struct.unpack(">" + "i" * count, read(count * 4))
+            elif kind == 3:
+                read(9)
+                time.sleep(max(0, 0.15 - (time.monotonic() - last_frame)))
+                image = get_image(display, root, 0, 0, width, height, ctypes.c_ulong(-1).value, 2)
+                if not image:
+                    raise RuntimeError("Capture de la session X11 impossible")
+                try:
+                    im = image.contents
+                    if im.bits_per_pixel != 32 or im.byte_order != 0 or (im.red_mask, im.green_mask, im.blue_mask) != (0xff0000, 0xff00, 0xff):
+                        raise RuntimeError("Format X11 non pris en charge (RGB 24/32 bits requis)")
+                    data = ctypes.string_at(im.data, im.bytes_per_line * height)
+                    if im.bytes_per_line != width * 4:
+                        data = b"".join(data[y * im.bytes_per_line:y * im.bytes_per_line + width * 4] for y in range(height))
+                finally:
+                    destroy(image)
+                if tight:
+                    # Bandes < 4 Mio : limite du préfixe compact Tight et du tampon de décodage noVNC.
+                    write(b"\0\0" + struct.pack(">H", (height + 127) // 128))
+                    for y in range(0, height, 128):
+                        h = min(128, height - y)
+                        stripe = data[y * width * 4:(y + h) * width * 4]
+                        rgb = bytearray(width * h * 3)
+                        rgb[0::3], rgb[1::3], rgb[2::3] = stripe[2::4], stripe[1::4], stripe[0::4]
+                        compressed = zlib.compress(rgb, 2)
+                        payload = b"\x01" + (compact(len(compressed)) + compressed if len(rgb) >= 12 else bytes(rgb))
+                        write(struct.pack(">HHHHi", 0, y, width, h, 7) + payload)
+                else:
+                    if rgb_order:
+                        rgb = bytearray(data)
+                        rgb[0::4], rgb[2::4] = data[2::4], data[0::4]
+                        data = bytes(rgb)
+                    write(b"\0\0\0\x01" + struct.pack(">HHHHi", 0, 0, width, height, 0) + data)
+                last_frame = time.monotonic()
+            elif kind == 4:
+                down, sym = struct.unpack(">BxxI", read(7))
+                code = keycode(display, sym)
+                if code:
+                    key(display, code, bool(down), 0)
+                    (pressed.add if down else pressed.discard)(code)
+            elif kind == 5:
+                next_mask, pos_x, pos_y = struct.unpack(">BHH", read(5))
+                motion(display, screen, min(width - 1, pos_x), min(height - 1, pos_y), 0)
+                for bit, number in ((1, 1), (2, 2), (4, 3)):
+                    if (mask ^ next_mask) & bit:
+                        button(display, number, bool(next_mask & bit), 0)
+                for bit, number in ((8, 4), (16, 5)):
+                    if next_mask & bit and not mask & bit:
+                        button(display, number, 1, 0)
+                        button(display, number, 0, 0)
+                mask = next_mask
+            elif kind == 6:
+                length = struct.unpack(">xxxI", read(7))[0]
+                if length > 1024 * 1024:
+                    raise ValueError("Presse-papiers trop volumineux")
+                read(length)
+            else:
+                raise ValueError("Message RFB non pris en charge")
+            flush(display)
+    except EOFError:
+        pass
+    finally:
+        for code in pressed:
+            key(display, code, 0, 0)
+        for bit, number in ((1, 1), (2, 2), (4, 3)):
+            if mask & bit:
+                button(display, number, 0, 0)
+        flush(display)
+        close(display)
+
+
 def main(argv):
     if os.geteuid() != 0:
         print("loco-client : lancez cette commande en root.", file=sys.stderr)
         return 1
     cmd = argv[0] if argv else "run"
+    if cmd == "remote":
+        return remote_service()
+    if cmd == "desktop":
+        try:
+            linux_desktop()
+            return 0
+        except Exception as e:
+            print(str(e), file=sys.stderr)
+            return 1
     if cmd == "run":
         return service()
     if cmd == "enroll" and len(argv) == 5 and argv[1] == "--server" and argv[3] == "--key":

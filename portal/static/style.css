@@ -385,6 +385,14 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
 .app-logo-box.small { flex-basis: 32px; width: 32px; height: 32px; border-radius: 6px; font-size: 18px; }
 .app-logo-box.large { flex-basis: 64px; width: 64px; height: 64px; font-size: 32px; }
 .store-card-actions { margin-top: auto; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+.remote-session [hidden] { display: none !important; }
+.remote-screen { height: max(420px, calc(100dvh - 315px)); min-height: 420px; background: #080808; border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; }
+.remote-screen.terminal { padding: 12px; }
+.remote-screen:fullscreen { height: 100dvh; border: 0; border-radius: 0; }
+.remote-session:fullscreen { display: flex; flex-direction: column; gap: 12px; width: 100dvw; height: 100dvh; padding: 16px; background: var(--bg); overflow: auto; }
+.remote-session:fullscreen .head { margin: 0; }
+.remote-session:fullscreen .remote-screen { flex: 1 1 auto; height: auto; min-height: 0; }
+.remote-session:fullscreen > p { margin: 0; }
 .store-description { white-space: pre-line; }
 .store-pagination { justify-content: center; }
 .store-search input { flex: 1; min-width: 180px; }

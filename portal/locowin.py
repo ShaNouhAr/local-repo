@@ -20,7 +20,7 @@ import secrets
 import shutil
 import signal
 import socket
-import sqlite3
+import locosnapshot
 import ssl
 import subprocess
 import sys
@@ -447,12 +447,7 @@ def backup_create(cfg, dest=None):
     name = f"loco-{hostname()}-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}.tar.gz"
     with tempfile.TemporaryDirectory(dir=os.path.join(cfg["data_dir"], ".tmp")) as work:
         db_copy = os.path.join(work, "portal.db")
-        src = sqlite3.connect(os.path.join(cfg["state_dir"], "portal.db"))
-        dst = sqlite3.connect(db_copy)
-        with dst:
-            src.backup(dst)
-        dst.close()
-        src.close()
+        locosnapshot.snapshot(os.path.join(cfg["state_dir"], "portal.db"), db_copy)
         archive = os.path.join(work, name)
         skip_state = {"portal.db", "portal.db-wal", "portal.db-shm", "service-status.json"}
 
