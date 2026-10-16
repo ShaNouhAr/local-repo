@@ -28,8 +28,8 @@
                             Type="ownProcess" Start="auto" ErrorControl="normal" Account="LocalSystem" Vital="yes" />
             <ServiceControl Id="ClientServiceControl" Name="loco-client" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
           </Component>
+          <!-- Valeurs vides sans propriétés (GPO : HKLM\SOFTWARE\Policies\loco\Client est lu en premier). -->
           <Component Id="Settings" Guid="28201fb5-7923-40fe-a669-e306a13740be" Win64="yes">
-            <Condition>SERVER</Condition>
             <RegistryKey Root="HKLM" Key="SOFTWARE\loco\Client">
               <RegistryValue Name="Server" Type="string" Value="[SERVER]" KeyPath="yes" />
               <RegistryValue Name="Key" Type="string" Value="[KEY]" />
