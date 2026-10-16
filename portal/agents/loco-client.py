@@ -140,6 +140,14 @@ def run(cmd, timeout=7200):
         return 124, (e.stdout or "") if isinstance(e.stdout, str) else "délai dépassé\n"
 
 
+def booted_since(timestamp):
+    try:
+        with open("/proc/uptime") as f:
+            return time.time() - float(f.read().split()[0]) > timestamp
+    except (OSError, ValueError, IndexError):
+        return False
+
+
 def flatpak_updates():
     if not shutil.which("flatpak"):
         return 0
@@ -280,7 +288,8 @@ def service():
     state = load(STATE)
     data = identity()
     last = state.get("last_scan", 0)
-    if time.time() - last > state.get("scan_hours", 6) * 3600 or state.get("rescan"):
+    # Inventaire refait après un redémarrage : celui d'avant ne reflète plus les mises à jour installées.
+    if time.time() - last > state.get("scan_hours", 6) * 3600 or state.get("rescan") or booted_since(last):
         data["inventory"] = scan()
         state.update(last_scan=time.time(), rescan=False)
     try:

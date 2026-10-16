@@ -7,7 +7,7 @@
            Manufacturer="loco" UpgradeCode="ce61fcd5-c143-478b-ad84-03873b29b8d6">
     <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine"
              Description="Agent du parc loco (inventaire, mises à jour)" Comments="https://github.com/ShaNouhAr/loco" />
-    <MajorUpgrade DowngradeErrorMessage="Une version plus récente de loco-client est déjà installée." />
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="Une version plus récente de loco-client est déjà installée." />
     <Media Id="1" Cabinet="client.cab" EmbedCab="yes" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/ShaNouhAr/loco" />
     <Property Id="ARPNOMODIFY" Value="1" />

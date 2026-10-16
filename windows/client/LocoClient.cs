@@ -114,6 +114,9 @@ namespace Loco
         const int OutputLimit = 60000;
         const int InstallerTimeout = 1800;
         public static int Interval = 120;
+        // Premier contact depuis le démarrage du service (démarrage du poste, mise à jour de l'agent) :
+        // inventaire refait, pour ne pas garder l'état d'avant un redémarrage (mises à jour installées depuis).
+        static bool firstRun = true;
         static X509Certificate2 ca;
         static readonly object runLock = new object();
         static readonly JavaScriptSerializer Json = new JavaScriptSerializer { MaxJsonLength = 16 * 1024 * 1024 };
@@ -568,14 +571,14 @@ namespace Loco
                 if (state.TryGetValue("rescan", out v)) rescan = Convert.ToBoolean(v);
                 double now = (DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalSeconds;
                 var data = Identity();
-                if (rescan || now - lastScan > scanHours * 3600)
+                if (rescan || firstRun || now - lastScan > scanHours * 3600)
                 {
                     data["inventory"] = Inventory();
                     lastScan = now;
                     rescan = false;
                 }
                 Dictionary<string, object> answer;
-                try { answer = Post(Str(conf, "server"), "/agent/api/checkin", data, Str(conf, "token")); }
+                try { answer = Post(Str(conf, "server"), "/agent/api/checkin", data, Str(conf, "token")); firstRun = false; }
                 catch (LocoHttpException e)
                 {
                     if (e.Status == 401) Log("jeton refusé par le serveur (poste retiré du parc ?) : réinstallez l'agent pour le réinscrire");
