@@ -9,6 +9,13 @@
   </div>
   {% if can_edit %}
   <div class="actions">
+    {% if apps|selectattr('winget_id')|list %}
+    <form method="post" action="{{ url_for('winget_update') }}" data-ajax>
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn" title="Nouvelles versions des logiciels importés depuis winget"><span class="spin"></span>Nouvelles versions</button>
+    </form>
+    {% endif %}
+    <a class="btn" href="{{ url_for('winget_search') }}">Chercher dans winget</a>
     <button type="button" class="btn primary" data-open="#add">Ajouter un logiciel</button>
   </div>
   {% endif %}
@@ -31,7 +38,8 @@
         {% set note = a.status == 'error' or (a.status == 'ready' and a.kind == 'exe' and not a.args) %}
         <tr class="{{ 'has-note' if note }}" data-slug="{{ a.slug }}" data-status="{{ a.status }}">
           <td class="chk"><input type="checkbox" class="pick" value="{{ a.slug }}" aria-label="{{ a.name }}" {{ 'disabled' if a.status != 'ready' }}></td>
-          <td>{{ a.name }}<span class="sub">{{ a.slug }}</span></td>
+          {% set used = usage.get(a.slug, [0, 0]) %}
+          <td>{{ a.name }}<span class="sub">{{ a.slug }}{% if a.winget_id %} · winget {{ a.winget_id }}{% endif %}{% if used[0] %} · <a href="{{ url_for('fleet') }}">{{ used[0] }} poste(s)</a>{% if used[1] %}, <span class="st warn">{{ used[1] }} à mettre à jour</span>{% endif %}{% endif %}</span></td>
           <td class="mono">{{ a.version or '—' }}</td>
           <td class="mono muted">{{ a.kind }}</td>
           <td class="mono muted">{{ a.args or '—' }}</td>
@@ -46,7 +54,7 @@
             {% if can_edit %}
             <div class="acts">
               <button type="button" class="linkbtn" data-open="#edit"
-                data-app='{{ {"slug": a.slug, "name": a.name, "version": a.version, "kind": a.kind, "args": a.args, "url": a.source_url, "filename": a.filename, "sha256": a.sha256}|tojson|forceescape }}'>Modifier</button>
+                data-app='{{ {"slug": a.slug, "name": a.name, "version": a.version, "kind": a.kind, "args": a.args, "url": a.source_url, "filename": a.filename, "sha256": a.sha256, "detect": a.detect}|tojson|forceescape }}'>Modifier</button>
               {% if a.source_url %}
               <form method="post" action="{{ url_for('windows_apps_refresh', slug=a.slug) }}" data-ajax>
                 <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -117,6 +125,8 @@
           </select>
         </label>
         <label class="f"><span>Arguments silencieux</span><input type="text" name="args" placeholder="/S"></label>
+        <label class="f wide"><span>Nom dans Windows (détection sur le parc)</span><input type="text" name="detect" placeholder="7-Zip (par défaut : le nom ci-dessus)">
+          <span class="hint">Début du nom affiché dans « Programmes et fonctionnalités », ou motif avec * ; avec la version, sert à repérer les postes à mettre à jour.</span></label>
         <p class="hint wide hint-tight">Par défaut : msi <code>{{ default_args.msi }}</code>, msu <code>{{ default_args.msu }}</code>. Pour un exe, selon l'éditeur : <code>/S</code>, <code>/silent</code>, <code>/quiet</code>…</p>
       </div>
       <div class="progress"><div class="meter"><i></i></div><div class="row"><span data-size></span><span data-pct></span></div></div>
@@ -142,6 +152,7 @@
           <select name="kind"><option value="auto">Automatique</option>{% for k in ['exe', 'msi', 'msu', 'ps1', 'file'] %}<option>{{ k }}</option>{% endfor %}</select>
         </label>
         <label class="f"><span>Arguments</span><input type="text" name="args"></label>
+        <label class="f wide"><span>Nom dans Windows (détection sur le parc)</span><input type="text" name="detect" placeholder="par défaut : le nom"></label>
         <div class="wide">
           <span class="cmd-label">Remplacer le fichier</span>
           <div class="drop"><input type="file" name="file" aria-label="Nouveau fichier"><div class="files"></div></div>

@@ -73,6 +73,49 @@ MIGRATIONS = [
         created_at TEXT NOT NULL
     );
     """,
+    # 5 : parc de postes (agent loco-client) : identité propre au poste, indépendante de son adresse IP ;
+    # actions à exécuter par l'agent ; détection des logiciels du catalogue Windows installés sur les postes.
+    """
+    CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+    CREATE TABLE devices (
+        id INTEGER PRIMARY KEY,
+        uid TEXT UNIQUE NOT NULL,
+        token_hash TEXT NOT NULL,
+        hostname TEXT NOT NULL DEFAULT '',
+        os_family TEXT NOT NULL DEFAULT '',
+        os_name TEXT NOT NULL DEFAULT '',
+        agent_version TEXT NOT NULL DEFAULT '',
+        ip TEXT NOT NULL DEFAULT '',
+        addresses TEXT NOT NULL DEFAULT '',
+        enrolled_at TEXT NOT NULL,
+        last_seen TEXT NOT NULL DEFAULT '',
+        last_scan TEXT NOT NULL DEFAULT '',
+        updates INTEGER NOT NULL DEFAULT 0,
+        security_updates INTEGER NOT NULL DEFAULT 0,
+        reboot_required INTEGER NOT NULL DEFAULT 0,
+        inventory TEXT NOT NULL DEFAULT '{}',
+        state TEXT NOT NULL DEFAULT 'active'
+    );
+    CREATE TABLE device_commands (
+        id INTEGER PRIMARY KEY,
+        device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+        action TEXT NOT NULL,
+        params TEXT NOT NULL DEFAULT '{}',
+        state TEXT NOT NULL DEFAULT 'queued',
+        created_at TEXT NOT NULL,
+        created_by TEXT NOT NULL DEFAULT '',
+        sent_at TEXT NOT NULL DEFAULT '',
+        finished_at TEXT NOT NULL DEFAULT '',
+        exit_code INTEGER,
+        output TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX device_commands_device ON device_commands(device_id, state);
+    ALTER TABLE win_apps ADD COLUMN detect TEXT NOT NULL DEFAULT '';
+    ALTER TABLE win_apps ADD COLUMN winget_id TEXT NOT NULL DEFAULT '';
+    """,
 ]
 
 

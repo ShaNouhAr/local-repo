@@ -41,16 +41,19 @@ def store_file(row_id, slug, tmp, filename):
                          (kind, row["args"] or config.DEFAULT_ARGS[kind], row_id))
 
 
-def fetch_app(row_id, slug, url):
-    """Téléchargement en arrière-plan d'un logiciel depuis son lien."""
+def fetch_app(row_id, slug, url, expected_sha256="", filename=""):
+    """Téléchargement en arrière-plan d'un logiciel depuis son lien (empreinte imposée : catalogue winget)."""
     tmp = None
     try:
         os.makedirs(app_dir(slug), exist_ok=True)
         try:
-            tmp, filename = download(url, app_dir(slug), progress_key=slug)
+            tmp, name = download(url, app_dir(slug), progress_key=slug)
         except Cancelled:
             shutil.rmtree(app_dir(slug), ignore_errors=True)
             return
+        filename = filename or name
+        if expected_sha256 and sha256_of(tmp) != expected_sha256.lower():
+            raise ValueError("Empreinte SHA-256 différente de celle du catalogue winget : fichier refusé.")
         with transaction() as conn:
             still_there = conn.execute("SELECT 1 FROM win_apps WHERE id=?", (row_id,)).fetchone()
         if not still_there:  # supprimé pendant le téléchargement
@@ -71,10 +74,11 @@ def fetch_app(row_id, slug, url):
             os.unlink(tmp)
 
 
-def start_fetch(row):
+def start_fetch(row, expected_sha256="", filename=""):
     db().execute("UPDATE win_apps SET status='downloading', error='' WHERE id=?", (row["id"],))
     db().commit()
-    threading.Thread(target=fetch_app, args=(row["id"], row["slug"], row["source_url"]), daemon=True).start()
+    threading.Thread(target=fetch_app, args=(row["id"], row["slug"], row["source_url"], expected_sha256, filename),
+                     daemon=True).start()
 
 
 def save_upload(row, upload, filename):
@@ -106,8 +110,9 @@ def get_app(slug):
 @app.route("/windows-apps")
 @login_required
 def windows_apps():
+    from .fleet import fleet_usage
     rows = db().execute("SELECT * FROM win_apps ORDER BY name COLLATE NOCASE").fetchall()
-    return render_template("windows_apps.html", apps=rows, default_args=config.DEFAULT_ARGS)
+    return render_template("windows_apps.html", apps=rows, default_args=config.DEFAULT_ARGS, usage=fleet_usage(rows))
 
 
 @app.route("/api/apps")
@@ -148,8 +153,10 @@ def windows_apps_add():
         kind = "auto"
     args = request.form.get("args", "").strip() or config.DEFAULT_ARGS.get(kind, "")
     cur = db().execute(
-        "INSERT INTO win_apps (slug, name, version, kind, args, source_url, status, updated_at) VALUES (?,?,?,?,?,?,?,?)",
-        (slug, name, request.form.get("version", "").strip()[:50], kind, args, url, "pending", now()))
+        "INSERT INTO win_apps (slug, name, version, kind, args, source_url, status, updated_at, detect) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        (slug, name, request.form.get("version", "").strip()[:50], kind, args, url, "pending", now(),
+         request.form.get("detect", "").strip()[:200]))
     db().commit()
     row = db().execute("SELECT * FROM win_apps WHERE id=?", (cur.lastrowid,)).fetchone()
     audit("windows.ajout", f"{slug} ({url or 'fichier envoyé'})")
@@ -173,10 +180,11 @@ def windows_apps_edit(slug):
     if url and not url.startswith(("http://", "https://")):
         flash("Le lien doit commencer par http:// ou https://.", "error")
         return back("windows_apps")
-    db().execute("UPDATE win_apps SET name=?, version=?, kind=?, args=?, source_url=?, updated_at=? WHERE id=?",
+    db().execute("UPDATE win_apps SET name=?, version=?, kind=?, args=?, source_url=?, updated_at=?, detect=? WHERE id=?",
                  (request.form.get("name", row["name"]).strip()[:100] or row["name"],
                   request.form.get("version", "").strip()[:50], kind,
-                  request.form.get("args", "").strip(), url, now(), row["id"]))
+                  request.form.get("args", "").strip(), url, now(),
+                  request.form.get("detect", row["detect"]).strip()[:200], row["id"]))
     db().commit()
     detail = slug
     upload = request.files.get("file")

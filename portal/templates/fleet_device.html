@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}{{ dev.hostname }}{% endblock %}
+{% block content %}
+{% set cls = {'green': 'ok', 'orange': 'warn', 'red': 'err'}.get(color, '') %}
+<div class="head">
+  <div>
+    <p class="small"><a href="{{ url_for('fleet') }}">Mon parc</a></p>
+    <h1 class="mono">{{ dev.hostname or dev.uid[:8] }}</h1>
+    <p><span class="st {{ cls }}">{{ reason }}</span></p>
+  </div>
+  {% if can_edit %}
+  <div class="actions">
+    {% if dev.state == 'active' %}
+    <form method="post" action="{{ url_for('fleet_action', dev_id=dev.id) }}" class="row" data-ajax>
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="update">
+      <label class="small muted"><input type="checkbox" name="reboot" value="1"> redémarrer si nécessaire</label>
+      <button class="btn {{ 'primary' if needs_update }}"><span class="spin"></span>Mettre à jour</button>
+    </form>
+    <form method="post" action="{{ url_for('fleet_action', dev_id=dev.id) }}" data-ajax>
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="scan">
+      <button class="btn"><span class="spin"></span>Inventaire</button>
+    </form>
+    <form method="post" action="{{ url_for('fleet_action', dev_id=dev.id) }}" data-ajax data-confirm="Redémarrer {{ dev.hostname }} ?" data-confirm-text="Le poste redémarre une minute après le prochain contact ; un message prévient la personne connectée." data-confirm-ok="Redémarrer">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="reboot">
+      <button class="btn {{ 'primary' if dev.reboot_required and not needs_update }}"><span class="spin"></span>Redémarrer</button>
+    </form>
+    <form method="post" action="{{ url_for('fleet_action', dev_id=dev.id) }}" data-ajax data-confirm="Retirer l'agent de {{ dev.hostname }} ?" data-confirm-text="Au prochain contact, l'agent se désinstalle du poste, qui quitte le parc. Les dépôts et caches configurés sur le poste restent en place." data-confirm-ok="Retirer">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="uninstall">
+      <button class="btn danger"><span class="spin"></span>Retirer l'agent</button>
+    </form>
+    {% else %}
+    <form method="post" action="{{ url_for('fleet_action', dev_id=dev.id) }}" data-ajax data-confirm="Oublier {{ dev.hostname }} ?" data-confirm-text="Le poste disparaît de la liste et son jeton est refusé. À utiliser si le poste n'existe plus." data-confirm-ok="Oublier">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="forget">
+      <button class="btn danger"><span class="spin"></span>Oublier ce poste</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+<div class="stack" data-poll="{{ url_for('fleet_device', dev_id=dev.id) }}" data-poll-kind="reload" data-poll-every="10000" data-signature="{{ signature }}">
+  {% if pending %}<p class="note warn">En attente : {% for c in pending %}{{ actions[c.action]|lower }} ({{ 'transmise' if c.state != 'queued' else 'au prochain contact' }}){{ ', ' if not loop.last }}{% endfor %}.</p>{% endif %}
+  {% if inv.error %}<p class="note err">{{ inv.error }}</p>{% endif %}
+
+  <div class="cols">
+    <section class="panel">
+      <div class="panel-h"><h2>Poste</h2></div>
+      <dl class="kv">
+        <dt>Système</dt><dd>{{ dev.os_name or families.get(dev.os_family, '—') }}</dd>
+        <dt>Adresse IP</dt><dd class="mono">{{ dev.ip or '—' }}</dd>
+        <dt>Adresses du poste</dt><dd class="mono">{{ dev.addresses or '—' }}</dd>
+        <dt>Dernier contact</dt><dd class="mono">{{ dev.last_seen|date_fr if dev.last_seen else '—' }}</dd>
+        <dt>Dernier inventaire</dt><dd class="mono">{{ dev.last_scan|date_fr if dev.last_scan else '—' }}</dd>
+        <dt>Redémarrage</dt><dd>{{ 'nécessaire' if dev.reboot_required else 'non nécessaire' }}</dd>
+        <dt>Agent</dt><dd class="mono">loco-client {{ dev.agent_version or '?' }}</dd>
+        <dt>Inscrit le</dt><dd class="mono">{{ dev.enrolled_at|date_fr }}</dd>
+        <dt>Identifiant</dt><dd class="mono small">{{ dev.uid }}</dd>
+      </dl>
+    </section>
+
+    <section class="panel">
+      <div class="panel-h"><h2>Mises à jour du système <span class="h-count">{{ (inv.updates or [])|length }}</span></h2>
+        {% if inv.flatpak %}<div class="aside">+ {{ inv.flatpak }} Flatpak</div>{% endif %}</div>
+      {% if inv.updates %}
+      <div class="table-wrap">
+        <table>
+          <tbody>
+          {% for u in inv.updates|sort(attribute='security', reverse=true) %}
+            <tr><td>{{ u.name }}{% if u.security %} <span class="tag">sécurité</span>{% endif %}</td><td class="mono muted small">{{ u.version }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty">{{ 'Aucune mise à jour en attente.' if dev.last_scan else 'Inventaire en cours.' }}</div>
+      {% endif %}
+    </section>
+  </div>
+
+  {% if dev.os_family == 'windows' %}
+  <section class="panel">
+    <div class="panel-h"><h2>Logiciels du catalogue</h2><div class="aside"><a href="{{ url_for('windows_apps') }}">Catalogue</a></div></div>
+    {% if apps %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Logiciel</th><th>Catalogue</th><th>Installé</th><th></th></tr></thead>
+        <tbody>
+        {% for a, installed, outdated in apps %}
+          <tr>
+            <td>{{ a.name }}</td>
+            <td class="mono">{{ a.version or '—' }}</td>
+            <td>{% if outdated %}<span class="st warn">{{ installed }}</span>{% elif installed %}<span class="st ok">{{ installed }}</span>{% else %}<span class="faint">non installé</span>{% endif %}</td>
+            <td class="right">
+              {% if can_edit and dev.state == 'active' and (outdated or not installed) %}
+              <form method="post" action="{{ url_for('fleet_action', dev_id=dev.id) }}" data-ajax>
+                <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="install-app"><input type="hidden" name="slug" value="{{ a.slug }}">
+                <button class="btn sm"><span class="spin"></span>{{ 'Mettre à jour' if outdated else 'Installer' }}</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">Catalogue vide : ajoutez des logiciels dans <a href="{{ url_for('windows_apps') }}">Logiciels Windows</a>.</div>
+    {% endif %}
+    {% if inv.apps %}
+    <details class="panel-f"><summary>Tous les logiciels installés ({{ inv.apps|length }})</summary>
+      <div class="table-wrap"><table><tbody>
+      {% for s in inv.apps|sort(attribute='name') %}<tr><td>{{ s.name }}<span class="sub">{{ s.publisher }}</span></td><td class="mono muted small">{{ s.version }}</td></tr>{% endfor %}
+      </tbody></table></div>
+    </details>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <section class="panel">
+    <div class="panel-h"><h2>Historique</h2></div>
+    {% if history %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Date</th><th>Action</th><th class="hide-sm">Par</th><th>État</th></tr></thead>
+        <tbody>
+        {% for c in history %}
+          <tr class="{{ 'has-note' if c.output }}">
+            <td class="mono muted nowrap">{{ (c.finished_at or c.created_at)|date_fr }}</td>
+            <td>{{ actions.get(c.action, c.action) }}</td>
+            <td class="mono muted hide-sm">{{ c.created_by or '—' }}</td>
+            <td>{% if c.state == 'success' %}<span class="st ok">réussie</span>{% elif c.state == 'failed' %}<span class="st err">échec</span>{% elif c.state == 'cancelled' %}<span class="st">annulée</span>{% else %}<span class="st warn">{{ 'en cours' if c.state == 'running' else ('transmise' if c.state == 'sent' else 'en attente') }}</span>{% endif %}</td>
+          </tr>
+          {% if c.output %}<tr class="note-row"><td colspan="4"><details><summary class="small muted">Journal</summary><pre class="log">{{ c.output }}</pre></details></td></tr>{% endif %}
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">Aucune action pour l'instant.</div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

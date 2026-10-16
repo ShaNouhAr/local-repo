@@ -21,7 +21,7 @@ jobs:
           persist-credentials: false
       - name: Shell et Python
         run: |
-          shellcheck -S style -x install.sh linux/install.sh linux/remove.sh linux/lib/*.sh linux/bin/* tests/*.sh linux/docker/*.sh linux/conf/loco-cron linux/conf/*.initd linux/conf/loco-issue.start linux/lxc/proxmox-lxc.sh portal/templates/setup.sh portal/templates/flatpak-setup.sh portal/templates/rpm-setup.sh linux/iso/*.sh linux/iso/loco-installer
+          shellcheck -S style -x install.sh linux/install.sh linux/remove.sh linux/lib/*.sh linux/bin/* tests/*.sh linux/docker/*.sh linux/conf/loco-cron linux/conf/*.initd linux/conf/loco-issue.start linux/lxc/proxmox-lxc.sh portal/templates/setup.sh portal/templates/flatpak-setup.sh portal/templates/rpm-setup.sh linux/iso/*.sh linux/iso/loco-installer windows/client/build.sh
           pipx run pyflakes portal tests linux/docker/migrate-env.py linux/iso/package.py
           docker compose -f linux/docker/docker-compose.yml config -q
       - name: PowerShell (syntaxe des scripts Windows)
@@ -223,10 +223,32 @@ jobs:
           path: test-results/packages/
           retention-days: 14
 
+  windows-client:
+    name: Agent Windows (service et MSI)
+    runs-on: ubuntu-24.04
+    needs: lint
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compiler loco-client.exe et construire loco-client.msi (Mono, msitools)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends mono-devel wixl msitools
+          version=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' portal/loco/config.py)
+          windows/client/build.sh "$version" test-results/windows-client
+          msiinfo export test-results/windows-client/loco-client.msi Property | grep -qxP "ProductVersion\\t$version"
+          msiinfo export test-results/windows-client/loco-client.msi ServiceInstall | grep -q loco-client
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: loco-client-msi
+          path: test-results/windows-client/loco-client.msi
+          retention-days: 30
+
   windows:
     name: Serveur natif / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    needs: windows-fixtures
+    needs: [windows-fixtures, windows-client]
     timeout-minutes: 35
     strategy:
       fail-fast: false
@@ -241,7 +263,11 @@ jobs:
         with:
           name: windows-packages
           path: test-results/packages
-      - name: Installation, portail, signatures, caches, sauvegarde, retrait et purge
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: loco-client-msi
+          path: portal/agents
+      - name: Installation, portail, signatures, caches, agent du parc, sauvegarde, retrait et purge
         shell: powershell
         run: |
           # Les images hébergées ont IIS/HTTP.sys actif ; ce runner est jetable.

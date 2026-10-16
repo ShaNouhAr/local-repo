@@ -49,6 +49,7 @@ $env:LOCO_CONFIG = "$root\etc\loco.json"
 Python -m unittest discover -s $tests -p test_windows_runtime.py -v
 Python "$tests\https_redirect.py" https://127.0.0.1:8443
 Python "$tests\windows_probe.py" $Fixtures
+Python "$tests\windows_agent_probe.py"
 $ca = (Get-FileHash "$root\etc\tls\ca.crt").Hash
 $secret = (Get-FileHash "$root\etc\portal.secret").Hash
 $configAcl = Get-Acl "$root\etc\loco.json"
@@ -81,4 +82,4 @@ if ((Get-FileHash "$root\etc\tls\ca.crt").Hash -ne $ca) { throw 'La réinstallat
 if ((Test-Path $root) -or (Test-Path $program)) { throw 'Purge incomplète.' }
 if (Get-NetFirewallRule -Group loco -ErrorAction SilentlyContinue) { throw 'Règles pare-feu restantes.' }
 Remove-Item Env:\LOCO_E2E_PASSWORD
-Write-Host 'Windows natif : installation, portail, APT/RPM, cache, sauvegarde, mise à jour, retrait et purge OK.'
+Write-Host 'Windows natif : installation, portail, APT/RPM, cache, agent du parc, sauvegarde, mise à jour, retrait et purge OK.'

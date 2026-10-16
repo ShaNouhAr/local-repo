@@ -1,5 +1,18 @@
 # Journal des versions
 
+## 2.2.0 — 2026-10-16
+
+- **Mon parc** : agent `loco-client` pour Windows (service .NET Framework, installeur MSI déployable par GPO) et Linux
+  (Debian, Ubuntu, Rocky Linux, AlmaLinux, RHEL ; systemd). Voyant vert / orange / rouge par poste, adresse IP,
+  mises à jour en attente (dont sécurité), logiciels installés et historique des actions.
+- Mise à jour d'un poste ou de tout le parc en un clic (Windows Update, APT, DNF, Flatpak, logiciels du catalogue),
+  redémarrage facultatif, installation d'un logiciel du catalogue, inventaire, redémarrage et retrait de l'agent.
+- Identité du poste indépendante de son adresse IP : un changement d'adresse ne le détache pas ; seul le retrait
+  poussé depuis loco désinstalle l'agent. Autorité HTTPS épinglée, jetons hachés, liste d'actions fermée.
+- Logiciels Windows : détection des versions installées sur le parc ; recherche et import depuis le catalogue winget
+  (installeur officiel vérifié par SHA-256, options silencieuses et nom de détection), et nouvelles versions winget.
+- Mise à jour automatique des agents ; MSI construit sous Linux (Mono, msitools) par la CI et publié avec la version.
+
 ## 2.1.3 — 2026-10-16
 
 - Installation ISO et `setup-loco` : choix entre SSH avec le mot de passe root, SSH par clé publique, ou SSH désactivé. Le mode mot de passe ne demande aucune clé publique.

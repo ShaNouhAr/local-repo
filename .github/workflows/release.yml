@@ -17,7 +17,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Vérifier le tag et sa CI, récupérer l'ISO validée
+      - name: Vérifier le tag et sa CI, récupérer l'ISO et l'agent Windows validés
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}
@@ -32,9 +32,11 @@ jobs:
           mkdir -p /tmp/loco-release-iso dist
           gh run download "$run" -n loco-iso -D /tmp/loco-release-iso
           cp /tmp/loco-release-iso/alpine-build/loco-v3.24-x86_64.iso "dist/loco-$version-x86_64.iso"
+          gh run download "$run" -n loco-client-msi -D /tmp/loco-release-msi
+          cp /tmp/loco-release-msi/loco-client.msi "dist/loco-client-$version.msi"
           git archive --format=tar.gz --prefix="loco-$version/" "$revision" > "dist/loco-$version.tar.gz"
           (cd dist && sha256sum loco-* > SHA256SUMS)
-      - name: Publier les sources, l'ISO et les empreintes
+      - name: Publier les sources, l'ISO, l'agent Windows et les empreintes
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}

@@ -12,6 +12,11 @@ Serveur de dépôts et de caches pour un réseau d'entreprise, installé sur Deb
 - **Windows Update** : cache des téléchargements de mises à jour (même principe que [lancache](https://lancache.net)).
 - **Logiciels Windows** : catalogue d'installeurs (`exe`, `msi`, `msu`, `ps1`) installés en silence par PowerShell.
 - **Flatpak** : cache Flathub et, sur un serveur Linux, dépôt Flatpak local signé pour les applications de l'entreprise.
+- **Mon parc** : agent sur les postes Windows (service `loco-client`, installeur MSI) et Linux (systemd), avec
+  voyant vert / orange / rouge par poste, mise à jour d'un poste ou de tout le parc en un clic (Windows Update,
+  APT, DNF, Flatpak et logiciels du catalogue). Un poste reste rattaché quand il change d'adresse IP.
+- **Catalogue winget** : recherche dans le catalogue public de Microsoft et import en un clic (installeur officiel
+  vérifié par SHA-256, options silencieuses et détection des versions installées sur le parc).
 - **Portail web** en HTTPS : comptes nommés, journal d'audit, supervision, sauvegardes ; thème OLED (par défaut) ou clair.
 
 | | |
@@ -234,6 +239,43 @@ n'existe pas, il s'arrête avant de remplacer la configuration. Les dérivées p
 **Mise à jour depuis 1.0.0** : l'ancien dépôt `/apt/` et les postes déjà branchés restent fonctionnels.
 L'action *Copier vers un autre dépôt* conserve les originaux. Vérifiez la compatibilité de chaque paquet,
 puis relancez le script sur les postes. `--legacy` permet de conserver explicitement l'ancien dépôt partagé.
+
+## Mon parc : agent des postes
+
+La page **Mon parc** liste les postes équipés de l'agent `loco-client`. Pour en ajouter un, copiez la commande
+affichée (elle contient la clé d'inscription du serveur) :
+
+```powershell
+# Windows 10/11, Windows Server 2016+ (PowerShell administrateur) : installe le MSI, service « loco-client »
+irm 'https://<ip>:8443/agent/windows.ps1?key=<clé>' | iex
+```
+
+```bash
+# Debian, Ubuntu, Rocky Linux, AlmaLinux, RHEL (systemd) : agent Python et minuterie systemd
+curl -fsSL 'https://<ip>:8443/agent/linux.sh?key=<clé>' | sudo sh
+```
+
+- L'agent contacte loco toutes les deux minutes et envoie l'inventaire des mises à jour (Windows Update avec les
+  correctifs de sécurité, APT, DNF, Flatpak) et, sous Windows, des logiciels installés.
+- **Voyants** : vert, à jour ; orange, mises à jour ou redémarrage en attente (ou pas de contact depuis un jour) ;
+  rouge, mises à jour de sécurité en attente, dernière action en échec ou pas de contact depuis 7 jours.
+- **Actions** : *Mettre à jour* (un poste) ou *Tout mettre à jour* (tout le parc, tous systèmes), avec redémarrage
+  facultatif ; installer ou mettre à jour un logiciel du catalogue ; inventaire ; redémarrage ; retrait de l'agent.
+  Aucune commande libre n'est possible : la liste des actions est fermée.
+- **Identité** : chaque poste a un identifiant et un jeton propres, indépendants de son adresse. Un poste qui change
+  d'IP (DHCP, autre site, VPN) reste dans le parc ; seul *Retirer l'agent*, poussé depuis loco, le détache.
+- **Sécurité** : l'autorité HTTPS de loco est épinglée par l'agent (empreinte SHA-256) sans modifier le magasin de
+  certificats du poste ; installeurs vérifiés par SHA-256 ; jetons stockés hachés côté serveur.
+- **Windows en masse** : distribuer `loco-client.msi` (GPO, Intune, SCCM) et définir `Server`, `Key` et `CaSha256`
+  sous `HKLM\SOFTWARE\Policies\loco\Client`, ou `msiexec /i loco-client.msi SERVER=… KEY=… CA_SHA256=… /qn`.
+  Le MSI est publié avec chaque version ; le serveur le télécharge depuis GitHub à la première installation
+  (empreinte vérifiée) ou utilise celui déposé dans `portal/agents/`. Il n'est pas signé (pas de certificat de
+  signature de code) : SmartScreen peut avertir lors d'une installation manuelle.
+- **Logiciels** : dans *Logiciels Windows*, renseigner le nom affiché dans Windows et la version permet de repérer les
+  postes à mettre à jour. *Chercher dans winget* importe un logiciel avec ces informations ; *Nouvelles versions*
+  met à jour les logiciels issus de winget, puis les postes concernés passent en orange.
+
+L'agent se met à jour automatiquement avec loco.
 
 ## Supervision
 

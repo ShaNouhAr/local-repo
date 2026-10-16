@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% from "_macros.html" import cmd %}
+{% block title %}Mon parc{% endblock %}
+{% macro dot(color) -%}
+<span class="st {{ {'green': 'ok', 'orange': 'warn', 'red': 'err'}.get(color, '') }}" title="{{ {'green': 'à jour', 'orange': 'mises à jour en attente', 'red': 'à traiter', 'grey': 'en attente'}[color] }}"></span>
+{%- endmacro %}
+{% block content %}
+<div class="head">
+  <div>
+    <h1>Mon parc</h1>
+    <p>Postes Windows et Linux équipés de l'agent loco. Un poste reste rattaché s'il change d'adresse IP ; seul « Retirer l'agent » le détache.</p>
+  </div>
+  {% if can_edit and rows %}
+  <div class="actions">
+    <form method="post" action="{{ url_for('fleet_update_all') }}" class="row" data-ajax data-confirm="Mettre à jour {{ to_update }} poste(s) ?" data-confirm-text="Système (Windows Update, APT, DNF, Flatpak) et logiciels du catalogue, au prochain contact de chaque poste." data-confirm-ok="Tout mettre à jour">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label class="small muted"><input type="checkbox" name="reboot" value="1"> redémarrer si nécessaire</label>
+      <button class="btn primary" {{ 'disabled' if not to_update }}><span class="spin"></span>Tout mettre à jour{% if to_update %} ({{ to_update }}){% endif %}</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+
+<div class="stack" data-poll="{{ url_for('fleet') }}" data-poll-kind="reload" data-poll-every="15000" data-signature="{{ signature }}">
+  <div class="metrics">
+    <div class="metric"><div class="k"><span class="st ok"></span> À jour</div><div class="v">{{ counts.green }}</div><div class="s">postes</div></div>
+    <div class="metric"><div class="k"><span class="st warn"></span> Mises à jour en attente</div><div class="v">{{ counts.orange }}</div><div class="s">ou redémarrage nécessaire</div></div>
+    <div class="metric"><div class="k"><span class="st err"></span> À traiter</div><div class="v">{{ counts.red }}</div><div class="s">sécurité, échec ou injoignable</div></div>
+    <div class="metric"><div class="k"><span class="st"></span> En attente</div><div class="v">{{ counts.grey }}</div><div class="s">premier inventaire, retrait</div></div>
+  </div>
+
+  <section class="panel">
+    <div class="panel-h"><h2>Postes <span class="h-count">{{ rows|length }}</span></h2>
+      {% if rows %}<div class="aside"><input type="search" class="search-sm" placeholder="Filtrer" data-filter="#fleet-table tbody tr" aria-label="Filtrer les postes"></div>{% endif %}
+    </div>
+    {% if rows %}
+    <div class="table-wrap">
+      <table id="fleet-table">
+        <thead><tr><th>Poste</th><th>Adresse IP</th><th>Mises à jour</th><th class="hide-sm">Dernier contact</th><th></th></tr></thead>
+        <tbody>
+        {% for r in rows %}{% set d = r.d %}
+          <tr>
+            <td>{{ dot(r.color) }} <a href="{{ url_for('fleet_device', dev_id=d.id) }}" class="mono">{{ d.hostname or d.uid[:8] }}</a>
+              <span class="sub">{{ d.os_name or families.get(d.os_family, '') }}</span></td>
+            <td class="mono nowrap">{{ d.ip or '—' }}</td>
+            <td>{{ r.reason }}
+              {% if r.pending %}<span class="sub">en attente : {% for c in r.pending %}{{ actions[c.action]|lower }}{{ ', ' if not loop.last }}{% endfor %}</span>{% endif %}</td>
+            <td class="mono muted nowrap hide-sm">{{ d.last_seen|date_fr if d.last_seen else '—' }}</td>
+            <td class="right">
+              {% if can_edit and r.needs_update and not r.pending %}
+              <form method="post" action="{{ url_for('fleet_action', dev_id=d.id) }}" data-ajax>
+                <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="update">
+                <button class="btn sm"><span class="spin"></span>Mettre à jour</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">Aucun poste pour l'instant : installez l'agent sur un poste{{ ' avec la commande ci-dessous' if can_edit }}.</div>
+    {% endif %}
+    <div class="panel-f">Vert : à jour. Orange : mises à jour ou redémarrage en attente, ou pas de contact depuis un jour. Rouge : mises à jour de sécurité en attente, dernière action en échec, ou pas de contact depuis 7 jours. Les postes contactent loco toutes les {{ checkin // 60 }} minutes : une action part au contact suivant.</div>
+  </section>
+
+  {% if can_edit %}
+  <section class="panel">
+    <div class="panel-h"><h2>Ajouter un poste</h2>
+      <div class="aside">
+        <form method="post" action="{{ url_for('fleet_rotate_key') }}" data-confirm="Changer la clé d'inscription ?" data-confirm-text="Les commandes déjà copiées ne fonctionneront plus. Les postes inscrits restent rattachés." data-confirm-ok="Changer">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><button class="linkbtn">Nouvelle clé d'inscription</button>
+        </form>
+      </div>
+    </div>
+    <div class="panel-b">
+      <div class="tabs" role="tablist">
+        <button type="button" data-tab="agent-win" aria-selected="true">Windows</button>
+        <button type="button" data-tab="agent-linux" aria-selected="false">Debian, Ubuntu, Rocky, AlmaLinux</button>
+      </div>
+      <div class="tab-panel client-panel on" data-panel="agent-win">
+        <p class="muted">Windows 10/11 et Windows Server 2016 et plus, dans PowerShell administrateur.</p>
+        {{ cmd('agent-win', commands.windows, 'PS>') }}
+        {% if commands.windows_http %}<span class="hint">Autorité loco pas encore importée sur le poste : <code>{{ commands.windows_http }}</code></span>{% endif %}
+        <span class="hint">Installe le service Windows <code>loco-client</code> (MSI, visible dans Programmes et fonctionnalités). L'agent épingle l'autorité de loco sans modifier les certificats du poste.</span>
+        <details class="hint"><summary>Déploiement en masse (GPO, Intune, SCCM)</summary>
+          <p>Distribuer <a href="{{ url_for('agent_file', name='loco-client.msi') }}">loco-client.msi</a>{% if msi_error %} <span class="faint">({{ msi_error }})</span>{% endif %} et créer, par GPO (préférences de registre), sous <code>HKLM\SOFTWARE\Policies\loco\Client</code> les valeurs chaîne :</p>
+          <p><code>Server</code> = <code>{{ https_url }}</code><br><code>Key</code> = <code>{{ enroll_key }}</code><br><code>CaSha256</code> = <code>{{ ca_sha256 or '(vide : certificat public)' }}</code></p>
+          <p>Ou en ligne de commande : <code>msiexec /i loco-client.msi SERVER={{ https_url }} KEY={{ enroll_key }} CA_SHA256={{ ca_sha256 }} /qn</code></p>
+        </details>
+      </div>
+      <div class="tab-panel client-panel" data-panel="agent-linux">
+        <p class="muted">Postes avec systemd et APT ou DNF.</p>
+        {{ cmd('agent-linux', commands.linux) }}
+        {% if commands.linux_http %}<span class="hint">Autorité loco pas encore importée sur le poste : <code>{{ commands.linux_http }}</code></span>{% endif %}
+        <span class="hint">Retrait local : <code>sudo loco-client remove</code>.</span>
+      </div>
+      <p class="hint">La commande contient la clé d'inscription de ce serveur : ne la partagez qu'avec les personnes qui installent les postes.</p>
+    </div>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

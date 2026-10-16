@@ -242,7 +242,7 @@
     var form = $("form", dlg);
     form.action = form.dataset.base.replace("__slug__", app.slug);
     $("[data-title]", dlg).textContent = app.name;
-    ["name", "version", "args", "url", "kind"].forEach(function (k) { if (form.elements[k]) form.elements[k].value = app[k] || ""; });
+    ["name", "version", "args", "url", "kind", "detect"].forEach(function (k) { if (form.elements[k]) form.elements[k].value = app[k] || ""; });
     $("[data-file]", dlg).textContent = app.filename ? app.filename + "  sha256:" + app.sha256.slice(0, 16) : "";
     $('input[type="file"]', form).value = "";
     $(".files", form).textContent = "";
@@ -362,7 +362,10 @@
   if (live) {
     var kind = live.dataset.pollKind;
     if (kind === "apps" && !$('tr[data-status="downloading"]')) return;
-    var handler = { status: bind, wu: function (d) { bind(d); renderWuLog(d); }, apps: renderApps, job: renderJob }[kind];
+    // Parc : rechargement quand un poste ou une action change (rien n'est saisi sur ces pages).
+    var reload = function (d) { if (d.signature && d.signature !== live.dataset.signature) window.location.reload(); };
+    var handler = { status: bind, wu: function (d) { bind(d); renderWuLog(d); }, apps: renderApps, job: renderJob,
+                    reload: reload }[kind];
     var tick = poll(live.dataset.poll, Number(live.dataset.pollEvery) || 10000, handler);
     if (kind === "apps" || kind === "job") tick();
     if (kind === "job") { var log = $("#job-log"); log.scrollTop = log.scrollHeight; }

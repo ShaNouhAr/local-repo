@@ -52,7 +52,10 @@ CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' 
 
 # Points d'entrée publics (postes clients, supervision) : ni session, ni jeton CSRF.
 PUBLIC_ENDPOINTS = {"linux_setup", "linux_repository_source", "windows_install_script", "flatpak_setup", "flatpak_repo_file", "rpm_setup",
-                    "healthz", "metrics", "static"}
+                    "healthz", "metrics", "static",
+                    # Agent des postes (loco-client) : authentifié par sa clé d'inscription puis son jeton.
+                    "agent_enroll", "agent_checkin", "agent_result", "agent_linux_installer", "agent_windows_installer",
+                    "agent_file"}
 
 
 @app.before_request
@@ -114,9 +117,9 @@ from . import db as _db  # noqa: E402
 app.teardown_appcontext(_db.close_db)
 
 # Les modules déclarent leurs routes sur `app` (structure « grande application » de Flask).
-from . import auth, dashboard, linux, wupdate, winapps, flatpak, rpmrepo, clients, system, appliance  # noqa: E402
+from . import auth, dashboard, linux, wupdate, winapps, flatpak, rpmrepo, clients, system, appliance, fleet, winget  # noqa: E402
 
-ROUTE_MODULES = (auth, dashboard, linux, wupdate, winapps, flatpak, rpmrepo, clients, system, appliance)
+ROUTE_MODULES = (auth, dashboard, linux, wupdate, winapps, flatpak, rpmrepo, clients, system, appliance, fleet, winget)
 
 
 def startup():

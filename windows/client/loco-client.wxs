@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Installeur MSI de l'agent Windows loco-client (construit par build.sh avec wixl).
+     msiexec /i loco-client.msi SERVER=https://loco:8443 KEY=CLE CA_SHA256=EMPREINTE /qn
+     Sans propriétés (GPO) : réglages dans HKLM\SOFTWARE\Policies\loco\Client (Server, Key, CaSha256). -->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="loco-client" Language="1036" Codepage="1252" Version="$(var.Version)"
+           Manufacturer="loco" UpgradeCode="ce61fcd5-c143-478b-ad84-03873b29b8d6">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine"
+             Description="Agent du parc loco (inventaire, mises à jour)" Comments="https://github.com/ShaNouhAr/loco" />
+    <MajorUpgrade DowngradeErrorMessage="Une version plus récente de loco-client est déjà installée." />
+    <Media Id="1" Cabinet="client.cab" EmbedCab="yes" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/ShaNouhAr/loco" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="SERVER" Secure="yes" />
+    <Property Id="KEY" Secure="yes" />
+    <!-- La clé d'inscription n'apparaît pas dans les journaux de Windows Installer. -->
+    <Property Id="MsiHiddenProperties" Value="KEY" />
+    <Property Id="CA_SHA256" Secure="yes" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLDIR" Name="loco-client">
+          <Component Id="Service" Guid="bb3352f7-fe8b-4c9b-921f-0765e8872e7f" Win64="yes">
+            <File Id="ClientExe" Name="loco-client.exe" Source="$(var.SourceDir)/loco-client.exe" KeyPath="yes" />
+            <File Id="ClientConfig" Name="loco-client.exe.config" Source="$(var.SourceDir)/loco-client.exe.config" />
+            <ServiceInstall Id="ClientService" Name="loco-client" DisplayName="loco - agent du parc"
+                            Description="Inventaire et mises à jour du poste, piloté depuis le serveur loco."
+                            Type="ownProcess" Start="auto" ErrorControl="normal" Account="LocalSystem" Vital="yes" />
+            <ServiceControl Id="ClientServiceControl" Name="loco-client" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+          </Component>
+          <Component Id="Settings" Guid="28201fb5-7923-40fe-a669-e306a13740be" Win64="yes">
+            <Condition>SERVER</Condition>
+            <RegistryKey Root="HKLM" Key="SOFTWARE\loco\Client">
+              <RegistryValue Name="Server" Type="string" Value="[SERVER]" KeyPath="yes" />
+              <RegistryValue Name="Key" Type="string" Value="[KEY]" />
+              <RegistryValue Name="CaSha256" Type="string" Value="[CA_SHA256]" />
+            </RegistryKey>
+          </Component>
+        </Directory>
+      </Directory>
+    </Directory>
+
+    <Feature Id="Client" Level="1">
+      <ComponentRef Id="Service" />
+      <ComponentRef Id="Settings" />
+    </Feature>
+  </Product>
+</Wix>

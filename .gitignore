@@ -12,3 +12,4 @@ __pycache__/
 # Sorties de construction de l’ISO.
 /out/
 /linux/iso/out/
+portal/agents/loco-client.msi
