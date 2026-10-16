@@ -368,3 +368,19 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
 
 .appliance-form .panel-b.grid2 > * { margin-top: 0; }
 .subnav a { flex-shrink: 0; white-space: nowrap; }
+
+.store-categories { display: flex; flex-wrap: wrap; gap: 8px; }
+.store-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.store-heading h2 { margin: 0; }
+.store-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr)); gap: 16px; }
+.store-card { padding: 22px; display: flex; flex-direction: column; gap: 12px; margin: 0; }
+.store-card-top { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.store-card-top > div { min-width: 0; }
+.store-card h3 { margin: 0 0 4px; font-size: 17px; overflow-wrap: anywhere; }
+.store-card .sub { overflow-wrap: anywhere; font-size: 11px; }
+.store-monogram { display: grid; place-items: center; flex: 0 0 44px; height: 44px; border: 1px solid var(--line-2); border-radius: 10px; font-weight: 600; font-size: 24px; background: var(--sel); }
+.store-card-actions { margin-top: auto; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+.store-description { white-space: pre-line; }
+.store-pagination { justify-content: center; }
+.store-search input { flex: 1; min-width: 180px; }
+.break { overflow-wrap: anywhere; }

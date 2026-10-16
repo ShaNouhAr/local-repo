@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 2.3.0 — 2026-10-16
+
+- Store logiciels Windows alimenté par le catalogue communautaire Microsoft WinGet : catégories, recherche paginée, fiches, import d'installeurs vérifiés dans loco ; consultation du dernier index valide hors ligne.
+- Agent Windows : icône de notification par session, pastille verte / orange / rouge et détails en lecture seule. L'utilisateur ne peut lancer aucune mise à jour depuis l'icône ; les jetons restent privés et le service publie uniquement l'état du poste.
+- Même comptage dans Mon parc et sur Windows : vert aucune mise à jour, orange de 1 à 9, rouge dès 10 ; seuil rouge configurable. Un état indisponible reste gris. Installation, démarrage de session et retrait du compagnon gérés par le MSI.
+
 ## 2.2.0 — 2026-10-16
 
 - **Mon parc** : agent `loco-client` pour Windows (service .NET Framework, installeur MSI déployable par GPO) et Linux

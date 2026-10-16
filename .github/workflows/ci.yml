@@ -239,6 +239,7 @@ jobs:
             DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends mono-devel wixl msitools >/dev/null
             windows/client/build.sh "$VERSION" test-results/windows-client
             msiinfo export test-results/windows-client/loco-client.msi File | tr -d "\\r" | grep -P "^ClientExe\\tService\\t[^\\t]+\\t[0-9]+\\t$VERSION.0\\t"
+            msiinfo export test-results/windows-client/loco-client.msi File | tr -d "\\r" | grep -P "^TrayExe\\tService\\t[^\\t]+\\t[0-9]+\\t$VERSION.0\\t"
             windows/client/build.sh "$VERSION" test-results/windows-client/reinstall
             msiinfo export test-results/windows-client/loco-client.msi Property | tr -d "\\r" | grep -qxP "ProductVersion\\t$VERSION"
             msiinfo export test-results/windows-client/loco-client.msi ServiceInstall | grep -q loco-client

@@ -25,11 +25,18 @@
                  lors d'une réinstallation, puis la suppression de l'ancien MSI retire le service. -->
             <File Id="ClientExe" Name="loco-client.exe" Source="$(var.SourceDir)/loco-client.exe"
                   DefaultVersion="$(var.Version).0" KeyPath="yes" />
+            <File Id="TrayExe" Name="loco-tray.exe" Source="$(var.SourceDir)/loco-tray.exe" DefaultVersion="$(var.Version).0" />
+            <File Id="TrayConfig" Name="loco-tray.exe.config" Source="$(var.SourceDir)/loco-tray.exe.config" />
             <File Id="ClientConfig" Name="loco-client.exe.config" Source="$(var.SourceDir)/loco-client.exe.config" />
             <ServiceInstall Id="ClientService" Name="loco-client" DisplayName="loco - agent du parc"
                             Description="Inventaire et mises à jour du poste, piloté depuis le serveur loco."
                             Type="ownProcess" Start="auto" ErrorControl="normal" Account="LocalSystem" Vital="yes" />
             <ServiceControl Id="ClientServiceControl" Name="loco-client" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+          </Component>
+          <Component Id="TrayStartup" Guid="7fc05df1-9b97-4e9c-b360-3714d77d21f0" Win64="yes">
+            <RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run">
+              <RegistryValue Name="loco" Type="string" Value="&quot;[INSTALLDIR]loco-tray.exe&quot;" KeyPath="yes" />
+            </RegistryKey>
           </Component>
           <!-- Valeurs vides sans propriétés (GPO : HKLM\SOFTWARE\Policies\loco\Client est lu en premier). -->
           <Component Id="Settings" Guid="28201fb5-7923-40fe-a669-e306a13740be" Win64="yes">
@@ -46,6 +53,7 @@
     <Feature Id="Client" Level="1">
       <ComponentRef Id="Service" />
       <ComponentRef Id="Settings" />
+      <ComponentRef Id="TrayStartup" />
     </Feature>
   </Product>
 </Wix>

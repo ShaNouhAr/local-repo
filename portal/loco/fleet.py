@@ -30,7 +30,6 @@ from .util import back
 CHECKIN = 120                   # secondes entre deux contacts de l'agent
 SCAN_HOURS = 6                  # inventaire complet des mises à jour (et après chaque action)
 STALE_DAYS = 1                  # sans contact depuis : orange
-LOST_DAYS = 7                   # sans contact depuis : rouge
 SENT_TIMEOUT_HOURS = 6          # action transmise sans résultat : échec
 MAX_BODY = 4 * 1024 * 1024
 UID_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -66,6 +65,14 @@ def set_setting(key, value):
     db().execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                  (key, value))
     db().commit()
+
+
+def red_threshold():
+    try:
+        value = int(setting("fleet_red_threshold", "10"))
+        return value if 2 <= value <= 10000 else 10
+    except (TypeError, ValueError):
+        return 10
 
 
 def enroll_key():
@@ -164,36 +171,35 @@ def last_result(dev_id):
 
 
 def status(dev, apps=None):
-    """(couleur, explication) : vert à jour, orange mises à jour ou redémarrage en attente, rouge à traiter.
-    L'explication cite toutes les raisons, les plus graves d'abord."""
+    """Voyant du volume de mises à jour : aucune / quelques-unes / au moins le seuil rouge.
+    Une information de santé (sécurité, échec, redémarrage) ne change pas ce comptage."""
     if dev["state"] == "removing":
         return "grey", "retrait de l'agent demandé"
     seen = _ago(dev["last_seen"])
     pending_apps = len(app_updates(dev, apps))
-    last = last_result(dev["id"])
-    red, orange = [], []
-    if seen is None or seen > datetime.timedelta(days=LOST_DAYS):
-        red.append(f"aucun contact depuis plus de {LOST_DAYS} jours")
-    elif seen > datetime.timedelta(days=STALE_DAYS):
-        orange.append(f"aucun contact depuis {seen.days} jour(s)")
+    reasons = []
     if dev["security_updates"]:
-        red.append(f"{dev['security_updates']} mise(s) à jour de sécurité en attente")
-    if last and last["state"] == "failed":
-        red.append(f"échec : {ACTIONS.get(last['action'], last['action']).lower()}")
+        reasons.append(f"{dev['security_updates']} mise(s) à jour de sécurité en attente")
     other = dev["updates"] - dev["security_updates"]
     if other > 0:
-        orange.append(f"{other} {'autre(s) ' if dev['security_updates'] else ''}mise(s) à jour du système")
+        reasons.append(f"{other} {'autre(s) ' if dev['security_updates'] else ''}mise(s) à jour du système")
     if pending_apps:
-        orange.append(f"{pending_apps} logiciel(s) à mettre à jour")
+        reasons.append(f"{pending_apps} logiciel(s) à mettre à jour")
     if dev["reboot_required"]:
-        orange.append("redémarrage nécessaire")
-    if red:
-        return "red", ", ".join(red + orange)
-    if not dev["last_scan"]:
-        return "grey", "inventaire en cours"
-    if orange:
-        return "orange", ", ".join(orange)
-    return "green", "à jour"
+        reasons.append("redémarrage nécessaire")
+    last = last_result(dev["id"])
+    if last and last["state"] == "failed":
+        reasons.append(f"échec : {ACTIONS.get(last['action'], last['action']).lower()}")
+    error = inventory(dev).get("error")
+    if error:
+        reasons.append(f"inventaire incomplet : {error}")
+    if seen is None or seen > datetime.timedelta(days=STALE_DAYS):
+        reasons.append("poste sans contact récent")
+    if error or not dev["last_scan"] or seen is None or seen > datetime.timedelta(days=STALE_DAYS):
+        return "grey", ", ".join(reasons) or "inventaire en cours"
+    total = dev["updates"] + pending_apps
+    color = "green" if total == 0 else "red" if total >= red_threshold() else "orange"
+    return color, ", ".join(reasons) or "à jour"
 
 
 def action_label(cmd):
@@ -376,6 +382,8 @@ def agent_checkin():
             break                   # rien après le retrait de l'agent
     conn.commit()
     answer = {"interval": CHECKIN, "scan_hours": SCAN_HOURS, "agent_version": config.VERSION, "commands": commands}
+    color, reason = status(dev)
+    answer["indicator"] = {"color": color, "reason": reason}
     if dev["os_family"] == "windows":
         path, sha = agent_msi()
         if path:
@@ -410,7 +418,9 @@ def agent_result():
     if cmd["action"] == "uninstall" and state == "success":
         conn.execute("UPDATE devices SET state='removed', token_hash='' WHERE id=?", (dev["id"],))
     conn.commit()
-    return {"ok": True}
+    dev = conn.execute("SELECT * FROM devices WHERE id=?", (dev["id"],)).fetchone()
+    color, reason = status(dev)
+    return {"ok": True, "indicator": {"color": color, "reason": reason}}
 
 
 def _ca_pem():
@@ -579,7 +589,24 @@ def fleet():
                            actions=ACTIONS, to_update=sum(1 for r in rows if r["needs_update"]),
                            commands=_commands(key) if key else {}, checkin=CHECKIN, enroll_key=key,
                            ca_sha256=_ca_fingerprint() if key else "",
+                           red_threshold=red_threshold(),
                            msi_error="" if msi else "téléchargé depuis GitHub à la première installation")
+
+
+@app.route("/parc/seuil", methods=["POST"])
+@admin_required
+def fleet_threshold():
+    try:
+        value = int(request.form.get("threshold", ""))
+        if not 2 <= value <= 10000:
+            raise ValueError
+    except ValueError:
+        flash("Le seuil rouge doit être compris entre 2 et 10000 mises à jour.", "error")
+        return back("fleet")
+    set_setting("fleet_red_threshold", str(value))
+    audit("parc.seuil", f"rouge à partir de {value} mises à jour")
+    flash(f"Pastille rouge à partir de {value} mises à jour (système et logiciels).", "ok")
+    return back("fleet")
 
 
 def _get(dev_id):

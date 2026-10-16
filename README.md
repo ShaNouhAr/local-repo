@@ -240,6 +240,10 @@ n'existe pas, il s'arrête avant de remplacer la configuration. Les dérivées p
 L'action *Copier vers un autre dépôt* conserve les originaux. Vérifiez la compatibilité de chaque paquet,
 puis relancez le script sur les postes. `--legacy` permet de conserver explicitement l'ancien dépôt partagé.
 
+## Store logiciels Windows
+
+Dans **Windows → Store logiciels**, parcourez le catalogue communautaire Microsoft WinGet, recherchez une application ou ouvrez une sélection par catégorie. Les fiches indiquent l'éditeur, la version, la licence et l'installeur silencieux disponible. **Ajouter à loco** télécharge l'installeur officiel et vérifie son empreinte SHA-256 ; le déploiement sur les postes reste une action d'administration dans **Mon parc**. L'index est renouvelé chaque jour ; son dernier exemplaire valide reste consultable si Internet est momentanément indisponible.
+
 ## Mon parc : agent des postes
 
 La page **Mon parc** liste les postes équipés de l'agent `loco-client`. Pour en ajouter un, copiez la commande
@@ -257,8 +261,9 @@ curl -fsSL 'https://<ip>:8443/agent/linux.sh?key=<clé>' | sudo sh
 
 - L'agent contacte loco toutes les deux minutes et envoie l'inventaire des mises à jour (Windows Update avec les
   correctifs de sécurité, APT, DNF, Flatpak) et, sous Windows, des logiciels installés.
-- **Voyants** : vert, à jour ; orange, mises à jour ou redémarrage en attente (ou pas de contact depuis un jour) ;
-  rouge, mises à jour de sécurité en attente, dernière action en échec ou pas de contact depuis 7 jours.
+- **Voyants** : vert, aucune mise à jour ; orange, 1 à 9 mises à jour ; rouge, 10 mises à jour ou plus.
+  Le total additionne système, Flatpak et logiciels du catalogue. Le seuil rouge est réglable dans Mon parc.
+  Un inventaire manquant, incomplet ou un poste sans contact récent est gris, sans fausser le comptage.
 - **Actions** : *Mettre à jour* (un poste) ou *Tout mettre à jour* (tout le parc, tous systèmes), avec redémarrage
   facultatif ; installer ou mettre à jour un logiciel du catalogue ; inventaire ; redémarrage ; retrait de l'agent.
   Aucune commande libre n'est possible : la liste des actions est fermée.
@@ -276,6 +281,8 @@ curl -fsSL 'https://<ip>:8443/agent/linux.sh?key=<clé>' | sudo sh
   met à jour les logiciels issus de winget, puis les postes concernés passent en orange.
 
 L'agent se met à jour automatiquement avec loco.
+
+Sur Windows, le MSI installe aussi **loco-tray.exe**, lancé dans chaque session utilisateur. Sa pastille reprend l'état de Mon parc : vert sans mise à jour, orange de 1 à 9 mises à jour, rouge à partir de 10 (seuil réglable). Un état indisponible ou ancien est gris. Le menu et le double-clic affichent uniquement des détails : **aucune action de mise à jour n'est accessible à l'utilisateur**. Le compagnon ne contacte pas le serveur et ne lit aucun jeton ; il consulte un fichier d'état public, accessible uniquement en lecture aux utilisateurs standards. Le service privilégié reste seul responsable des actions reçues de loco.
 
 ## Supervision
 

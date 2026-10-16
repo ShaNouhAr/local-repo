@@ -4,6 +4,7 @@ import base64
 import hashlib
 import os
 import re
+import sqlite3
 import tempfile
 import unittest
 from unittest import mock
@@ -74,6 +75,7 @@ class FleetTest(unittest.TestCase):
         with transaction() as conn:
             conn.execute("DELETE FROM devices")
             conn.execute("DELETE FROM win_apps")
+            conn.execute("DELETE FROM settings WHERE key='fleet_red_threshold'")
         fixture.reset_failures()
         self.admin = fixture.Browser()
         self.admin.login("admin", fixture.ADMIN_PW)
@@ -131,6 +133,18 @@ class TestEnrollment(FleetTest):
 
 
 class TestStatus(FleetTest):
+    def test_indicator_matches_the_fleet_and_marks_unknown_inventory(self):
+        a = Agent(WINDOWS, "192.168.43.50")
+        a.enroll()
+        for inv, color in (({"updates": []}, "green"),
+                           ({"updates": [{"name": "Correctif", "security": True}]}, "orange"),
+                           ({"updates": [{"name": f"KB{i}"} for i in range(10)]}, "red"),
+                           ({"updates": [], "error": "Windows Update indisponible"}, "grey")):
+            r = a.checkin(inv).get_json()
+            self.assertEqual(r["indicator"]["color"], color)
+            self.assertEqual((r["indicator"]["color"], r["indicator"]["reason"]), status_of(a.uid))
+        self.assertIn("inventaire incomplet", r["indicator"]["reason"])
+
     def test_lights_follow_updates_security_failures_and_contact(self):
         a = Agent(LINUX, "192.168.43.60")
         a.enroll()
@@ -141,15 +155,15 @@ class TestStatus(FleetTest):
         self.assertEqual(status_of(a.uid)[0], "orange")
         a.checkin({"updates": [{"name": "openssl", "version": "3.5", "security": True}]})
         color, reason = status_of(a.uid)
-        self.assertEqual(color, "red")
+        self.assertEqual(color, "orange")
         self.assertIn("sécurité", reason)
         a.checkin({"updates": [], "reboot_required": True})
-        self.assertEqual(status_of(a.uid), ("orange", "redémarrage nécessaire"))
+        self.assertEqual(status_of(a.uid), ("green", "redémarrage nécessaire"))
         with transaction() as conn:
             conn.execute("UPDATE devices SET last_seen='2020-01-01 00:00:00' WHERE uid=?", (a.uid,))
-        self.assertEqual(status_of(a.uid)[0], "red")
+        self.assertEqual(status_of(a.uid)[0], "grey")
         metrics = self.admin.c.get("/metrics").get_data(as_text=True)
-        self.assertIn('loco_devices{status="red"} 1', metrics)
+        self.assertIn('loco_devices{status="grey"} 1', metrics)
         self.assertIn('loco_devices{status="green"} 0', metrics)
 
     def test_outdated_catalog_software_turns_windows_devices_orange(self):
@@ -163,11 +177,37 @@ class TestStatus(FleetTest):
         self.assertEqual((color, reason), ("orange", "1 logiciel(s) à mettre à jour"))
         a.checkin({"updates": [], "apps": [{"name": "7-Zip 26.04 (x64 edition)", "version": "26.04.00.0"}]})
         self.assertEqual(status_of(a.uid)[0], "green")
-        # Rouge pour la sécurité, sans masquer les autres raisons.
+        # La sécurité, les logiciels et le redémarrage restent détaillés ; seul le volume décide de la couleur.
         a.checkin({"updates": [{"name": "KB1", "security": True}, {"name": "KB2", "security": False}],
                    "apps": [{"name": "7-Zip 24.09 (x64 edition)", "version": "24.09.00.0"}], "reboot_required": True})
-        self.assertEqual(status_of(a.uid), ("red", "1 mise(s) à jour de sécurité en attente, 1 autre(s) mise(s) à jour "
+        self.assertEqual(status_of(a.uid), ("orange", "1 mise(s) à jour de sécurité en attente, 1 autre(s) mise(s) à jour "
                                                    "du système, 1 logiciel(s) à mettre à jour, redémarrage nécessaire"))
+
+    def test_volume_boundaries_and_configurable_red_threshold(self):
+        a = Agent(LINUX, "192.168.43.60")
+        a.enroll()
+        for count, color in ((0, "green"), (1, "orange"), (9, "orange"), (10, "red"), (11, "red")):
+            answer = a.checkin({"updates": [{"name": f"pkg{i}"} for i in range(count)]}).get_json()
+            self.assertEqual(answer["indicator"]["color"], color, count)
+        self.admin.post("/parc/seuil", {"threshold": "5"}, page="/parc")
+        for count, color in ((4, "orange"), (5, "red")):
+            a.checkin({"updates": [{"name": f"pkg{i}"} for i in range(count)]})
+            self.assertEqual(status_of(a.uid)[0], color)
+        self.admin.post("/parc/seuil", {"threshold": "0"}, page="/parc")
+        with fixture.loco.app.test_request_context():
+            self.assertEqual(fleet.red_threshold(), 5)
+        self.assertIn("5 mises à jour ou plus", self.admin.c.get("/parc").get_data(as_text=True))
+
+    def test_software_and_system_updates_are_added_together(self):
+        with transaction() as conn:
+            conn.execute("INSERT INTO win_apps (slug, name, version, kind, args, filename, sha256, status, detect) "
+                         "VALUES ('7-zip', '7-Zip', '26.04', 'msi', '/qn', '7z.msi', ?, 'ready', '')", ("a" * 64,))
+        a = Agent(WINDOWS, "192.168.43.50")
+        a.enroll()
+        for system, color in ((8, "orange"), (9, "red")):
+            a.checkin({"updates": [{"name": f"KB{i}", "security": True} for i in range(system)],
+                       "apps": [{"name": "7-Zip 24.09 (x64 edition)", "version": "24.09.00.0"}]})
+            self.assertEqual(status_of(a.uid)[0], color)
 
     def test_version_comparison_and_name_matching(self):
         self.assertLess(fleet.version_key("24.09"), fleet.version_key("24.10"))
@@ -377,6 +417,70 @@ class TestWinget(FleetTest):
         kwargs = fetch.call_args.kwargs
         self.assertEqual(kwargs["expected_sha256"], "2" * 64)
         self.assertEqual(kwargs["filename"], "tool_setup-x64.exe")
+
+    def test_reimport_does_not_duplicate_or_download_again(self):
+        with mock.patch.object(winget, "manifest", return_value=winget.parse_yaml(MANIFEST)), \
+                mock.patch("loco.winapps.start_fetch") as fetch:
+            for _ in range(2):
+                self.admin.post("/windows-apps/winget/add", {"id": "Example.Tool"}, page="/windows-apps")
+            self.assertEqual(fetch.call_count, 1)
+        with transaction() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM win_apps WHERE winget_id='Example.Tool'").fetchone()[0], 1)
+
+
+class TestSoftwareStore(FleetTest):
+    def setUp(self):
+        super().setUp()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.index = os.path.join(tmp.name, "index.db")
+        with sqlite3.connect(self.index) as conn:
+            conn.executescript("CREATE TABLE ids (id TEXT); CREATE TABLE names (name TEXT); "
+                               "CREATE TABLE versions (version TEXT); CREATE TABLE monikers (moniker TEXT); "
+                               "CREATE TABLE manifest (id INTEGER, name INTEGER, version INTEGER, moniker INTEGER, "
+                               "pathpart INTEGER, hash BLOB);")
+            for i, package in enumerate(["7zip.7zip", "Example.Tool"] + [f"Vendor.App{n:02}" for n in range(25)], 1):
+                conn.execute("INSERT INTO ids VALUES (?)", (package,))
+                for version in ("2.9", "2.10"):
+                    n = conn.execute("INSERT INTO names VALUES (?)", (package + " " + version,)).lastrowid
+                    v = conn.execute("INSERT INTO versions VALUES (?)", (version,)).lastrowid
+                    m = conn.execute("INSERT INTO monikers VALUES (?)", (package,)).lastrowid
+                    conn.execute("INSERT INTO manifest VALUES (?,?,?,?,0,NULL)", (i, n, v, m))
+        patch = mock.patch.object(winget, "refresh_index", return_value=self.index)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_browsing_pages_by_application_and_chooses_the_latest_version(self):
+        results, total, page, pages = winget.browse(size=24)
+        self.assertEqual((len(results), total, page, pages), (24, 27, 1, 2))
+        self.assertTrue(all(r["version"] == "2.10" for r in results))
+        second, total, page, pages = winget.browse(page=999)
+        self.assertEqual((len(second), page, pages), (3, 2, 2))
+        self.assertFalse({r["id"] for r in results} & {r["id"] for r in second})
+        self.assertEqual(winget.browse(category="outils")[1], 1)
+        self.assertEqual(winget.browse(query="%_")[1], 0)
+
+    def test_store_and_details_use_real_index_data_and_require_an_admin(self):
+        page = self.admin.c.get("/windows-apps/store?q=Example").get_data(as_text=True)
+        self.assertIn("Example.Tool", page)
+        self.assertIn("2.10", page)
+        with mock.patch.object(winget, "manifest", return_value=winget.parse_yaml(MANIFEST)):
+            page = self.admin.c.get("/windows-apps/store/Example.Tool").get_data(as_text=True)
+        self.assertIn("Un outil sur deux lignes", page)
+        self.assertIn("Ajouter à loco", page)
+        with transaction() as conn:
+            from loco import auth
+            if not conn.execute("SELECT 1 FROM users WHERE username='lecteur-store'").fetchone():
+                auth.create_user(conn, "lecteur-store", "Lecteur-Store-2026", "viewer", must_change=False)
+        viewer = fixture.Browser()
+        viewer.login("lecteur-store", "Lecteur-Store-2026")
+        self.assertEqual(viewer.c.get("/windows-apps/store").status_code, 403)
+        self.assertEqual(viewer.c.get("/windows-apps/store/Example.Tool").status_code, 403)
+
+    def test_offline_store_can_read_the_last_valid_index(self):
+        with mock.patch.object(winget, "INDEX", self.index), \
+                mock.patch.object(winget, "refresh_index", side_effect=OSError("hors ligne")):
+            self.assertEqual(winget.browse(query="Example")[1], 1)
 
 
 if __name__ == "__main__":

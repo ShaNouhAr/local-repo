@@ -83,6 +83,9 @@ dev = wait('inscription du poste', device_id, 300)
 page = wait('premier inventaire', lambda: (lambda p: p if 'Inventaire en cours' not in p else None)(get(f'/parc/{dev}')), 900)
 assert 'loco-client' in page and 'Windows' in page, page[:2000]
 print(f'Poste {hostname} inscrit (n° {dev}) et inventorié')
+probe = subprocess.run(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+                        str(Path(__file__).with_name('windows-tray-probe.ps1'))], timeout=240)
+assert probe.returncode == 0, 'Vérification du systray en échec'
 # Les clés d'inscription ne restent pas dans le registre, lisible par les utilisateurs du poste.
 leftover = powershell("(Get-ItemProperty 'HKLM:\\SOFTWARE\\loco\\Client' -ErrorAction SilentlyContinue).Key").stdout.strip()
 assert not leftover, 'clé d\'inscription restée dans le registre'

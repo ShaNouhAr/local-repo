@@ -77,6 +77,7 @@ namespace Loco
         protected override void OnStop()
         {
             stopping.Set();
+            DesktopIndicator.StopSessions();
             RequestAdditionalTime(30000);
             if (worker != null) worker.Join(25000);
         }
@@ -89,7 +90,7 @@ namespace Loco
             int delay = 15000;
             while (!stopping.WaitOne(delay))
             {
-                try { Agent.RunOnce(stopping); }
+                try { DesktopIndicator.StartSessions(); Agent.RunOnce(stopping); }
                 catch (Exception e) { Agent.Log("erreur : " + e.Message); }
                 delay = Agent.Interval * 1000;
             }
@@ -494,8 +495,16 @@ namespace Loco
             if (output.Length > OutputLimit) output = output.Substring(output.Length - OutputLimit);
             var data = new Dictionary<string, object> { { "id", id }, { "state", state }, { "output", output }, { "exit_code", code } };
             if (inventory != null) data["inventory"] = inventory;
-            try { Post(Str(conf, "server"), "/agent/api/result", data, Str(conf, "token")); }
+            try { PublishIndicator(Post(Str(conf, "server"), "/agent/api/result", data, Str(conf, "token"))); }
             catch (Exception e) { Log("résultat non transmis : " + e.Message); }
+        }
+
+        static void PublishIndicator(Dictionary<string, object> answer)
+        {
+            object value;
+            var indicator = answer.TryGetValue("indicator", out value) ? value as Dictionary<string, object> : null;
+            if (indicator == null) { DesktopIndicator.Unavailable("État du poste indisponible sur le serveur"); return; }
+            DesktopIndicator.Publish(Str(indicator, "color"), Str(indicator, "reason"));
         }
 
         internal static void Detached(string file, string args)
@@ -517,6 +526,8 @@ namespace Loco
         // Retrait poussé depuis loco : réglages effacés, puis désinstallation du MSI (qui arrête ce service).
         static void Uninstall()
         {
+            DesktopIndicator.StopSessions();
+            try { File.Delete(DesktopStatus.FilePath); } catch (Exception) { }
             foreach (var f in new[] { ConfigPath, StatePath, CaPath }) try { File.Delete(f); } catch (Exception) { }
             string code = ProductCode();
             if (code != "") Detached("msiexec.exe", "/x " + code + " /qn /norestart");
@@ -557,6 +568,7 @@ namespace Loco
                 var conf = ReadJson(ConfigPath);
                 if (Str(conf, "token") == "")
                 {
+                    DesktopIndicator.Unavailable("Inscription du poste en attente");
                     try { conf = Enroll(conf); }
                     catch (LocoHttpException e) { Log(e.Status == 403 ? "clé d'inscription refusée" : "inscription refusée : " + e.Message); return false; }
                     catch (Exception e) { Log("inscription impossible : " + e.Message); return false; }
@@ -578,15 +590,17 @@ namespace Loco
                     rescan = false;
                 }
                 Dictionary<string, object> answer;
-                try { answer = Post(Str(conf, "server"), "/agent/api/checkin", data, Str(conf, "token")); firstRun = false; }
+                try { answer = Post(Str(conf, "server"), "/agent/api/checkin", data, Str(conf, "token")); firstRun = false; PublishIndicator(answer); }
                 catch (LocoHttpException e)
                 {
+                    DesktopIndicator.Unavailable("Contact avec loco refusé");
                     if (e.Status == 401) Log("jeton refusé par le serveur (poste retiré du parc ?) : réinstallez l'agent pour le réinscrire");
                     else Log("serveur : " + e.Message);
                     return false;
                 }
                 catch (Exception e)
                 {
+                    DesktopIndicator.Unavailable("Serveur loco injoignable");
                     Log("serveur injoignable : " + e.Message);
                     if (data.ContainsKey("inventory")) rescan = true;
                     SaveState(lastScan, scanHours, rescan);

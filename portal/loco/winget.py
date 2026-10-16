@@ -176,7 +176,13 @@ def refresh_index(force=False):
 
 
 def _connect():
-    conn = sqlite3.connect(f"file:{refresh_index()}?mode=ro", uri=True)
+    try:
+        path = refresh_index()
+    except (OSError, ValueError, zipfile.BadZipFile):
+        if not os.path.isfile(INDEX):
+            raise
+        path = INDEX                       # consultation du dernier index valide hors ligne
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -296,6 +302,115 @@ def describe(package_id):
 
 # --------------------------------------------------------------------------- portail
 
+# Sélections éditoriales : les versions et installeurs viennent toujours de l'index Microsoft.
+CATEGORIES = {
+    "selection": ("À découvrir", ("7zip.7zip", "Mozilla.Firefox", "Google.Chrome", "VideoLAN.VLC",
+                                  "Notepad++.Notepad++", "TheDocumentFoundation.LibreOffice", "Microsoft.VisualStudioCode",
+                                  "Git.Git", "SumatraPDF.SumatraPDF", "GIMP.GIMP.3", "Inkscape.Inkscape",
+                                  "KeePassXCTeam.KeePassXC", "Audacity.Audacity", "BlenderFoundation.Blender")),
+    "navigateurs": ("Navigateurs", ("Mozilla.Firefox", "Google.Chrome", "Microsoft.Edge", "Brave.Brave", "Vivaldi.Vivaldi")),
+    "bureautique": ("Bureautique", ("TheDocumentFoundation.LibreOffice", "SumatraPDF.SumatraPDF", "PDFsam.PDFsam",
+                                   "Mozilla.Thunderbird", "Notepad++.Notepad++")),
+    "outils": ("Outils", ("7zip.7zip", "Microsoft.PowerToys", "WinSCP.WinSCP", "PuTTY.PuTTY", "WiresharkFoundation.Wireshark")),
+    "creation": ("Création et médias", ("VideoLAN.VLC", "GIMP.GIMP.3", "Inkscape.Inkscape", "Audacity.Audacity",
+                                        "BlenderFoundation.Blender", "OBSProject.OBSStudio")),
+    "developpement": ("Développement", ("Microsoft.VisualStudioCode", "Git.Git", "Python.Python.3.13",
+                                        "OpenJS.NodeJS.LTS", "Docker.DockerDesktop")),
+    "securite": ("Sécurité", ("KeePassXCTeam.KeePassXC", "Bitwarden.Bitwarden", "Cryptomator.Cryptomator")),
+    "all": ("Tout le catalogue", ()),
+}
+
+
+def browse(query="", category="all", page=1, size=24):
+    """Pagination par logiciel (pas par manifeste/version) sur le véritable index winget."""
+    category = category if category in CATEGORIES else "all"
+    page, size = max(1, page), min(48, max(1, size))
+    conditions, args = [], []
+    if query.strip():
+        like = "%" + query.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        conditions.append("(n.name LIKE ? ESCAPE '\\' OR i.id LIKE ? ESCAPE '\\' OR mo.moniker LIKE ? ESCAPE '\\')")
+        args.extend((like, like, like))
+    ids = CATEGORIES[category][1]
+    if ids:
+        conditions.append("i.id IN (" + ",".join("?" for _ in ids) + ")")
+        args.extend(ids)
+    joins = QUERY[QUERY.index("FROM manifest"):]
+    where = " WHERE " + " AND ".join(conditions) if conditions else ""
+    with _connect() as conn:
+        total = conn.execute("SELECT COUNT(DISTINCT i.id) " + joins + where, args).fetchone()[0]
+        pages = max(1, (total + size - 1) // size)
+        page = min(page, pages)
+        order, rank_args = "i.id COLLATE NOCASE", []
+        if query.strip():
+            exact = like[1:-1]
+            order = ("MIN(CASE WHEN n.name LIKE ? ESCAPE '\\' OR i.id LIKE ? ESCAPE '\\' "
+                     "OR mo.moniker LIKE ? ESCAPE '\\' THEN 0 WHEN n.name LIKE ? ESCAPE '\\' "
+                     "THEN 1 ELSE 2 END), i.id COLLATE NOCASE")
+            rank_args = [exact, exact, exact, exact + "%"]
+        selected = [r[0] for r in conn.execute("SELECT i.id " + joins + where +
+                    " GROUP BY i.id ORDER BY " + order + " LIMIT ? OFFSET ?", (*args, *rank_args, size, (page - 1) * size))]
+        if not selected:
+            return [], total, page, pages
+        rows = conn.execute(QUERY + " WHERE i.id IN (" + ",".join("?" for _ in selected) + ")", selected).fetchall()
+    latest = {}
+    for row in rows:
+        if row["id"] not in latest or _version_key(row["version"]) > _version_key(latest[row["id"]]["version"]):
+            latest[row["id"]] = row
+    return [{"id": latest[i]["id"], "name": latest[i]["name"], "version": latest[i]["version"]}
+            for i in selected], total, page, pages
+
+
+@app.route("/windows-apps/store")
+@admin_required
+def software_store():
+    query = request.args.get("q", "").strip()[:100]
+    category = request.args.get("category", "all" if query else "selection")
+    if category not in CATEGORIES:
+        category = "all"
+    try:
+        page = max(1, int(request.args.get("page", "1")))
+    except ValueError:
+        page = 1
+    results, total, pages, error = [], 0, 1, ""
+    try:
+        results, total, page, pages = browse(query, category, page)
+    except (OSError, ValueError, sqlite3.Error, zipfile.BadZipFile) as e:
+        error = f"Le catalogue est momentanément indisponible : {e}"
+    known = {r["winget_id"]: dict(r) for r in db().execute("SELECT slug, winget_id, status FROM win_apps WHERE winget_id != ''")}
+    updated = time.strftime("%d/%m/%Y à %H:%M", time.localtime(os.path.getmtime(INDEX))) if os.path.isfile(INDEX) else ""
+    return render_template("software_store.html", query=query, category=category, categories=CATEGORIES,
+                           results=results, total=total, page=page, pages=pages, known=known, error=error, updated=updated)
+
+
+@app.route("/windows-apps/store/<package_id>")
+@admin_required
+def software_store_detail(package_id):
+    doc, info, error = {}, None, ""
+    try:
+        doc = manifest(package_id)
+        info = choose_installer(doc)
+    except (OSError, ValueError, sqlite3.Error, zipfile.BadZipFile) as e:
+        error = str(e)
+    known = db().execute("SELECT * FROM win_apps WHERE winget_id=?", (package_id,)).fetchone()
+    homepage = doc.get("PackageUrl") or doc.get("PublisherUrl") or ""
+    if not isinstance(homepage, str) or not homepage.startswith("https://"):
+        homepage = ""
+    return render_template("software_store_detail.html", package_id=package_id, doc=doc, info=info,
+                           error=error, known=known, homepage=homepage)
+
+
+@app.route("/windows-apps/store/refresh", methods=["POST"])
+@admin_required
+def software_store_refresh():
+    try:
+        refresh_index(force=True)
+        flash("Catalogue Microsoft WinGet actualisé.", "ok")
+    except (OSError, ValueError, sqlite3.Error, zipfile.BadZipFile) as e:
+        flash(f"Actualisation impossible : {e}. Le dernier index valide reste disponible.", "error")
+    return back("software_store")
+
+
+
 @app.route("/windows-apps/winget")
 @admin_required
 def winget_search():
@@ -322,6 +437,9 @@ def _filename(info):
 def winget_add():
     from .winapps import start_fetch
     package_id = request.form.get("id", "")
+    if db().execute("SELECT 1 FROM win_apps WHERE winget_id=?", (package_id,)).fetchone():
+        flash("Ce logiciel figure déjà dans le catalogue local.", "ok")
+        return back("windows_apps")
     try:
         info = describe(package_id)
     except (OSError, ValueError, sqlite3.Error) as e:

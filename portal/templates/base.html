@@ -27,12 +27,13 @@
           </div>
         </div>
       </details>
-      <details class="nav-group {{ 'on' if ep.startswith(('windows_update', 'windows_apps', 'winget')) }}">
+      <details class="nav-group {{ 'on' if ep.startswith(('windows_update', 'windows_apps', 'winget', 'software_store')) }}">
         <summary aria-expanded="false" aria-controls="nav-windows">{{ nav_icon('windows') }}<span>Windows</span>{{ nav_icon('chevron') }}</summary>
         <div class="nav-dropdown" id="nav-windows">
           <div class="nav-panel">
             <a href="{{ url_for('windows_update') }}" {% if ep.startswith('windows_update') %}aria-current="page"{% endif %}>{{ nav_icon('update') }}<span><strong>Windows Update</strong><small>Cache des mises à jour</small></span></a>
             <a href="{{ url_for('windows_apps') }}" {% if ep.startswith(('windows_apps', 'winget')) %}aria-current="page"{% endif %}>{{ nav_icon('overview') }}<span><strong>Logiciels</strong><small>Catalogue et installeurs</small></span></a>
+            {% if can_edit %}<a href="{{ url_for('software_store') }}" {% if ep.startswith('software_store') %}aria-current="page"{% endif %}>{{ nav_icon('package') }}<span><strong>Store logiciels</strong><small>Découvrir le catalogue WinGet</small></span></a>{% endif %}
           </div>
         </div>
       </details>

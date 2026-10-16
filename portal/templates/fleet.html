@@ -2,7 +2,7 @@
 {% from "_macros.html" import cmd %}
 {% block title %}Mon parc{% endblock %}
 {% macro dot(color) -%}
-<span class="st {{ {'green': 'ok', 'orange': 'warn', 'red': 'err'}.get(color, '') }}" title="{{ {'green': 'à jour', 'orange': 'mises à jour en attente', 'red': 'à traiter', 'grey': 'en attente'}[color] }}"></span>
+<span class="st {{ {'green': 'ok', 'orange': 'warn', 'red': 'err'}.get(color, '') }}" title="{{ {'green': 'à jour', 'orange': 'mises à jour en attente', 'red': 'beaucoup de mises à jour', 'grey': 'état inconnu'}[color] }}"></span>
 {%- endmacro %}
 {% block content %}
 <div class="head">
@@ -24,9 +24,9 @@
 <div class="stack" data-poll="{{ url_for('fleet') }}" data-poll-kind="reload" data-poll-every="15000" data-signature="{{ signature }}">
   <div class="metrics">
     <div class="metric"><div class="k"><span class="st ok"></span> À jour</div><div class="v">{{ counts.green }}</div><div class="s">postes</div></div>
-    <div class="metric"><div class="k"><span class="st warn"></span> Mises à jour en attente</div><div class="v">{{ counts.orange }}</div><div class="s">ou redémarrage nécessaire</div></div>
-    <div class="metric"><div class="k"><span class="st err"></span> À traiter</div><div class="v">{{ counts.red }}</div><div class="s">sécurité, échec ou injoignable</div></div>
-    <div class="metric"><div class="k"><span class="st"></span> En attente</div><div class="v">{{ counts.grey }}</div><div class="s">premier inventaire, retrait</div></div>
+    <div class="metric"><div class="k"><span class="st warn"></span> Mises à jour en attente</div><div class="v">{{ counts.orange }}</div><div class="s">de 1 à {{ red_threshold - 1 }} mises à jour</div></div>
+    <div class="metric"><div class="k"><span class="st err"></span> Beaucoup de mises à jour</div><div class="v">{{ counts.red }}</div><div class="s">{{ red_threshold }} mises à jour ou plus</div></div>
+    <div class="metric"><div class="k"><span class="st"></span> État inconnu</div><div class="v">{{ counts.grey }}</div><div class="s">inventaire, absence de contact, retrait</div></div>
   </div>
 
   <section class="panel">
@@ -62,10 +62,18 @@
     {% else %}
     <div class="empty">Aucun poste pour l'instant : installez l'agent sur un poste{{ ' avec la commande ci-dessous' if can_edit }}.</div>
     {% endif %}
-    <div class="panel-f">Vert : à jour. Orange : mises à jour ou redémarrage en attente, ou pas de contact depuis un jour. Rouge : mises à jour de sécurité en attente, dernière action en échec, ou pas de contact depuis 7 jours. Les postes contactent loco toutes les {{ checkin // 60 }} minutes : une action part au contact suivant.</div>
+    <div class="panel-f">Vert : aucune mise à jour. Orange : de 1 à {{ red_threshold - 1 }} mises à jour. Rouge : {{ red_threshold }} mises à jour ou plus. Le total comprend le système, Flatpak et les logiciels du catalogue. Gris : état non connu ou inventaire indisponible. Les postes contactent loco toutes les {{ checkin // 60 }} minutes : une action part au contact suivant.</div>
   </section>
 
   {% if can_edit %}
+  <details class="panel">
+    <summary class="panel-h">Seuil des pastilles</summary>
+    <form method="post" action="{{ url_for('fleet_threshold') }}" class="panel-b row" data-ajax>
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label>Rouge à partir de <input type="number" name="threshold" min="2" max="10000" value="{{ red_threshold }}" required style="width:100px;display:inline-block"> mises à jour</label>
+      <button class="btn sm">Enregistrer</button>
+    </form>
+  </details>
   <section class="panel">
     <div class="panel-h"><h2>Ajouter un poste</h2>
       <div class="aside">
