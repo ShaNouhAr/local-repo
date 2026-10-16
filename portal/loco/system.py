@@ -216,6 +216,13 @@ def metrics():
     if config.RPM_ENABLED:
         from .rpmrepo import list_rpms
         metric("loco_rpm_packages", "Paquets des dépôts RPM locaux.", "gauge", [({}, len(list_rpms()))])
+    from .fleet import catalog, status
+    apps = catalog()
+    colors = {"green": 0, "orange": 0, "red": 0, "grey": 0}
+    for dev in db().execute("SELECT * FROM devices WHERE state != 'removed'"):
+        colors[status(dev, apps)[0]] += 1
+    metric("loco_devices", "Postes du parc par voyant (green à jour, orange en attente, red à traiter).", "gauge",
+           [({"status": c}, n) for c, n in colors.items()])
     rows = db().execute("SELECT status, COUNT(*) AS n FROM win_apps GROUP BY status").fetchall()
     metric("loco_windows_apps", "Logiciels du catalogue Windows par état.", "gauge",
            [({"status": r["status"]}, r["n"]) for r in rows] or [({"status": "ready"}, 0)])

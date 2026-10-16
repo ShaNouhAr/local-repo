@@ -148,6 +148,9 @@ class TestStatus(FleetTest):
         with transaction() as conn:
             conn.execute("UPDATE devices SET last_seen='2020-01-01 00:00:00' WHERE uid=?", (a.uid,))
         self.assertEqual(status_of(a.uid)[0], "red")
+        metrics = self.admin.c.get("/metrics").get_data(as_text=True)
+        self.assertIn('loco_devices{status="red"} 1', metrics)
+        self.assertIn('loco_devices{status="green"} 0', metrics)
 
     def test_outdated_catalog_software_turns_windows_devices_orange(self):
         with transaction() as conn:

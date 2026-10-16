@@ -26,7 +26,7 @@ from .db import db
 from .util import back, now, slugify
 
 SOURCE = "https://cdn.winget.microsoft.com/cache/"
-INDEX_DIR = os.path.join(config.STATE, "winget")
+INDEX_DIR = os.path.join(config.DATA, "winget")   # cache régénérable : hors des sauvegardes (STATE)
 INDEX = os.path.join(INDEX_DIR, "index.db")
 MAX_AGE = 86400
 MAX_INDEX = 200 * 1024 * 1024
