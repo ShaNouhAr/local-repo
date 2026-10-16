@@ -8,7 +8,7 @@ import sys
 from flask import Response, render_template
 
 from . import app, config
-from .auth import admin_required
+from .auth import login_required
 from .db import db
 from .linux import list_debs
 from .util import disk_usage, read_stats, service_active
@@ -156,7 +156,7 @@ def list_backups():
 
 
 @app.route("/systeme")
-@admin_required
+@login_required
 def system():
     return render_template(
         "system.html",

@@ -7,7 +7,7 @@ import subprocess
 from flask import abort, flash, g, render_template, request
 
 from . import app, config
-from .auth import admin_required, audit
+from .auth import audit, login_required, require
 from .system import _alpine_release
 from .util import back
 
@@ -69,7 +69,7 @@ def _network():
 
 
 @app.route("/systeme/mises-a-jour")
-@admin_required
+@login_required
 def appliance_updates():
     _require_appliance()
     status = locoadmin.read_status()
@@ -87,7 +87,7 @@ def appliance_updates():
 
 
 @app.route("/systeme/mises-a-jour/operation/<job_id>")
-@admin_required
+@login_required
 def appliance_job(job_id):
     _require_appliance()
     job = next((j for j in locoadmin.jobs(limit=40) if j["id"] == job_id), None)
@@ -97,7 +97,7 @@ def appliance_job(job_id):
 
 
 @app.route("/systeme/operations/etat")
-@admin_required
+@login_required
 def appliance_operations_state():
     _require_appliance()
     latest = locoadmin.jobs(limit=1)
@@ -106,12 +106,13 @@ def appliance_operations_state():
 
 
 @app.route("/systeme/mises-a-jour", methods=["POST"])
-@admin_required
+@login_required
 def appliance_updates_post():
     _require_appliance()
     action = request.form.get("action", "")
     if action not in ("check", "update-loco", "update-system", "reboot"):
         abort(400)
+    require("system.view" if action == "check" else "system.reboot" if action == "reboot" else "system.update")
     if _submit(action):
         audit(f"systeme.{action}", ACTION_LABELS[action])
         flash(f"{ACTION_LABELS[action]} lancée." if action != "reboot" else "Redémarrage demandé.", "ok")
@@ -119,7 +120,7 @@ def appliance_updates_post():
 
 
 @app.route("/systeme/configuration")
-@admin_required
+@login_required
 def appliance_settings():
     _require_appliance()
     conf = locoadmin.read_conf()
@@ -129,7 +130,7 @@ def appliance_settings():
 
 
 @app.route("/systeme/configuration", methods=["POST"])
-@admin_required
+@login_required
 def appliance_settings_post():
     _require_appliance()
     changes = {}

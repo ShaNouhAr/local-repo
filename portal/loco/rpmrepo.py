@@ -14,7 +14,7 @@ from flask import abort, flash, render_template, request
 from werkzeug.utils import secure_filename
 
 from . import app, config, rpmpkg, signing
-from .auth import admin_required, audit, login_required
+from .auth import audit, login_required
 from .db import transaction
 from .util import back, download, explain, read_stats, sha256_of
 
@@ -182,7 +182,7 @@ def rpm():
 
 
 @app.route("/rpm/repositories", methods=["POST"])
-@admin_required
+@login_required
 def rpm_repository_create():
     if not config.RPM_ENABLED:
         abort(404)
@@ -201,7 +201,7 @@ def rpm_repository_create():
 
 
 @app.route("/rpm/upload", methods=["POST"])
-@admin_required
+@login_required
 def rpm_upload():
     if not config.RPM_ENABLED:
         abort(404)
@@ -247,7 +247,7 @@ def rpm_upload():
 
 
 @app.route("/rpm/delete", methods=["POST"])
-@admin_required
+@login_required
 def rpm_delete():
     if not config.RPM_ENABLED:
         abort(404)

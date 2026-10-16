@@ -34,8 +34,8 @@
   <p class="note">Serveur Windows : le dépôt Flatpak local demande ostree, qui n'existe pas sous Windows. Le cache Flathub
     fonctionne normalement ; pour publier des applications internes, utilisez un serveur loco Linux.</p>
   {% else %}
-  <div class="cols {{ 'w12' if can_edit else '' }}">
-    {% if can_edit %}
+  <div class="cols {{ 'w12' if can('flatpak.upload') else '' }}">
+    {% if can('flatpak.upload') %}
     <section class="panel">
       <div class="panel-h"><h2>Ajouter des applications</h2></div>
       <form class="panel-b" method="post" action="{{ url_for('flatpak_upload') }}" enctype="multipart/form-data" data-ajax>
@@ -72,7 +72,7 @@
               <td class="mono muted">{{ r.arch }}</td>
               <td class="mono muted nowrap">{{ r.date }}</td>
               <td class="right">
-                {% if can_edit %}
+                {% if can('flatpak.delete') %}
                 <div class="acts">
                 <form method="post" action="{{ url_for('flatpak_delete') }}" data-ajax data-confirm="Supprimer {{ r.id }} ({{ r.branch }}) ?" data-confirm-text="La référence est retirée du dépôt local. Les postes qui l'ont installée la gardent." data-confirm-ok="Supprimer">
                   <input type="hidden" name="csrf" value="{{ csrf }}">

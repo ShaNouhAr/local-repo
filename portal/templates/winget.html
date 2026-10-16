@@ -30,7 +30,7 @@
             <td class="mono">{{ r.version }}</td>
             <td class="right">
               {% if r.id in known %}<span class="st ok">dans le catalogue</span>
-              {% else %}
+              {% elif can("store.import") %}
               <form method="post" action="{{ url_for('winget_add') }}" data-ajax>
                 <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="id" value="{{ r.id }}"><input type="hidden" name="q" value="{{ query }}">
                 <button class="btn sm"><span class="spin"></span>Ajouter</button>

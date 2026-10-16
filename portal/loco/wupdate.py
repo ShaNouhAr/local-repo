@@ -8,7 +8,7 @@ import urllib.parse
 from flask import Response, flash, render_template, request
 
 from . import app, config
-from .auth import admin_required, audit, login_required
+from .auth import audit, login_required
 from .util import back, read_stats, service_active
 
 LOG_RE = re.compile(r'^(\S+) \[([^\]]+)\] "(\S+) (\S+)[^"]*" (\d+) (\d+) (\S+) "([^"]*)"$')
@@ -103,7 +103,7 @@ def api_wu():
 
 
 @app.route("/windows-update/domains", methods=["POST"])
-@admin_required
+@login_required
 def windows_update_domains():
     domains, bad = [], []
     for d in re.split(r"[\s,]+", request.form.get("domains", "").lower()):

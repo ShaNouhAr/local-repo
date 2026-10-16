@@ -8,16 +8,16 @@
     <h1>Logiciels Windows</h1>
     <p>Installeurs stockés sur le serveur et installés en silence par PowerShell. Cochez des logiciels pour obtenir la commande.</p>
   </div>
-  {% if can_edit %}
+  {% if can_any("windows.add", "windows.refresh", "store.view") %}
   <div class="actions">
     {% if apps|selectattr('winget_id')|list %}
-    <form method="post" action="{{ url_for('winget_update') }}" data-ajax>
+    {% if can("windows.refresh") %}<form method="post" action="{{ url_for('winget_update') }}" data-ajax>
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <button class="btn" title="Nouvelles versions des logiciels importés depuis winget"><span class="spin"></span>Nouvelles versions</button>
-    </form>
+    </form>{% endif %}
     {% endif %}
-    <a class="btn" href="{{ url_for('software_store') }}">Ouvrir le store</a>
-    <button type="button" class="btn primary" data-open="#add">Ajouter un logiciel</button>
+{% if can("store.view") %}    <a class="btn" href="{{ url_for('software_store') }}">Ouvrir le store</a>{% endif %}
+    {% if can("windows.add") %}<button type="button" class="btn primary" data-open="#add">Ajouter un logiciel</button>{% endif %}
   </div>
   {% endif %}
 </div>
@@ -52,20 +52,20 @@
             {% else %}<span class="st">en attente</span>{% endif %}
           </td>
           <td class="right">
-            {% if can_edit %}
+            {% if can_any("windows.edit", "windows.refresh", "windows.delete") %}
             <div class="acts">
-              <button type="button" class="linkbtn" data-open="#edit"
-                data-app='{{ {"slug": a.slug, "name": a.name, "version": a.version, "kind": a.kind, "args": a.args, "url": a.source_url, "filename": a.filename, "sha256": a.sha256, "detect": a.detect}|tojson|forceescape }}'>Modifier</button>
+              {% if can("windows.edit") %}<button type="button" class="linkbtn" data-open="#edit"
+                data-app='{{ {"slug": a.slug, "name": a.name, "version": a.version, "kind": a.kind, "args": a.args, "url": a.source_url, "filename": a.filename, "sha256": a.sha256, "detect": a.detect}|tojson|forceescape }}'>Modifier</button>{% endif %}
               {% if a.source_url %}
-              <form method="post" action="{{ url_for('windows_apps_refresh', slug=a.slug) }}" data-ajax>
+              {% if can("windows.refresh") %}<form method="post" action="{{ url_for('windows_apps_refresh', slug=a.slug) }}" data-ajax>
                 <input type="hidden" name="csrf" value="{{ csrf }}">
                 <button class="linkbtn" title="Retélécharger depuis le lien source" {{ 'disabled' if a.status == 'downloading' }}>Actualiser</button>
-              </form>
+              </form>{% endif %}
               {% endif %}
-              <form method="post" action="{{ url_for('windows_apps_delete', slug=a.slug) }}" data-ajax data-confirm="Supprimer {{ a.name }} ?" data-confirm-text="Le logiciel et son installeur sont retirés du catalogue." data-confirm-ok="Supprimer">
+              {% if can("windows.delete") %}<form method="post" action="{{ url_for('windows_apps_delete', slug=a.slug) }}" data-ajax data-confirm="Supprimer {{ a.name }} ?" data-confirm-text="Le logiciel et son installeur sont retirés du catalogue." data-confirm-ok="Supprimer">
                 <input type="hidden" name="csrf" value="{{ csrf }}">
                 <button class="linkbtn del">Supprimer</button>
-              </form>
+              </form>{% endif %}
             </div>
             {% endif %}
           </td>
@@ -94,9 +94,9 @@
   </div>
 </div>
 
-{% if can_edit %}
+{% if can_any("windows.add", "windows.edit") %}
 {# ------------------------------------------------------------ ajout #}
-<dialog id="add">
+{% if can("windows.add") %}<dialog id="add">
   <form method="post" action="{{ url_for('windows_apps_add') }}" enctype="multipart/form-data" data-ajax>
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <div class="dlg-h"><h2>Ajouter un logiciel</h2><button type="button" class="linkbtn" data-close>Fermer</button></div>
@@ -137,10 +137,10 @@
       <button class="btn primary"><span class="spin"></span>Ajouter</button>
     </div>
   </form>
-</dialog>
+</dialog>{% endif %}
 
 {# ------------------------------------------------------------ modification #}
-<dialog id="edit">
+{% if can("windows.edit") %}<dialog id="edit">
   <form method="post" action="" data-base="{{ url_for('windows_apps_edit', slug='__slug__') }}" enctype="multipart/form-data" data-ajax>
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <div class="dlg-h"><h2>Modifier <span data-title></span></h2><button type="button" class="linkbtn" data-close>Fermer</button></div>
@@ -167,6 +167,6 @@
       <button class="btn primary"><span class="spin"></span>Enregistrer</button>
     </div>
   </form>
-</dialog>
+</dialog>{% endif %}
 {% endif %}
 {% endblock %}

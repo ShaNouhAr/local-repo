@@ -9,7 +9,7 @@ import threading
 from flask import abort, flash, render_template, request
 
 from . import app, config
-from .auth import admin_required, audit, login_required
+from .auth import audit, login_required
 from .util import back, read_stats
 
 _lock = threading.Lock()
@@ -99,7 +99,7 @@ def flatpak():
 
 
 @app.route("/flatpak/upload", methods=["POST"])
-@admin_required
+@login_required
 def flatpak_upload():
     if not config.FLATPAK_LOCAL:
         abort(404)
@@ -127,7 +127,7 @@ def flatpak_upload():
 
 
 @app.route("/flatpak/delete", methods=["POST"])
-@admin_required
+@login_required
 def flatpak_delete():
     if not config.FLATPAK_LOCAL:
         abort(404)

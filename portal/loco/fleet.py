@@ -23,8 +23,8 @@ import urllib.request
 
 from flask import Response, abort, flash, g, redirect, render_template, request, send_file, url_for
 
-from . import app, config
-from .auth import admin_required, audit, login_required
+from . import app, config, permissions
+from .auth import audit, login_required, can, require
 from .db import db
 from .util import back
 
@@ -372,6 +372,15 @@ def agent_checkin():
     commands = []
     for c in conn.execute("SELECT * FROM device_commands WHERE device_id=? AND state='queued' ORDER BY id",
                           (dev["id"],)).fetchall():
+        actor = conn.execute("SELECT role,disabled,must_change FROM users WHERE username=?", (c["created_by"],)).fetchone()
+        grants = permissions.role_permissions(conn, actor["role"]) if actor and not actor["disabled"] and not actor["must_change"] else frozenset()
+        required = permissions.ACTION_PERMISSIONS.get(c["action"])
+        if required not in grants or (json.loads(c["params"] or "{}").get("reboot") and "fleet.reboot" not in grants):
+            conn.execute("UPDATE device_commands SET state='cancelled',finished_at=?,output=? WHERE id=?",
+                         (_now(), "Droits insuffisants avant transmission à l'agent.", c["id"]))
+            if c["action"] == "uninstall":
+                conn.execute("UPDATE devices SET state='active' WHERE id=? AND state='removing'", (dev["id"],))
+            continue
         payload = _payload(dev, c)
         if payload is None:
             conn.execute("UPDATE device_commands SET state='failed', finished_at=?, output=? WHERE id=?",
@@ -584,7 +593,7 @@ def fleet():
                                             len(r["pending"])] for r in rows]).encode()).hexdigest()[:16]
     if request.headers.get("X-Requested-With") == "fetch":
         return {"signature": signature}
-    key = enroll_key() if g.user["role"] == "admin" else ""
+    key = enroll_key() if can("fleet.enroll") else ""
     msi, msi_state = agent_msi()
     return render_template("fleet.html", rows=rows, counts=counts, signature=signature, families=FAMILIES,
                            actions=ACTIONS, to_update=sum(1 for r in rows if r["needs_update"]),
@@ -595,7 +604,7 @@ def fleet():
 
 
 @app.route("/parc/seuil", methods=["POST"])
-@admin_required
+@login_required
 def fleet_threshold():
     try:
         value = int(request.form.get("threshold", ""))
@@ -638,10 +647,15 @@ def fleet_device(dev_id):
 
 
 @app.route("/parc/<int:dev_id>/action", methods=["POST"])
-@admin_required
+@login_required
 def fleet_action(dev_id):
     dev = _get(dev_id)
     action = request.form.get("action", "")
+    if action not in permissions.ACTION_PERMISSIONS:
+        abort(400)
+    require(permissions.ACTION_PERMISSIONS[action])
+    if request.form.get("reboot") == "1":
+        require("fleet.reboot")
     if action == "forget":
         db().execute("DELETE FROM devices WHERE id=?", (dev_id,))
         db().commit()
@@ -670,10 +684,12 @@ def fleet_action(dev_id):
 
 
 @app.route("/parc/tout-mettre-a-jour", methods=["POST"])
-@admin_required
+@login_required
 def fleet_update_all():
     apps = catalog()
     reboot = request.form.get("reboot") == "1"
+    if reboot:
+        require("fleet.reboot")
     count = 0
     for r in _rows(apps):
         if r["needs_update"] and queue(r["d"], "update", {"reboot": reboot}):
@@ -685,7 +701,7 @@ def fleet_update_all():
 
 
 @app.route("/parc/cle", methods=["POST"])
-@admin_required
+@login_required
 def fleet_rotate_key():
     set_setting("enroll_key", secrets.token_urlsafe(18))
     audit("parc.cle", "nouvelle clé d'inscription")

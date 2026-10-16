@@ -175,7 +175,8 @@
     var hasFile = $$('input[type="file"]', form).some(function (i) { return i.files && i.files.length; });
     if (btn) btn.classList.add("loading");
     var xhr = new XMLHttpRequest();
-    xhr.open("POST", form.action);
+    // A field named "action" shadows the form's action property.
+    xhr.open("POST", form.getAttribute("action") || window.location.href);
     xhr.setRequestHeader("X-Requested-With", "fetch");
     xhr.responseType = "json";
     if (prog && hasFile) {
@@ -249,7 +250,7 @@
 
   function fillEdit(dlg, app) {
     var form = $("form", dlg);
-    form.action = form.dataset.base.replace("__slug__", app.slug);
+    form.setAttribute("action", form.dataset.base.replace("__slug__", app.slug));
     $("[data-title]", dlg).textContent = app.name;
     ["name", "version", "args", "url", "kind", "detect"].forEach(function (k) { if (form.elements[k]) form.elements[k].value = app[k] || ""; });
     $("[data-file]", dlg).textContent = app.filename ? app.filename + "  sha256:" + app.sha256.slice(0, 16) : "";

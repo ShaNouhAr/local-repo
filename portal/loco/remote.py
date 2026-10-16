@@ -12,8 +12,8 @@ import time
 
 from flask import abort, g, redirect, render_template, request, session, url_for
 
-from . import app, fleet
-from .auth import admin_required, audit
+from . import app, fleet, permissions
+from .auth import audit, login_required, require
 from .db import db
 
 PACKET = 256 * 1024
@@ -42,10 +42,15 @@ def _prune():
     expired = conn.execute(
         "SELECT s.id FROM remote_sessions s JOIN users u ON u.id=s.user_id JOIN devices d ON d.id=s.device_id "
         "WHERE s.state IN ('waiting','active') AND (s.expires<? OR s.browser_seen<? OR "
-        "(s.agent_seen>0 AND s.agent_seen<?) OR (s.agent_seen=0 AND s.created<?) OR u.disabled=1 OR u.role!='admin' OR "
+        "(s.agent_seen>0 AND s.agent_seen<?) OR (s.agent_seen=0 AND s.created<?) OR u.disabled=1 OR "
         "u.pw_version!=s.pw_version OR d.state!='active')", (now, now - 60, now - 30, now - 30)).fetchall()
     for row in expired:
         _close(row["id"], "Session expirée ou accès révoqué.")
+    for row in conn.execute("SELECT s.id,s.kind,u.role FROM remote_sessions s JOIN users u ON u.id=s.user_id "
+                            "WHERE s.state IN ('waiting','active')").fetchall():
+        grants = permissions.role_permissions(conn, row["role"])
+        if "fleet.view" not in grants or "remote." + row["kind"] not in grants:
+            _close(row["id"], "Droit d'accès distant révoqué.")
     conn.execute("DELETE FROM remote_sessions WHERE state='closed' AND browser_seen<?", (now - 120,))
 
 
@@ -105,16 +110,18 @@ def _browser_session(sid):
                        (sid, g.user["id"], _owner(), g.user["pw_version"])).fetchone()
     if row is None:
         abort(404)
+    require("remote." + row["kind"])
     return row
 
 
 @app.route("/parc/<int:dev_id>/session", methods=["POST"])
-@admin_required
+@login_required
 def remote_open(dev_id):
     dev = fleet._get(dev_id)
     kind = request.form.get("kind")
     if kind not in ("terminal", "desktop") or dev["state"] != "active":
         abort(400)
+    require("remote." + kind)
     if fleet.version_key(dev["agent_version"]) < (2, 4):
         abort(409, "L'agent doit être mis à jour vers la version 2.4.0.")
     conn = db()
@@ -134,7 +141,7 @@ def remote_open(dev_id):
 
 
 @app.route("/parc/session/<sid>")
-@admin_required
+@login_required
 def remote_session(sid):
     db().execute("BEGIN IMMEDIATE")
     _prune()
@@ -149,7 +156,7 @@ def remote_session(sid):
 
 
 @app.route("/parc/session/<sid>/io", methods=["POST"])
-@admin_required
+@login_required
 def remote_io(sid):
     if (request.content_length or 0) > 400000:
         abort(413)

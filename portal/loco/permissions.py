@@ -1,0 +1,179 @@
+"""Catalogue fermé de droits, profils persistants et politique de chaque route du portail.
+
+Les profils sont partagés entre comptes. Aucun droit inconnu n'accorde d'accès ; les prérequis sont
+explicites. Le profil admin reste protégé et reçoit les futurs droits d'administration.
+"""
+import json
+import unicodedata
+
+# clé, libellé, description, prérequis, droit sensible
+GROUPS = [
+    ("Vue d'ensemble", [
+        ("dashboard.view", "Consulter la vue d'ensemble", "Indicateurs globaux des caches, dépôts et services.", (), False),
+    ]),
+    ("Parc et accès distant", [
+        ("fleet.view", "Consulter les appareils", "Inventaires, logiciels remontés et historique des actions.", (), False),
+        ("fleet.enroll", "Inscrire des appareils", "Afficher la clé et les commandes d'installation de l'agent.", ("fleet.view",), True),
+        ("fleet.scan", "Demander un inventaire", "Actualiser les informations d'un appareil.", ("fleet.view",), False),
+        ("fleet.update", "Mettre à jour un appareil", "Système, Flatpak et logiciels du catalogue déjà installés.", ("fleet.view",), True),
+        ("fleet.bulk_update", "Mettre à jour tout le parc", "Lancer les mises à jour sur tous les appareils concernés.", ("fleet.update",), True),
+        ("fleet.install", "Déployer un logiciel", "Installer ou mettre à jour un logiciel du catalogue sur un appareil.", ("fleet.view", "windows.view"), True),
+        ("fleet.reboot", "Redémarrer les appareils", "Redémarrage direct ou après une mise à jour.", ("fleet.view",), True),
+        ("fleet.remove", "Retirer les agents et appareils", "Désinstaller l'agent ou oublier un appareil.", ("fleet.view",), True),
+        ("fleet.settings", "Configurer le parc", "Seuil des pastilles et rotation de la clé d'inscription.", ("fleet.view",), True),
+        ("remote.terminal", "Ouvrir un terminal distant", "Shell root ou PowerShell SYSTEM : contrôle privilégié du poste.", ("fleet.view",), True),
+        ("remote.desktop", "Ouvrir le bureau noVNC", "Voir l'écran et utiliser le clavier et la souris du poste.", ("fleet.view",), True),
+    ]),
+    ("Paquets APT", [
+        ("linux.view", "Consulter les dépôts APT", "Paquets et commandes de branchement.", (), False),
+        ("linux.create", "Créer un dépôt APT", "Ajouter une distribution ou une version.", ("linux.view",), False),
+        ("linux.upload", "Importer des paquets APT", "Ajouter des fichiers .deb.", ("linux.view",), True),
+        ("linux.copy", "Copier des paquets APT", "Copier entre les dépôts locaux.", ("linux.view",), True),
+        ("linux.delete", "Supprimer des paquets APT", "Retirer des paquets du dépôt.", ("linux.view",), True),
+    ]),
+    ("Paquets RPM", [
+        ("rpm.view", "Consulter les dépôts RPM", "Paquets et commandes de branchement.", (), False),
+        ("rpm.create", "Créer un dépôt RPM", "Ajouter une version majeure.", ("rpm.view",), False),
+        ("rpm.upload", "Importer des paquets RPM", "Ajouter des fichiers .rpm.", ("rpm.view",), True),
+        ("rpm.delete", "Supprimer des paquets RPM", "Retirer des paquets du dépôt.", ("rpm.view",), True),
+    ]),
+    ("Flatpak", [
+        ("flatpak.view", "Consulter Flatpak", "Cache, dépôt local et commandes de branchement.", (), False),
+        ("flatpak.upload", "Importer une application Flatpak", "Ajouter un bundle au dépôt local.", ("flatpak.view",), True),
+        ("flatpak.delete", "Supprimer une application Flatpak", "Retirer une référence du dépôt local.", ("flatpak.view",), True),
+    ]),
+    ("Logiciels Windows et store", [
+        ("windows.view", "Consulter le catalogue local", "Logiciels Windows et installeurs disponibles.", (), False),
+        ("windows.add", "Ajouter un logiciel au catalogue", "Téléverser un installeur ou le télécharger depuis une URL.", ("windows.view",), True),
+        ("windows.edit", "Modifier un logiciel", "Version, détection et arguments d'installation silencieuse.", ("windows.view",), True),
+        ("windows.refresh", "Actualiser les installeurs", "Retélécharger et rechercher les nouvelles versions WinGet.", ("windows.view",), True),
+        ("windows.delete", "Supprimer un logiciel", "Retirer son installeur du catalogue local.", ("windows.view",), True),
+        ("store.view", "Parcourir le store WinGet", "Rechercher et consulter les fiches publiques du store.", (), False),
+        ("store.refresh", "Actualiser l'index du store", "Télécharger à nouveau l'index WinGet.", ("store.view",), False),
+        ("store.import", "Importer depuis le store", "Ajouter un installeur vérifié au catalogue local.", ("store.view", "windows.add"), True),
+    ]),
+    ("Cache Windows Update", [
+        ("wu.view", "Consulter le cache Windows Update", "Statistiques, domaines et commandes DNS.", (), False),
+        ("wu.configure", "Modifier les domaines du cache", "Changer les destinations relayées par le serveur.", ("wu.view",), True),
+    ]),
+    ("Serveur loco", [
+        ("system.view", "Consulter le système", "Services, certificats, versions et état des sauvegardes.", (), False),
+        ("system.configure", "Configurer le serveur", "Réseaux autorisés, fonctions, proxy et stockage de l'appliance.", ("system.view",), True),
+        ("system.update", "Mettre à jour le serveur", "Installer une version de loco ou les paquets de l'appliance.", ("system.view",), True),
+        ("system.reboot", "Redémarrer le serveur", "Demander un redémarrage de l'appliance.", ("system.view",), True),
+    ]),
+    ("Utilisateurs, profils et audit", [
+        ("users.view", "Consulter les comptes", "Identifiants, profils, état et dernière connexion.", (), False),
+        ("users.create", "Créer des comptes", "Attribuer uniquement des profils dont vous possédez tous les droits.", ("users.view",), True),
+        ("users.edit", "Modifier les comptes", "Changer le profil, activer ou désactiver les comptes que vous pouvez gérer.", ("users.view",), True),
+        ("users.reset", "Réinitialiser les mots de passe", "Comptes que vous pouvez gérer ; leurs sessions sont fermées.", ("users.view",), True),
+        ("users.delete", "Supprimer des comptes", "Comptes que vous pouvez gérer, sauf votre propre compte.", ("users.view",), True),
+        ("roles.view", "Consulter les profils d'accès", "Voir les droits accordés par chaque profil.", (), False),
+        ("roles.manage", "Gérer les profils d'accès", "Créer, modifier ou supprimer des profils dans la limite de vos droits.", ("roles.view", "users.view"), True),
+        ("audit.view", "Consulter le journal", "Historique des connexions et actions d'administration.", (), False),
+    ]),
+]
+PERMISSIONS = {item[0]: {"key": item[0], "label": item[1], "description": item[2],
+                        "requires": item[3], "sensitive": item[4]}
+               for _, items in GROUPS for item in items}
+VIEWER = {"dashboard.view", "fleet.view", "linux.view", "rpm.view", "flatpak.view", "windows.view", "wu.view"}
+DEFAULTS = {
+    "admin": ("Administrateur", "Accès complet, y compris aux futurs droits. Profil protégé.", set(PERMISSIONS)),
+    "viewer": ("Lecture seule", "Consultation des appareils, caches et catalogues locaux.", VIEWER),
+    "operator": ("Technicien du parc", "Inventaire, mises à jour individuelles et déploiement. Sans terminal, bureau ni redémarrage.",
+                 VIEWER | {"fleet.scan", "fleet.update", "fleet.install"}),
+    "repository_manager": ("Gestionnaire des dépôts", "Gestion des paquets et installeurs. Aucun déploiement sur les postes.",
+                           {k for k in PERMISSIONS if k.split('.')[0] in {"linux", "rpm", "flatpak", "windows", "store"}} | {"dashboard.view"}),
+    "auditor": ("Auditeur", "Consultation, journal, comptes et profils. Aucune modification.",
+                VIEWER | {"store.view", "system.view", "users.view", "roles.view", "audit.view"}),
+}
+
+# Chaque route privée est déclarée. Une nouvelle route oubliée est refusée par défaut.
+# Plusieurs droits représentent des alternatives (uniquement pour la lecture des logos).
+ENDPOINTS = {
+    "index": "dashboard.view", "api_status": "dashboard.view",
+    "linux": "linux.view", "linux_repository_create": "linux.create", "linux_upload": "linux.upload",
+    "linux_copy": "linux.copy", "linux_delete": "linux.delete",
+    "rpm": "rpm.view", "rpm_repository_create": "rpm.create", "rpm_upload": "rpm.upload", "rpm_delete": "rpm.delete",
+    "flatpak": "flatpak.view", "flatpak_upload": "flatpak.upload", "flatpak_delete": "flatpak.delete",
+    "windows_apps": "windows.view", "api_apps": "windows.view", "windows_apps_add": "windows.add",
+    "windows_apps_edit": "windows.edit", "windows_apps_refresh": "windows.refresh", "windows_apps_delete": "windows.delete",
+    "software_store": "store.view", "software_store_detail": "store.view", "software_store_refresh": "store.refresh",
+    "winget_search": "store.view", "winget_add": "store.import", "winget_update": "windows.refresh",
+    "software_icon": ("windows.view", "store.view", "fleet.view"),
+    "windows_update": "wu.view", "api_wu": "wu.view", "windows_update_dns": "wu.view",
+    "windows_update_domains": "wu.configure",
+    "fleet": "fleet.view", "fleet_device": "fleet.view", "fleet_action": "fleet.view",
+    "fleet_update_all": "fleet.bulk_update", "fleet_rotate_key": "fleet.settings", "fleet_threshold": "fleet.settings",
+    "remote_open": ("remote.terminal", "remote.desktop"),
+    "remote_session": ("remote.terminal", "remote.desktop"), "remote_io": ("remote.terminal", "remote.desktop"),
+    "system": "system.view", "appliance_updates": "system.view", "appliance_job": "system.view",
+    "appliance_operations_state": "system.view", "appliance_updates_post": "system.view",
+    "appliance_settings": "system.configure", "appliance_settings_post": "system.configure",
+    "users": "users.view", "users_add": "users.create", "users_update": "users.edit",
+    "users_reset": "users.reset", "users_delete": "users.delete", "journal": "audit.view",
+    "roles": "roles.view", "roles_editor": "roles.view", "roles_add": "roles.manage",
+    "roles_update": "roles.manage", "roles_delete": "roles.manage",
+}
+ACCOUNT_ENDPOINTS = {"login", "account", "logout"}
+ACTION_PERMISSIONS = {"scan": "fleet.scan", "update": "fleet.update", "install-app": "fleet.install",
+                      "reboot": "fleet.reboot", "uninstall": "fleet.remove", "forget": "fleet.remove"}
+
+
+def expand(values):
+    selected = set(values)
+    if not selected <= PERMISSIONS.keys():
+        raise ValueError("Droit inconnu.")
+    while True:
+        complete = selected | {r for key in selected for r in PERMISSIONS[key]["requires"]}
+        if complete == selected:
+            return frozenset(selected)
+        selected = complete
+
+
+def role_key(label):
+    return unicodedata.normalize("NFKC", label).casefold()
+
+
+def seed_roles(conn):
+    for key, (label, description, grants) in DEFAULTS.items():
+        conn.execute("INSERT OR IGNORE INTO access_roles (id,label,label_key,description,permissions,builtin) VALUES (?,?,?,?,?,1)",
+                     (key, label, role_key(label), description, json.dumps(sorted(expand(grants)))))
+
+
+def role_permissions(conn, role):
+    row = conn.execute("SELECT permissions FROM access_roles WHERE id=?", (role,)).fetchone()
+    if row is None:
+        return frozenset()
+    if role == "admin":
+        return frozenset(PERMISSIONS)
+    try:
+        values = json.loads(row[0])
+        if not isinstance(values, list) or not all(isinstance(v, str) for v in values):
+            return frozenset()
+        selected = set(values) & PERMISSIONS.keys()
+        # Ne jamais accorder implicitement un prérequis manquant dans une définition corrompue.
+        while True:
+            valid = {k for k in selected if set(PERMISSIONS[k]["requires"]) <= selected}
+            if valid == selected:
+                return frozenset(valid)
+            selected = valid
+    except (ValueError, TypeError):
+        return frozenset()
+
+
+def role_labels(conn):
+    return {r["id"]: r["label"] for r in conn.execute("SELECT id,label FROM access_roles ORDER BY builtin DESC,label COLLATE NOCASE")}
+
+
+def revoke(conn, user_id):
+    """Révocation atomique des connexions, sessions distantes et frappes en attente."""
+    row = conn.execute("SELECT username FROM users WHERE id=?", (user_id,)).fetchone()
+    if row:
+        conn.execute("UPDATE devices SET state='active' WHERE state='removing' AND id IN "
+                     "(SELECT device_id FROM device_commands WHERE created_by=? AND action='uninstall' AND state='queued')", (row[0],))
+        conn.execute("UPDATE device_commands SET state='cancelled',finished_at=datetime('now','localtime'),"
+                     "output='Accès révoqué avant transmission à l’agent.' WHERE created_by=? AND state='queued'", (row[0],))
+    conn.execute("UPDATE users SET pw_version=pw_version+1 WHERE id=?", (user_id,))
+    conn.execute("DELETE FROM remote_packets WHERE session_id IN (SELECT id FROM remote_sessions WHERE user_id=?)", (user_id,))
+    conn.execute("UPDATE remote_sessions SET state='closed',error='Droits modifiés : reconnectez-vous.' WHERE user_id=? AND state!='closed'", (user_id,))

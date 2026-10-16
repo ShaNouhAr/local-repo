@@ -129,7 +129,7 @@ Déploiement en entreprise (réseau, GPO, proxy, sauvegardes, supervision, LXC, 
 ### Administration
 
 ```bash
-sudo loco-user list | add NOM [admin|viewer] | passwd NOM   # comptes (accès perdu : passwd admin)
+sudo loco-user list | roles | add NOM [PROFIL] | set-role NOM PROFIL | passwd NOM   # comptes (accès perdu : passwd admin)
 sudo loco-backup create | list | restore ARCHIVE             # sauvegardes
 sudo /opt/loco/remove.sh [--purge]                           # désinstallation
 ```
@@ -292,9 +292,42 @@ L’agent loco 2.4 ou ultérieur établit lui-même les connexions HTTPS sortant
 
 Le bureau partage la session graphique existante : session utilisateur ouverte sous **Windows 11 et Windows Server 2022/2025**, ou bureau **X11** sous Linux (bibliothèques X11 et XTest requises). Le bureau Wayland, l’écran de connexion/verrouillage Windows et le bureau sécurisé UAC ne sont pas pris en charge. Un poste sans session graphique conserve son terminal.
 
-Les sessions sont réservées aux administrateurs et liées à leur connexion au portail. La fermeture de l’onglet, la déconnexion, le retrait de l’agent ou la révocation des droits les coupe. Elles expirent après une heure, après une minute sans navigateur ou après une perte prolongée du contact avec l’agent. Deux sessions de chaque type peuvent coexister par poste, dans une limite de huit sessions pour le serveur. Recharger la page ferme l’ancien flux ; **Nouvelle session** permet de repartir proprement.
+Les sessions nécessitent le droit **Terminal distant** ou **Bureau noVNC**, selon le type choisi, et restent liées à la connexion au portail. Le profil Administrateur possède ces droits ; les autres profils doivent les recevoir explicitement. La fermeture de l’onglet, la déconnexion, le retrait de l’agent ou la révocation des droits les coupe. Elles expirent après une heure, après une minute sans navigateur ou après une perte prolongée du contact avec l’agent. Deux sessions de chaque type peuvent coexister par poste, dans une limite de huit sessions pour le serveur. Recharger la page ferme l’ancien flux ; **Nouvelle session** permet de repartir proprement.
 
 Le journal conserve les ouvertures et fermetures, sans enregistrer les frappes ni le contenu des écrans. Les files de transfert sont bornées, acquittées puis effacées ; elles sont exclues des sauvegardes avec les sessions actives.
+
+## Utilisateurs et profils d’accès
+
+Dans **Administration → Comptes**, attribuez un profil à chaque utilisateur. **Profils d’accès** permet de consulter les droits, dupliquer un modèle et créer ou modifier vos propres profils. Les comptes existants conservent leur profil et leur mot de passe à la mise à jour.
+
+| Profil intégré | Accès par défaut |
+|---|---|
+| Administrateur | Tous les droits actuels et futurs ; profil protégé. |
+| Lecture seule | Vue d’ensemble, appareils, caches et catalogues locaux. |
+| Technicien du parc | Lecture seule, inventaires, mises à jour individuelles et déploiement de logiciels. Les redémarrages, actions sur tout le parc, retraits d’agents et consoles distantes demandent leurs propres droits. |
+| Gestionnaire des dépôts | Gestion des paquets et installeurs APT, RPM, Flatpak, Windows et du store ; aucun déploiement sur les appareils. |
+| Auditeur | Consultation, système, comptes, profils et journal ; aucune modification. |
+
+Les **46 permissions** distinguent la consultation et les actions : création, import, copie et suppression de paquets ; ajout, édition et actualisation des logiciels ; inventaire, mise à jour, déploiement, redémarrage et retrait des appareils ; action sur tout le parc ; terminal et bureau distant ; configuration, mises à jour et redémarrage du serveur ; consultation, création, modification, réinitialisation et suppression des comptes ; gestion des profils et lecture du journal. Elles s’appliquent aux pages, API et requêtes directes, ainsi qu’à la navigation et aux boutons visibles.
+
+Les droits de consultation nécessaires sont ajoutés automatiquement à l’enregistrement. Un profil vide laisse l’utilisateur accéder à **Mon compte** et changer son mot de passe. Les profils intégrés restent protégés ; dupliquez-les pour les adapter. Un profil personnalisé ne reçoit aucun nouveau droit automatiquement lors des futures versions.
+
+La délégation respecte les droits de la personne qui administre : elle peut attribuer uniquement des profils dont elle possède tous les droits, et gérer uniquement des comptes dans cette limite. Seul un Administrateur complet peut attribuer le profil Administrateur ou gérer un autre administrateur. Changer son propre profil, désactiver ou supprimer son propre compte et modifier le profil qui protège son accès sont bloqués. Il doit rester au moins un administrateur actif, y compris lors de modifications simultanées.
+
+Changer les droits d’un profil ferme les connexions de tous ses membres et leurs sessions distantes. Changer le profil d’un compte, le désactiver ou réinitialiser/changer son mot de passe révoque aussi ses accès. Ses commandes encore en attente sur le serveur sont annulées avant transmission aux agents ; les opérations déjà transmises peuvent se terminer. Les connexions et les droits sont contrôlés à nouveau à chaque requête, et avant l’envoi d’une commande à un agent. Le journal conserve les changements de comptes, de profils et de permissions.
+
+Ces permissions portent sur le portail et l’ensemble du parc. Les dépôts et caches destinés aux postes conservent leur contrôle d’accès par réseau.
+
+Depuis la console d’administration :
+
+```bash
+sudo loco-user roles                         # identifiants des profils disponibles
+sudo loco-user add alice viewer              # mot de passe temporaire
+sudo loco-user set-role alice operator       # attribution ou récupération d’un profil
+sudo loco-user passwd admin                  # récupérer l’accès au compte admin
+```
+
+Sur Windows natif, utilisez `loco user …` ; sur l’appliance Alpine, `loco-user …` en root.
 
 ## Supervision
 

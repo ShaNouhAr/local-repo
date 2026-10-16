@@ -22,7 +22,7 @@ import zipfile
 from flask import flash, render_template, request, send_file
 
 from . import app, config
-from .auth import admin_required, audit, login_required
+from .auth import audit, login_required, can
 from .db import db
 from .util import back, now, slugify
 
@@ -474,7 +474,7 @@ def browse(query="", category="all", page=1, size=24):
 
 
 @app.route("/windows-apps/store")
-@admin_required
+@login_required
 def software_store():
     query = request.args.get("q", "").strip()[:100]
     category = request.args.get("category", "all" if query else "selection")
@@ -490,13 +490,15 @@ def software_store():
     except (OSError, ValueError, sqlite3.Error, zipfile.BadZipFile) as e:
         error = f"Le catalogue est momentanément indisponible : {e}"
     known = {r["winget_id"]: dict(r) for r in db().execute("SELECT slug, winget_id, status FROM win_apps WHERE winget_id != ''")}
+    if not can("windows.view"):
+        known = {}
     updated = time.strftime("%d/%m/%Y à %H:%M", time.localtime(os.path.getmtime(INDEX))) if os.path.isfile(INDEX) else ""
     return render_template("software_store.html", query=query, category=category, categories=CATEGORIES,
                            results=results, total=total, page=page, pages=pages, known=known, error=error, updated=updated)
 
 
 @app.route("/windows-apps/store/<package_id>")
-@admin_required
+@login_required
 def software_store_detail(package_id):
     doc, info, error = {}, None, ""
     try:
@@ -505,6 +507,8 @@ def software_store_detail(package_id):
     except (OSError, ValueError, sqlite3.Error, zipfile.BadZipFile) as e:
         error = str(e)
     known = db().execute("SELECT * FROM win_apps WHERE winget_id=?", (package_id,)).fetchone()
+    if not can("windows.view"):
+        known = None
     homepage = doc.get("PackageUrl") or doc.get("PublisherUrl") or ""
     if not isinstance(homepage, str) or not homepage.startswith("https://"):
         homepage = ""
@@ -513,7 +517,7 @@ def software_store_detail(package_id):
 
 
 @app.route("/windows-apps/store/refresh", methods=["POST"])
-@admin_required
+@login_required
 def software_store_refresh():
     try:
         refresh_index(force=True)
@@ -525,7 +529,7 @@ def software_store_refresh():
 
 
 @app.route("/windows-apps/winget")
-@admin_required
+@login_required
 def winget_search():
     query = request.args.get("q", "")[:100]
     results, error = [], ""
@@ -535,6 +539,8 @@ def winget_search():
         except (OSError, ValueError, sqlite3.Error, zipfile.BadZipFile) as e:
             error = f"Catalogue winget indisponible : {e}"
     known = {r["winget_id"] for r in db().execute("SELECT winget_id FROM win_apps WHERE winget_id != ''")}
+    if not can("windows.view"):
+        known = set()
     return render_template("winget.html", query=query, results=results, error=error, known=known)
 
 
@@ -546,7 +552,7 @@ def _filename(info):
 
 
 @app.route("/windows-apps/winget/add", methods=["POST"])
-@admin_required
+@login_required
 def winget_add():
     from .winapps import start_fetch
     package_id = request.form.get("id", "")
@@ -589,7 +595,7 @@ def check_updates():
 
 
 @app.route("/windows-apps/winget/update", methods=["POST"])
-@admin_required
+@login_required
 def winget_update():
     """Nouvelle version winget des logiciels du catalogue : nouvel installeur, puis mise à jour possible du parc."""
     from .winapps import start_fetch

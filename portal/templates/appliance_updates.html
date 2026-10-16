@@ -32,10 +32,10 @@
       </dl>
       {% if update_available %}
       <div class="panel-f row">
-        <form method="post" action="{{ url_for('appliance_updates_post') }}" data-ajax data-confirm="Installer loco {{ latest.version }} ?" data-confirm-text="Archive vérifiée par SHA-256, puis installation : le portail redémarre quelques secondes. En cas d'échec, la version {{ version }} est rétablie automatiquement." data-confirm-ok="Mettre à jour">
+        {% if can("system.update") %}<form method="post" action="{{ url_for('appliance_updates_post') }}" data-ajax data-confirm="Installer loco {{ latest.version }} ?" data-confirm-text="Archive vérifiée par SHA-256, puis installation : le portail redémarre quelques secondes. En cas d'échec, la version {{ version }} est rétablie automatiquement." data-confirm-ok="Mettre à jour">
           <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="update-loco">
           <button class="btn primary" {{ 'disabled' if running or not agent }}><span class="spin"></span>Installer {{ latest.version }}</button>
-        </form>
+        </form>{% endif %}
         {% if latest.url %}<a href="{{ latest.url }}" rel="noopener noreferrer" target="_blank">Notes de version</a>{% endif %}
       </div>
       {% endif %}
@@ -55,15 +55,15 @@
       </dl>
       <div class="panel-f row">
         {% if status.system_updates %}
-        <form method="post" action="{{ url_for('appliance_updates_post') }}" data-ajax data-confirm="Mettre à jour les paquets Alpine ?" data-confirm-text="apk upgrade, puis redémarrage des services de loco (quelques secondes)." data-confirm-ok="Mettre à jour">
+        {% if can("system.update") %}<form method="post" action="{{ url_for('appliance_updates_post') }}" data-ajax data-confirm="Mettre à jour les paquets Alpine ?" data-confirm-text="apk upgrade, puis redémarrage des services de loco (quelques secondes)." data-confirm-ok="Mettre à jour">
           <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="update-system">
           <button class="btn primary" {{ 'disabled' if running or not agent }}><span class="spin"></span>Mettre à jour le système</button>
-        </form>
+        </form>{% endif %}
         {% endif %}
-        <form method="post" action="{{ url_for('appliance_updates_post') }}" data-ajax data-confirm="Redémarrer le serveur ?" data-confirm-text="Les postes perdent l'accès aux dépôts et aux caches pendant le redémarrage (environ une minute)." data-confirm-ok="Redémarrer">
+        {% if can("system.reboot") %}<form method="post" action="{{ url_for('appliance_updates_post') }}" data-ajax data-confirm="Redémarrer le serveur ?" data-confirm-text="Les postes perdent l'accès aux dépôts et aux caches pendant le redémarrage (environ une minute)." data-confirm-ok="Redémarrer">
           <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="reboot">
           <button class="btn {{ 'primary' if status.reboot_required and not status.system_updates else '' }}" {{ 'disabled' if running or not agent }}><span class="spin"></span>Redémarrer</button>
-        </form>
+        </form>{% endif %}
       </div>
     </section>
   </div>

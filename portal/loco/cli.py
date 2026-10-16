@@ -9,7 +9,9 @@
   flatpak-init              crée (si besoin) et signe le dépôt Flatpak local
   rpm-init                  clé publique et dépôts RPM el8, el9, el10 (créés si besoin, resignés)
   user list                 liste les comptes
-  user add NOM [admin|viewer]   crée un compte et affiche un mot de passe temporaire
+  user roles                liste les identifiants des profils disponibles
+  user set-role NOM PROFIL  attribue un profil (console root : récupération des accès)
+  user add NOM [PROFIL]   crée un compte et affiche un mot de passe temporaire
   user passwd NOM           nouveau mot de passe temporaire (à changer à la connexion)
   user set-password NOM     définit le mot de passe depuis $LOCO_PASSWORD
   user enable|disable NOM   active / désactive un compte
@@ -19,7 +21,7 @@ import datetime
 import os
 import sys
 
-from . import app, auth, config, startup
+from . import app, auth, config, permissions, startup
 from .db import transaction
 
 
@@ -37,10 +39,15 @@ def _user(conn, name):
 
 def user_command(args):
     with transaction() as conn:
+        labels = permissions.role_labels(conn)
+        if args and args[0] == "roles":
+            for key, label in labels.items():
+                print(f"{key:<24} {label}")
+            return
         if not args or args[0] == "list":
             for r in conn.execute("SELECT * FROM users ORDER BY username"):
                 state = "désactivé" if r["disabled"] else ("à changer" if r["must_change"] else "actif")
-                print(f"{r['username']:<24} {config.ROLES.get(r['role'], r['role']):<16} {state:<10} "
+                print(f"{r['username']:<24} {labels.get(r['role'], r['role']):<16} {state:<10} "
                       f"dernière connexion : {r['last_login'] or '—'}")
             return
         cmd, name = args[0], (args[1] if len(args) > 1 else "")
@@ -48,14 +55,25 @@ def user_command(args):
             sys.exit(__doc__)
         if cmd == "add":
             role = args[2] if len(args) > 2 else "admin"
-            if role not in config.ROLES or not config.USERNAME_RE.match(name.lower()):
-                sys.exit("Nom ou rôle invalide (rôles : admin, viewer).")
+            if role not in labels or not config.USERNAME_RE.match(name.lower()):
+                sys.exit("Nom ou profil invalide (voir loco-user roles).")
             if conn.execute("SELECT 1 FROM users WHERE username=?", (name.lower(),)).fetchone():
                 sys.exit(f"Le compte {name} existe déjà.")
             password = auth.generate_password()
             auth.create_user(conn, name, password, role, must_change=True)
-            _audit(conn, "comptes.ajout", f"{name.lower()} ({config.ROLES[role]})")
+            _audit(conn, "comptes.ajout", f"{name.lower()} ({labels[role]})")
             print(f"Compte {name.lower()} créé. Mot de passe temporaire : {password}")
+        elif cmd == "set-role":
+            row = _user(conn, name)
+            role = args[2] if len(args) == 3 else ""
+            if role not in labels:
+                sys.exit("Profil inconnu (voir loco-user roles).")
+            if row["role"] == "admin" and not row["disabled"] and role != "admin" and auth.active_admins(conn) <= 1:
+                sys.exit("Il doit rester au moins un administrateur actif.")
+            conn.execute("UPDATE users SET role=? WHERE id=?", (role, row["id"]))
+            permissions.revoke(conn, row["id"])
+            _audit(conn, "comptes.modification", f"{row['username']} : profil {labels[role]}")
+            print(f"Profil de {row['username']} : {labels[role]}")
         elif cmd == "passwd":
             row = _user(conn, name)
             password = auth.generate_password()
@@ -73,8 +91,10 @@ def user_command(args):
             _audit(conn, "comptes.mot_de_passe", row["username"])
         elif cmd in ("enable", "disable"):
             row = _user(conn, name)
-            conn.execute("UPDATE users SET disabled=?, pw_version=pw_version+1 WHERE id=?",
-                         (int(cmd == "disable"), row["id"]))
+            if cmd == "disable" and row["role"] == "admin" and not row["disabled"] and auth.active_admins(conn) <= 1:
+                sys.exit("Il doit rester au moins un administrateur actif.")
+            conn.execute("UPDATE users SET disabled=? WHERE id=?", (int(cmd == "disable"), row["id"]))
+            permissions.revoke(conn, row["id"])
             _audit(conn, "comptes.modification", f"{row['username']} : {'désactivé' if cmd == 'disable' else 'réactivé'}")
             print(f"Compte {row['username']} {'désactivé' if cmd == 'disable' else 'réactivé'}.")
         else:

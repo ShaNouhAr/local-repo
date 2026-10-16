@@ -10,7 +10,7 @@ from flask import abort, flash, render_template, request
 from werkzeug.utils import secure_filename
 
 from . import app, config
-from .auth import admin_required, audit, login_required
+from .auth import audit, login_required, can
 from .db import db, transaction
 from .util import CANCELLED, PROGRESS, Cancelled, back, download, explain, kind_for, now, sha256_of, slugify
 
@@ -112,7 +112,7 @@ def get_app(slug):
 def windows_apps():
     from .fleet import fleet_usage
     rows = db().execute("SELECT * FROM win_apps ORDER BY name COLLATE NOCASE").fetchall()
-    return render_template("windows_apps.html", apps=rows, default_args=config.DEFAULT_ARGS, usage=fleet_usage(rows))
+    return render_template("windows_apps.html", apps=rows, default_args=config.DEFAULT_ARGS, usage=fleet_usage(rows) if can("fleet.view") else {})
 
 
 @app.route("/api/apps")
@@ -128,7 +128,7 @@ def api_apps():
 
 
 @app.route("/windows-apps/add", methods=["POST"])
-@admin_required
+@login_required
 def windows_apps_add():
     name = request.form.get("name", "").strip()[:100]
     slug = slugify(request.form.get("slug", "").strip() or name)
@@ -170,7 +170,7 @@ def windows_apps_add():
 
 
 @app.route("/windows-apps/<slug>/edit", methods=["POST"])
-@admin_required
+@login_required
 def windows_apps_edit(slug):
     row = get_app(slug)
     kind = request.form.get("kind", row["kind"])
@@ -200,7 +200,7 @@ def windows_apps_edit(slug):
 
 
 @app.route("/windows-apps/<slug>/refresh", methods=["POST"])
-@admin_required
+@login_required
 def windows_apps_refresh(slug):
     row = get_app(slug)
     if not row["source_url"]:
@@ -213,7 +213,7 @@ def windows_apps_refresh(slug):
 
 
 @app.route("/windows-apps/<slug>/delete", methods=["POST"])
-@admin_required
+@login_required
 def windows_apps_delete(slug):
     row = get_app(slug)
     if row["status"] == "downloading":

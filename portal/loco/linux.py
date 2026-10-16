@@ -11,7 +11,7 @@ from flask import abort, flash, render_template, request
 from werkzeug.utils import secure_filename
 
 from . import app, config, debpkg, signing
-from .auth import admin_required, audit, login_required
+from .auth import audit, login_required
 from .db import transaction
 from .util import back, download, explain, read_stats, service_active, sha256_of
 
@@ -199,7 +199,7 @@ def linux():
 
 
 @app.route("/linux/repositories", methods=["POST"])
-@admin_required
+@login_required
 def linux_repository_create():
     try:
         key = create_repository(request.form.get("distribution", ""), request.form.get("suite", "").strip(),
@@ -216,7 +216,7 @@ def linux_repository_create():
 
 
 @app.route("/linux/upload", methods=["POST"])
-@admin_required
+@login_required
 def linux_upload():
     repository = request.form.get("repository", "")
     try:
@@ -260,7 +260,7 @@ def linux_upload():
 
 
 @app.route("/linux/delete", methods=["POST"])
-@admin_required
+@login_required
 def linux_delete():
     repository = request.form.get("repository", "")
     try:
@@ -285,7 +285,7 @@ def linux_delete():
 
 
 @app.route("/linux/copy", methods=["POST"])
-@admin_required
+@login_required
 def linux_copy():
     source, destination = request.form.get("repository", ""), request.form.get("destination", "")
     name = request.form.get("file", "")

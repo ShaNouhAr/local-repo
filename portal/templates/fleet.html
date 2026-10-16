@@ -10,11 +10,11 @@
     <h1>Mon parc</h1>
     <p>Postes Windows et Linux équipés de l'agent loco. Un poste reste rattaché s'il change d'adresse IP ; seul « Retirer l'agent » le détache.</p>
   </div>
-  {% if can_edit and rows %}
+  {% if can('fleet.bulk_update') and rows %}
   <div class="actions">
     <form method="post" action="{{ url_for('fleet_update_all') }}" class="row" data-ajax data-confirm="Mettre à jour {{ to_update }} poste(s) ?" data-confirm-text="Système (Windows Update, APT, DNF, Flatpak) et logiciels du catalogue, au prochain contact de chaque poste." data-confirm-ok="Tout mettre à jour">
       <input type="hidden" name="csrf" value="{{ csrf }}">
-      <label class="small muted"><input type="checkbox" name="reboot" value="1"> redémarrer si nécessaire</label>
+      {% if can("fleet.reboot") %}<label class="small muted"><input type="checkbox" name="reboot" value="1"> redémarrer si nécessaire</label>{% endif %}
       <button class="btn primary" {{ 'disabled' if not to_update }}><span class="spin"></span>Tout mettre à jour{% if to_update %} ({{ to_update }}){% endif %}</button>
     </form>
   </div>
@@ -47,7 +47,7 @@
               {% if r.pending %}<span class="sub">en attente : {% for c in r.pending %}{{ actions[c.action]|lower }}{{ ', ' if not loop.last }}{% endfor %}</span>{% endif %}</td>
             <td class="mono muted nowrap hide-sm">{{ d.last_seen|date_fr if d.last_seen else '—' }}</td>
             <td class="right">
-              {% if can_edit and r.needs_update and not r.pending %}
+              {% if can('fleet.update') and r.needs_update and not r.pending %}
               <form method="post" action="{{ url_for('fleet_action', dev_id=d.id) }}" data-ajax>
                 <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="update">
                 <button class="btn sm"><span class="spin"></span>Mettre à jour</button>
@@ -60,12 +60,12 @@
       </table>
     </div>
     {% else %}
-    <div class="empty">Aucun poste pour l'instant : installez l'agent sur un poste{{ ' avec la commande ci-dessous' if can_edit }}.</div>
+    <div class="empty">Aucun poste pour l'instant : installez l'agent sur un poste{{ ' avec la commande ci-dessous' if can('fleet.enroll') }}.</div>
     {% endif %}
     <div class="panel-f">Vert : aucune mise à jour. Orange : de 1 à {{ red_threshold - 1 }} mises à jour. Rouge : {{ red_threshold }} mises à jour ou plus. Le total comprend le système, Flatpak et les logiciels du catalogue. Gris : état non connu ou inventaire indisponible. Les postes contactent loco toutes les {{ checkin // 60 }} minutes : une action part au contact suivant.</div>
   </section>
 
-  {% if can_edit %}
+  {% if can("fleet.settings") %}
   <details class="panel">
     <summary class="panel-h">Seuil des pastilles</summary>
     <form method="post" action="{{ url_for('fleet_threshold') }}" class="panel-b row" data-ajax>
@@ -74,13 +74,15 @@
       <button class="btn sm">Enregistrer</button>
     </form>
   </details>
+  {% endif %}
+  {% if can("fleet.enroll") %}
   <section class="panel">
     <div class="panel-h"><h2>Ajouter un poste</h2>
-      <div class="aside">
+      {% if can("fleet.settings") %}<div class="aside">
         <form method="post" action="{{ url_for('fleet_rotate_key') }}" data-confirm="Changer la clé d'inscription ?" data-confirm-text="Les commandes déjà copiées ne fonctionneront plus. Les postes inscrits restent rattachés." data-confirm-ok="Changer">
           <input type="hidden" name="csrf" value="{{ csrf }}"><button class="linkbtn">Nouvelle clé d'inscription</button>
         </form>
-      </div>
+      </div>{% endif %}
     </div>
     <div class="panel-b">
       <div class="tabs" role="tablist">

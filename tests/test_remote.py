@@ -61,7 +61,7 @@ class TestRemote(FleetTest):
     def test_viewer_anonymous_and_another_login_cannot_control_a_session(self):
         with transaction() as conn:
             conn.execute("DELETE FROM users WHERE username='remote-viewer'")
-            auth.create_user(conn, 'remote-viewer', 'Remote-Viewer-2026', 'reader', must_change=False)
+            auth.create_user(conn, 'remote-viewer', 'Remote-Viewer-2026', 'viewer', must_change=False)
         viewer = fixture.Browser(); viewer.login('remote-viewer', 'Remote-Viewer-2026')
         sid = self.open()
         self.assertEqual(viewer.post(f'/parc/{self.dev_id}/session', {'kind': 'terminal'}).status_code, 403)

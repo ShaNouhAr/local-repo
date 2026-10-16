@@ -116,7 +116,7 @@ MIGRATIONS = [
     ALTER TABLE win_apps ADD COLUMN detect TEXT NOT NULL DEFAULT '';
     ALTER TABLE win_apps ADD COLUMN winget_id TEXT NOT NULL DEFAULT '';
     """,
-    # 9 : sessions distantes, files transitoires acquittées (jamais de transcription conservée).
+    # 6 : sessions distantes, files transitoires acquittées (jamais de transcription conservée).
     """
     CREATE TABLE remote_sessions (
         id TEXT PRIMARY KEY,
@@ -144,6 +144,17 @@ MIGRATIONS = [
         seq INTEGER NOT NULL,
         data BLOB NOT NULL,
         PRIMARY KEY (session_id, direction, seq)
+    );
+    """,
+    # 7 : profils d'accès et permissions granulaires ; les rôles historiques sont conservés.
+    """
+    CREATE TABLE access_roles (
+        id TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        label_key TEXT UNIQUE NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        permissions TEXT NOT NULL DEFAULT '[]',
+        builtin INTEGER NOT NULL DEFAULT 0
     );
     """,
 ]
@@ -189,6 +200,8 @@ def migrate():
             if number > version:
                 conn.executescript(script)
                 conn.execute(f"PRAGMA user_version = {number}")
+        from .permissions import seed_roles
+        seed_roles(conn)
         # Un téléchargement interrompu par un redémarrage ne reprendra jamais.
         conn.execute("UPDATE win_apps SET status='error', error='Interrompu (redémarrage du service)' "
                      "WHERE status='downloading'")

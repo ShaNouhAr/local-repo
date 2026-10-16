@@ -1,5 +1,13 @@
 # Journal des versions
 
+## 2.5.0 — 2026-10-16
+
+- **Profils d’accès granulaires** : 46 permissions par action, profils personnalisés réutilisables et modèles Administrateur, Lecture seule, Technicien du parc, Gestionnaire des dépôts et Auditeur. Duplication des modèles, attribution par compte et consultation de ses propres droits.
+- Droits distincts pour inventaire, mises à jour individuelles ou globales, installation, redémarrage, retrait de l’agent, terminal et noVNC. Consultation et gestion des dépôts, du store, du serveur, des comptes, des profils et du journal séparées.
+- Contrôle côté serveur de chaque route privée et navigation adaptée. Délégation limitée aux droits détenus, profils intégrés et accès propre protégés, dernier administrateur actif préservé lors de modifications concurrentes.
+- Révocation des connexions et sessions distantes après changement de droits ; annulation des commandes encore en attente et vérification des droits avant leur transmission à l’agent. Audit détaillé des permissions accordées et retirées.
+- Migration préservant les comptes et mots de passe existants. CLI `loco-user roles` et `loco-user set-role`. Formulaire de connexion immédiatement utilisable après révocation d’une session ; correction de l’envoi des actions du parc depuis le navigateur.
+
 ## 2.4.0 — 2026-10-16
 
 - **Accès distant via l’agent** : terminal interactif PTY Linux et PowerShell ConPTY natif Windows, avec redimensionnement, arrêt à la fermeture et relais HTTPS sortant. Aucun accès aux consoles Proxmox.

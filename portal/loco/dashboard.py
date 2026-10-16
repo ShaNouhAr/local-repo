@@ -5,7 +5,7 @@ import datetime
 from flask import render_template
 
 from . import app
-from .auth import login_required
+from .auth import login_required, can
 from .db import db
 from .linux import list_debs
 from .util import disk_usage, read_stats, service_active
@@ -36,10 +36,10 @@ def dashboard_data():
 
 def recent_activity(limit=6):
     events = []
-    for d in list_debs():
+    for d in list_debs() if can("linux.view") else []:
         events.append({"when": datetime.datetime.fromtimestamp(d["mtime"]).strftime("%Y-%m-%d %H:%M"),
                        "kind": "linux", "title": d["package"], "detail": f"{d['version']} · {d['arch']}"})
-    for r in db().execute("SELECT name, version, kind, status, updated_at FROM win_apps"):
+    for r in db().execute("SELECT name, version, kind, status, updated_at FROM win_apps") if can("windows.view") else []:
         events.append({"when": r["updated_at"], "kind": "windows", "title": r["name"],
                        "detail": " · ".join(x for x in (r["version"], r["kind"], STATUS_LABELS.get(r["status"], "")) if x)})
     events.sort(key=lambda e: e["when"], reverse=True)

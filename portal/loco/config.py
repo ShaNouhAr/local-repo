@@ -3,7 +3,7 @@
 import os
 import re
 
-VERSION = "2.4.0"
+VERSION = "2.5.0"
 
 DATA = os.environ.get("LOCO_DATA", "/srv/loco")
 STATE = os.environ.get("LOCO_STATE", "/var/lib/loco")
@@ -73,7 +73,6 @@ USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{1,31}$")
 USER_AGENT = f"loco/{VERSION}"
 
 # Comptes et sessions
-ROLES = {"admin": "Administrateur", "viewer": "Lecture seule"}
 MIN_PASSWORD = 12
 SESSION_IDLE_HOURS = 8
 LOGIN_WINDOW = 15 * 60          # fenêtre d'observation des échecs (s)

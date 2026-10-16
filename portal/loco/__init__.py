@@ -43,7 +43,7 @@ app.config.update(
 logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(levelname)s %(message)s")
 app.logger.setLevel(logging.INFO)
 
-STATIC_FILES = ("style.css", "app.js", "theme.js", "remote.js")
+STATIC_FILES = ("style.css", "app.js", "theme.js", "remote.js", "permissions.js")
 ASSET_V = str(int(max(os.path.getmtime(os.path.join(app.static_folder, f)) for f in STATIC_FILES)))
 
 # Politique de contenu stricte : aucun script ni style en ligne.
@@ -95,8 +95,9 @@ def inject_globals():
         "asset_v": ASSET_V,
         "version": config.VERSION,
         "current_user": user,
-        "can_edit": bool(user and user["role"] == "admin"),
-        "roles": config.ROLES,
+        "can": auth.can,
+        "can_any": auth.can_any,
+        "roles": auth.permissions.role_labels(_db.db()) if user else {},
         "flatpak_enabled": config.FLATPAK_ENABLED,
         "rpm_enabled": config.RPM_ENABLED,
         "container": config.CONTAINER,

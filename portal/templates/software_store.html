@@ -5,7 +5,7 @@
 <div class="head">
   <div><p class="small"><a href="{{ url_for('windows_apps') }}">Mon catalogue local</a></p><h1>Store logiciels</h1>
     <p>Découvrez les logiciels du catalogue Microsoft WinGet. Ajoutez-les à loco, puis déployez-les depuis Mon parc.</p></div>
-  <form method="post" action="{{ url_for('software_store_refresh') }}" data-ajax><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn"><span class="spin"></span>Actualiser le catalogue</button></form>
+  {% if can("store.refresh") %}<form method="post" action="{{ url_for('software_store_refresh') }}" data-ajax><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn"><span class="spin"></span>Actualiser le catalogue</button></form>{% endif %}
 </div>
 <div class="stack">
   <form method="get" action="{{ url_for('software_store') }}" class="row store-search">

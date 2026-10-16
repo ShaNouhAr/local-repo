@@ -4,7 +4,7 @@
 <div class="head">
   <div>
     <h1>Mon compte</h1>
-    <p><span class="mono">{{ current_user.username }}</span> · {{ roles[current_user.role] }}{% if current_user.last_login %} · dernière connexion {{ current_user.last_login|date_fr }}{% endif %}</p>
+    <p><span class="mono">{{ current_user.username }}</span> · {{ roles.get(current_user.role, "Profil indisponible") }}{% if current_user.last_login %} · dernière connexion {{ current_user.last_login|date_fr }}{% endif %}</p>
   </div>
 </div>
 
@@ -21,6 +21,9 @@
     </form>
   </section>
   <div class="stack">
+  <section class="panel"><div class="panel-h"><h2>Mes droits</h2></div><div class="panel-b stack">
+    {% for label, grants in granted_groups if grants %}<div><strong>{{ label }}</strong><ul>{% for grant in grants %}<li>{{ grant.label }}</li>{% endfor %}</ul></div>{% else %}<p class="muted">Aucun accès fonctionnel attribué. Votre compte reste disponible pour changer votre mot de passe ; demandez un profil à un administrateur.</p>{% endfor %}
+  </div></section>
   <section class="panel">
     <div class="panel-h"><h2>Règles</h2></div>
     <div class="panel-b">

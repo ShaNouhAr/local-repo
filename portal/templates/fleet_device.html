@@ -8,47 +8,57 @@
     <h1 class="mono">{{ dev.hostname or dev.uid[:8] }}</h1>
     <p><span class="st {{ cls }}">{{ reason }}</span></p>
   </div>
-  {% if can_edit %}
+  {% if can_any("fleet.update", "fleet.scan", "fleet.reboot", "fleet.remove") %}
   <div class="actions">
     {% if dev.state == 'active' %}
+    {% if can("fleet.update") %}
     <form method="post" action="{{ url_for('fleet_action', dev_id=dev.id) }}" class="row" data-ajax>
       <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="update">
-      <label class="small muted"><input type="checkbox" name="reboot" value="1"> redémarrer si nécessaire</label>
+      {% if can("fleet.reboot") %}<label class="small muted"><input type="checkbox" name="reboot" value="1"> redémarrer si nécessaire</label>{% endif %}
       <button class="btn {{ 'primary' if needs_update }}"><span class="spin"></span>Mettre à jour</button>
     </form>
+    {% endif %}
+    {% if can("fleet.scan") %}
     <form method="post" action="{{ url_for('fleet_action', dev_id=dev.id) }}" data-ajax>
       <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="scan">
       <button class="btn"><span class="spin"></span>Inventaire</button>
     </form>
+    {% endif %}
+    {% if can("fleet.reboot") %}
     <form method="post" action="{{ url_for('fleet_action', dev_id=dev.id) }}" data-ajax data-confirm="Redémarrer {{ dev.hostname }} ?" data-confirm-text="Le poste redémarre une minute après le prochain contact ; un message prévient la personne connectée." data-confirm-ok="Redémarrer">
       <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="reboot">
       <button class="btn {{ 'primary' if dev.reboot_required and not needs_update }}"><span class="spin"></span>Redémarrer</button>
     </form>
+    {% endif %}
+    {% if can("fleet.remove") %}
     <form method="post" action="{{ url_for('fleet_action', dev_id=dev.id) }}" data-ajax data-confirm="Retirer l'agent de {{ dev.hostname }} ?" data-confirm-text="Au prochain contact, l'agent se désinstalle du poste, qui quitte le parc. Les dépôts et caches configurés sur le poste restent en place." data-confirm-ok="Retirer">
       <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="uninstall">
       <button class="btn danger"><span class="spin"></span>Retirer l'agent</button>
     </form>
+    {% endif %}
     {% else %}
+    {% if can("fleet.remove") %}
     <form method="post" action="{{ url_for('fleet_action', dev_id=dev.id) }}" data-ajax data-confirm="Oublier {{ dev.hostname }} ?" data-confirm-text="Le poste disparaît de la liste et son jeton est refusé. À utiliser si le poste n'existe plus." data-confirm-ok="Oublier">
       <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="forget">
       <button class="btn danger"><span class="spin"></span>Oublier ce poste</button>
     </form>
+    {% endif %}
     {% endif %}
   </div>
   {% endif %}
 </div>
 
 <div class="stack" data-poll="{{ url_for('fleet_device', dev_id=dev.id) }}" data-poll-kind="reload" data-poll-every="10000" data-signature="{{ signature }}">
-  {% if can_edit and dev.state == 'active' %}
+  {% if can_any('remote.terminal', 'remote.desktop') and dev.state == 'active' %}
   <section class="panel">
     <div class="panel-h"><h2>Accès distant</h2><span class="small muted">Via l'agent loco</span></div>
     <div class="panel-b row">
       {% for kind, label in [('terminal', 'Terminal PowerShell' if dev.os_family == 'windows' else 'Terminal'), ('desktop', 'Bureau noVNC')] %}
-      <form method="post" action="{{ url_for('remote_open', dev_id=dev.id) }}" class="row" rel="noopener">
+      {% if can('remote.' ~ kind) %}<form method="post" action="{{ url_for('remote_open', dev_id=dev.id) }}" class="row" rel="noopener">
         <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="{{ kind }}">
         <button class="btn" {% if not remote_ready %}disabled title="Agent 2.4.0 requis"{% endif %}>{{ label }}</button>
         <button class="btn" formtarget="_blank" aria-label="{{ label }} dans un nouvel onglet" title="Ouvrir dans un nouvel onglet" {% if not remote_ready %}disabled{% endif %}>↗</button>
-      </form>
+      </form>{% endif %}
       {% endfor %}
       {% if not remote_ready %}<span class="small muted">Disponible après la mise à jour de l'agent en 2.4.0.</span>{% endif %}
       <span class="small muted">Session d'administration journalisée · fermeture automatique après déconnexion</span>
@@ -95,7 +105,8 @@
 
   {% if dev.os_family == 'windows' %}
   <section class="panel">
-    <div class="panel-h"><h2>Logiciels du catalogue</h2><div class="aside"><a href="{{ url_for('windows_apps') }}">Catalogue</a></div></div>
+    <div class="panel-h"><h2>{{ "Logiciels du catalogue" if can("windows.view") else "Logiciels installés" }}</h2>{% if can("windows.view") %}<div class="aside"><a href="{{ url_for('windows_apps') }}">Catalogue</a></div>{% endif %}</div>
+    {% if can("windows.view") %}
     {% if apps %}
     <div class="table-wrap">
       <table>
@@ -107,7 +118,7 @@
             <td class="mono">{{ a.version or '—' }}</td>
             <td>{% if outdated %}<span class="st warn">{{ installed }}</span>{% elif installed %}<span class="st ok">{{ installed }}</span>{% else %}<span class="faint">non installé</span>{% endif %}</td>
             <td class="right">
-              {% if can_edit and dev.state == 'active' and (outdated or not installed) %}
+              {% if can('fleet.install') and dev.state == 'active' and (outdated or not installed) %}
               <form method="post" action="{{ url_for('fleet_action', dev_id=dev.id) }}" data-ajax>
                 <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="install-app"><input type="hidden" name="slug" value="{{ a.slug }}">
                 <button class="btn sm"><span class="spin"></span>{{ 'Mettre à jour' if outdated else 'Installer' }}</button>
@@ -121,6 +132,7 @@
     </div>
     {% else %}
     <div class="empty">Catalogue vide : ajoutez des logiciels dans <a href="{{ url_for('windows_apps') }}">Logiciels Windows</a>.</div>
+    {% endif %}
     {% endif %}
     {% if inv.apps %}
     <details class="panel-f"><summary>Tous les logiciels installés ({{ inv.apps|length }})</summary>
