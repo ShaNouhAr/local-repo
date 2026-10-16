@@ -7,6 +7,7 @@ import sqlite3
 import tempfile
 import threading
 from unittest import mock
+from urllib.parse import urlsplit
 
 import test_portal as fixture
 from test_fleet import FleetTest, Agent, WINDOWS, device
@@ -90,7 +91,7 @@ class TestPermissions(FleetTest):
         self.assertEqual(self.post(operator, f'/parc/{self.dev_id}/action', {'action': 'scan'}).status_code, 302)
         commands = self.agent.checkin().get_json()['commands']
         self.assertEqual([command['action'] for command in commands], ['scan'])
-        self.assertEqual(operator.c.get('/').headers['Location'], '/parc')
+        self.assertEqual(urlsplit(operator.c.get('/').headers['Location']).path, '/parc')
 
     def test_reboot_and_bulk_updates_require_their_own_rights(self):
         operator = self.browser('update', self.profile('update', ['fleet.update']))
