@@ -3,6 +3,8 @@ import base64
 import json
 from pathlib import Path
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import time
 
@@ -10,7 +12,6 @@ import test_portal as fixture
 from test_fleet import FleetTest, Agent, WINDOWS, LINUX, device
 from loco import auth
 from loco.db import transaction
-import locosnapshot
 
 
 class TestRemote(FleetTest):
@@ -122,7 +123,12 @@ class TestRemote(FleetTest):
         self.io(sid, {'seq': 1, 'data': base64.b64encode(secret).decode()})
         with tempfile.TemporaryDirectory() as tmp:
             backup = Path(tmp, 'portal.db')
-            locosnapshot.snapshot(fixture.config.DB_PATH, str(backup))
+            # Même mode isolé que le service OpenRC : le dossier du script n'est pas dans sys.path.
+            script = ("import importlib.util,sys; s=importlib.util.spec_from_file_location('locoadmin',sys.argv[1]); "
+                      "m=importlib.util.module_from_spec(s); s.loader.exec_module(m); m.locosnapshot.snapshot(sys.argv[2],sys.argv[3])")
+            subprocess.run([sys.executable, '-I', '-c', script,
+                            str(Path(fixture.ROOT, 'portal', 'locoadmin.py')), fixture.config.DB_PATH, str(backup)],
+                           check=True, capture_output=True, cwd=tmp)
             with sqlite3.connect(backup) as conn:
                 self.assertEqual(conn.execute('SELECT COUNT(*) FROM remote_sessions').fetchone()[0], 0)
                 self.assertEqual(conn.execute('SELECT COUNT(*) FROM remote_packets').fetchone()[0], 0)

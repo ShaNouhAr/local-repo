@@ -16,12 +16,12 @@ import datetime
 import fcntl
 import hashlib
 import ipaddress
+import importlib.util
 import json
 import os
 import re
 import shlex
 import shutil
-import locosnapshot
 import stat
 import subprocess
 import sys
@@ -43,6 +43,10 @@ HEARTBEAT = os.path.join(AGENT_DIR, "alive")
 SOURCES = "/usr/local/src"
 STATE = "/var/lib/loco"
 HERE = os.path.abspath(__file__)
+# OpenRC et les CLI utilisent python -I : charger uniquement le module voisin installé avec ce programme.
+_snapshot_spec = importlib.util.spec_from_file_location("locosnapshot", os.path.join(os.path.dirname(HERE), "locosnapshot.py"))
+locosnapshot = importlib.util.module_from_spec(_snapshot_spec)
+_snapshot_spec.loader.exec_module(locosnapshot)
 REPO = "ShaNouhAr/loco"
 API = f"https://api.github.com/repos/{REPO}/releases/latest"
 ACTIONS = ("check", "update-loco", "update-system", "reboot", "configure")
