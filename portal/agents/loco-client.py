@@ -669,6 +669,10 @@ def linux_desktop():
             data += bytes([(n >> 14) & 255])
         return data
     pressed, mask, tight, last_frame, rgb_order = set(), 0, False, 0, False
+    def interrupted(_signum, _frame):
+        raise EOFError()
+    # SIGTERM doit aussi relâcher les modificateurs si la console est fermée pendant une frappe.
+    previous_term = signal.signal(signal.SIGTERM, interrupted)
     try:
         write(b"RFB 003.008\n")
         if read(12) != b"RFB 003.008\n":
@@ -761,6 +765,7 @@ def linux_desktop():
                 button(display, number, 0, 0)
         flush(display)
         close(display)
+        signal.signal(signal.SIGTERM, previous_term)
 
 
 def main(argv):
