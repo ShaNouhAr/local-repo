@@ -28,9 +28,11 @@ def check(base):
     # Une requête mal formée reste refusée : seule l'erreur HTTP-sur-TLS est redirigée.
     connection = http.client.HTTPConnection(url.hostname, port, timeout=10)
     try:
-        connection.request('GET', '/', headers={'Host': 'bad host'})
+        connection.putrequest('GET', '/', skip_host=True)
+        connection.endheaders()  # HTTP/1.1 impose Host, y compris avec les anciennes versions de nginx.
         response = connection.getresponse()
-        assert response.status == 400 and response.getheader('Location') is None
+        assert response.status == 400 and response.getheader('Location') is None, (
+            response.status, response.getheader('Location'))
         response.read()
     finally:
         connection.close()
