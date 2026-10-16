@@ -137,3 +137,12 @@ class TestRemote(FleetTest):
         page = self.admin.c.get('/parc/session/' + sid)
         self.assertIn('Nouvelle session', page.get_data(as_text=True))
         self.assertEqual(self.io(sid).get_json()['state'], 'closed')
+
+    def test_agent_restart_closes_the_old_stream_and_discards_pending_input(self):
+        sid = self.open()
+        self.exchange([{'id': sid, 'state': 'active'}])
+        self.io(sid, {'seq': 1, 'data': base64.b64encode(b'never replay this command').decode()})
+        self.assertEqual(self.exchange().get_json()['sessions'], [])
+        self.assertEqual(self.io(sid).get_json()['state'], 'closed')
+        with transaction() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM remote_packets WHERE session_id=?', (sid,)).fetchone()[0], 0)

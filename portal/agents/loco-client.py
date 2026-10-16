@@ -548,8 +548,14 @@ def remote_service():
         except BlockingIOError:
             return 0
         sessions, last_ok = {}, time.monotonic()
+        loaded = os.stat(PROGRAM)
+        signature = (loaded.st_ino, loaded.st_mtime_ns, loaded.st_size)
         try:
             while not stopping[0]:
+                current = os.stat(PROGRAM)
+                if (current.st_ino, current.st_mtime_ns, current.st_size) != signature:
+                    # Le service systemd relance le nouveau code après mise à jour automatique ou réinstallation.
+                    break
                 delay = 5
                 try:
                     conf = load(CONFIG)

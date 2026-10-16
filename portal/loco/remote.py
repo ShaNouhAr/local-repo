@@ -204,6 +204,11 @@ def remote_agent():
         conn.execute("UPDATE remote_sessions SET state=?,error=?,agent_seen=? WHERE id=?", (state, error, time.time(), sid))
         if state == "closed":
             finished.append(f"{dev['hostname']} : {row['kind']}, {sid} ({error})")
+    # Une session active absente de la mémoire de l'agent ne peut pas reprendre un flux PTY/RFB à mi-parcours.
+    # Cela arrive après un redémarrage du service ou une mise à jour de l'agent.
+    for row in conn.execute("SELECT id FROM remote_sessions WHERE device_id=? AND state='active'", (dev["id"],)).fetchall():
+        if row["id"] not in requested:
+            _close(row["id"], "Agent redémarré : ouvrez une nouvelle session.")
     output = []
     for row in conn.execute("SELECT * FROM remote_sessions WHERE device_id=?", (dev["id"],)).fetchall():
         if row["state"] not in OPEN and row["id"] not in requested:
