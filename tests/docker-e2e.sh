@@ -60,6 +60,7 @@ HOST=$(dc exec -T loco sh -c '. /etc/loco/loco.conf && echo "$HOST"')
 dc exec -T -e LOCO_PASSWORD="$PW" loco sh -c 'cd /opt/loco/portal && runuser -u loco -- env LOCO_DATA=/srv/loco LOCO_STATE=/var/lib/loco LOCO_ETC=/etc/loco LOCO_PASSWORD="$LOCO_PASSWORD" python3 -m loco.cli user set-password admin'
 
 step "Processus, comptes et services"
+dc exec -T loco python3 - https://127.0.0.1:8443 < tests/https_redirect.py
 dc exec -T loco ps -eo user:16,args > "$work/ps"
 grep -E '^loco .*gunicorn' "$work/ps" >/dev/null || fail "portail pas lancé sous loco"
 grep -E '^apt-cacher-ng .*apt-cacher-ng' "$work/ps" >/dev/null || fail "apt-cacher-ng pas lancé sous son compte"

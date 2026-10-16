@@ -14,6 +14,7 @@ step "Installation (raccourci POSIX, bash installé si besoin)"
 sh ./install.sh --password "$PW" > /tmp/alpine-install.log 2>&1 || { tail -40 /tmp/alpine-install.log; fail "installation"; }
 tail -16 /tmp/alpine-install.log
 ready
+python3 tests/https_redirect.py https://127.0.0.1:8443
 rc-service loco status | grep -q started || fail "service OpenRC loco"
 if rc-update show default | grep -qw nginx; then fail "le service nginx d'Alpine ne doit pas être actif"; fi
 metrics=$(curl -fsk https://127.0.0.1:8443/metrics)

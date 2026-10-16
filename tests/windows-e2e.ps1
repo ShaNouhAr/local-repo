@@ -47,6 +47,7 @@ if ($LegacySource) {
 }
 $env:LOCO_CONFIG = "$root\etc\loco.json"
 Python -m unittest discover -s $tests -p test_windows_runtime.py -v
+Python "$tests\https_redirect.py" https://127.0.0.1:8443
 Python "$tests\windows_probe.py" $Fixtures
 $ca = (Get-FileHash "$root\etc\tls\ca.crt").Hash
 $secret = (Get-FileHash "$root\etc\portal.secret").Hash

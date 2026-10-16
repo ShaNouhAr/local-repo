@@ -34,6 +34,7 @@ sudo ./install.sh --password "$PW" --flatpak
 ready
 # Vérifie aussi les redémarrages successifs du serveur applicatif (nouvelles versions de Gunicorn).
 for _ in 1 2 3; do sudo systemctl restart loco-portal; ready; done
+python3 tests/https_redirect.py https://127.0.0.1:8443
 # shellcheck disable=SC1091
 HOST=$(. /etc/loco/loco.conf && echo "$HOST")
 if [ -f "$work/old-ca" ]; then
