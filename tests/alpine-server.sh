@@ -56,6 +56,8 @@ step "Tests unitaires (Python et bibliothèques d'Alpine)"
     || { tail -80 /tmp/alpine-unit.log; fail "tests unitaires"; }
 tail -3 /tmp/alpine-unit.log
 
+step "SSH : mot de passe sans clé, clé seule et désactivation"
+LOCO_SSH_TEST_VM=1 bash tests/ssh-modes.sh
 step "Agent d'administration : demande du portail, loco-config, loco-update"
 rc-service loco-agent status | grep -q started || fail "service OpenRC loco-agent"
 [ "$(stat -c %U:%G:%a /var/lib/loco-agent/requests)" = root:loco:730 ] || fail "droits du dossier des demandes"

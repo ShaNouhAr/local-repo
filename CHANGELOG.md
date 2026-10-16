@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 2.1.3 — 2026-10-16
+
+- Installation ISO et `setup-loco` : choix entre SSH avec le mot de passe root, SSH par clé publique, ou SSH désactivé. Le mode mot de passe ne demande aucune clé publique.
+- Réponses automatiques : `SSH_MODE=password`, `key` ou `off` ; les anciens fichiers utilisant uniquement `SSH_KEY` restent compatibles.
+- Configuration SSH commune à l'installation et à la console ; mots de passe vides refusés, mode par clé sans authentification par mot de passe, tests de connexions SSH réelles.
+
 ## 2.1.2 — 2026-10-16
 
 - Portail : une requête HTTP reçue sur le port HTTPS redirige automatiquement vers HTTPS au lieu d'afficher « 400 Bad Request » ; l'hôte, le port, le chemin et les paramètres sont conservés.

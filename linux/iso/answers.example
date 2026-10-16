@@ -20,6 +20,9 @@ ALLOW=
 ADMIN_ALLOW=
 FEATURES="http wu rpm flatpak"
 PROXY=
+# SSH_MODE : off (désactivé), password (mot de passe root), key (clé publique).
+# auto garde l'ancien comportement : SSH par clé si SSH_KEY est renseigné, sinon désactivé.
+SSH_MODE=off
 SSH_KEY=
 # poweroff (défaut) ou reboot. Retirez le média avant le prochain démarrage.
 AFTER=poweroff

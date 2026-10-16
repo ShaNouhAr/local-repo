@@ -58,6 +58,52 @@ appliance_ssh_key_ok() {
     printf '%s\n' "$1" | grep -Eq '^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh.com) [A-Za-z0-9+/=]+( [^[:cntrl:]]*)?$'
 }
 
+# auto garde la compatibilité des anciens fichiers de réponses (clé présente => SSH par clé).
+appliance_ssh_mode() {
+    case "$1" in
+        ''|auto) if [ -n "$2" ]; then echo key; else echo off; fi ;;
+        off|password|key) echo "$1" ;;
+        *) return 1 ;;
+    esac
+}
+
+# Configuration partagée par l'ISO (racine montée) et setup-loco (racine vide).
+# Le mot de passe SSH est celui du compte root ; aucun second secret n'est enregistré.
+appliance_write_ssh() {
+    ssh_root=$1 ssh_mode=$2 ssh_key=${3:-}
+    case "$ssh_mode" in
+        off|password) ;;
+        key) appliance_ssh_key_ok "$ssh_key" || return 1 ;;
+        *) return 1 ;;
+    esac
+    install -d "$ssh_root/etc/ssh/sshd_config.d" "$ssh_root/etc/runlevels/default"
+    case "$ssh_mode" in
+        password) ssh_policy='PermitRootLogin yes
+PasswordAuthentication yes' ;;
+        key) ssh_policy='PermitRootLogin prohibit-password
+PasswordAuthentication no' ;;
+        off) ssh_policy='PermitRootLogin no
+PasswordAuthentication no' ;;
+    esac
+    printf '%s\nPermitEmptyPasswords no\nKbdInteractiveAuthentication no\n' "$ssh_policy" \
+        > "$ssh_root/etc/ssh/sshd_config.d/loco.conf"
+    if ! grep -q '^Include /etc/ssh/sshd_config.d/' "$ssh_root/etc/ssh/sshd_config"; then
+        sed -i '1i Include /etc/ssh/sshd_config.d/*.conf' "$ssh_root/etc/ssh/sshd_config"
+    fi
+    if [ "$ssh_mode" = key ]; then
+        install -d -m 700 "$ssh_root/root/.ssh"
+        touch "$ssh_root/root/.ssh/authorized_keys"
+        chmod 600 "$ssh_root/root/.ssh/authorized_keys"
+        grep -qxF "$ssh_key" "$ssh_root/root/.ssh/authorized_keys" || \
+            printf '%s\n' "$ssh_key" >> "$ssh_root/root/.ssh/authorized_keys"
+    fi
+    if [ "$ssh_mode" = off ]; then
+        rm -f "$ssh_root/etc/runlevels/default/sshd"
+    else
+        ln -sf /etc/init.d/sshd "$ssh_root/etc/runlevels/default/sshd"
+    fi
+}
+
 # Interfaces Ethernet (sans lo ni interfaces virtuelles), celles reliées en premier.
 appliance_interfaces() {
     for path in /sys/class/net/*; do

@@ -25,6 +25,15 @@ ssh-keygen -q -t ed25519 -N '' -f "$WORK/key"
 rootpw=$(openssl rand -hex 16)
 adminpw=$(openssl rand -hex 16)
 umask 077
+printf '%s\n' "$rootpw" > "$WORK/password"
+openssl rand -hex 16 > "$WORK/wrong-password"
+cat > "$WORK/askpass" <<'SH'
+#!/bin/sh
+cat "$LOCO_ISO_TEST_PASSWORD_FILE"
+SH
+chmod 700 "$WORK/askpass"
+export LOCO_ISO_TEST_PASSWORD_FILE="$WORK/password"
+write_answers() {
 cat > "$WORK/loco-answers.conf" <<EOF
 DISK=auto
 HOSTNAME=loco-iso-test
@@ -39,14 +48,21 @@ ROOT_PASSWORD=$rootpw
 ADMIN_PASSWORD=$adminpw
 ALLOW=10.0.0.0/8
 FEATURES="http wu rpm flatpak"
-SSH_KEY=$(cat "$WORK/key.pub")
+${ssh_mode:+SSH_MODE=$ssh_mode}
+SSH_KEY=$ssh_key
 AFTER=poweroff
 EOF
 genisoimage -quiet -R -V LOCO -o "$WORK/answers.iso" "$WORK/loco-answers.conf"
+}
 accel=(-accel tcg)
 if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then accel=(-accel kvm -cpu host); fi
 access() {
-    ssh -p "$port" -i "$WORK/key" -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    local auth=(-i "$WORK/key" -o BatchMode=yes)
+    if [ "$ssh_mode" = password ]; then
+        auth=(-o BatchMode=no -o PreferredAuthentications=password -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1)
+    fi
+    SSH_ASKPASS="$WORK/askpass" SSH_ASKPASS_REQUIRE=force DISPLAY=:0 \
+    ssh -p "$port" "${auth[@]}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
         -o LogLevel=ERROR -o ConnectTimeout=3 root@127.0.0.1 "$@"
 }
 wait_health() {
@@ -61,6 +77,9 @@ wait_health() {
     return 1
 }
 for mode in ${LOCO_ISO_MODES:-bios uefi}; do
+    ssh_mode="" ssh_key=$(cat "$WORK/key.pub")
+    if [ "$mode" = uefi ]; then ssh_mode=password ssh_key=""; fi
+    write_answers
     fw=()
     if [ "$mode" = uefi ]; then
         code="" vars=""
@@ -99,6 +118,16 @@ for mode in ${LOCO_ISO_MODES:-bios uefi}; do
     }
     boot_disk
     wait_health
+    if [ "$ssh_mode" = password ]; then
+        access 'set -e; test ! -e /root/.ssh/authorized_keys; sshd -T | grep -qx "passwordauthentication yes"'
+        if LOCO_ISO_TEST_PASSWORD_FILE="$WORK/wrong-password" access true 2>/dev/null; then
+            echo 'SSH accepte un mauvais mot de passe.' >&2; exit 1
+        fi
+        echo 'SSH mot de passe root sans aucune clé publique : OK'
+    else
+        if ssh_mode=password access true 2>/dev/null; then echo 'SSH par clé accepte le mot de passe.' >&2; exit 1; fi
+        echo 'Anciennes réponses SSH_KEY : clé acceptée, mot de passe refusé : OK'
+    fi
     access python3 - https://10.0.2.15:8443 < "$ROOT/tests/https_redirect.py"
     access 'set -eu; rc-service loco status; rc-service loco-agent status; test -x /usr/local/sbin/setup-loco; test -x /usr/local/sbin/loco-config; test -x /usr/local/sbin/loco-update; grep -q "https://10.0.2.15:8443" /etc/issue; test ! -e /etc/local.d/loco-installer.start; test ! -e /etc/loco-answers.conf; ! grep -q "root::" /etc/shadow; loco-config set BACKUP_KEEP=5 >/dev/null; grep -qx BACKUP_KEEP=5 /etc/loco/loco.conf; loco-backup create' \
         > "$LOG_DIR/$mode-installed.log" 2>&1

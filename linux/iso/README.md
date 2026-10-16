@@ -19,8 +19,8 @@ sha256sum --ignore-missing -c SHA256SUMS
 2. Choisir le clavier, le disque **entièrement effacé**, le nom, la carte réseau,
    DHCP ou adresse fixe, le fuseau et les mots de passe root et admin.
 3. Choisir les réseaux autorisés et les fonctions : HTTP des clients,
-   Windows Update, RPM, Flatpak. SSH est désactivé par défaut ; son activation
-   demande une clé publique et refuse les connexions root par mot de passe.
+   Windows Update, RPM, Flatpak. SSH est désactivé par défaut ; en l'activant,
+   choisir **Mot de passe root** (aucune clé nécessaire) ou **Clé publique uniquement**.
 4. Vérifier le récapitulatif, installer, retirer le média et redémarrer.
 
 Le premier démarrage termine la configuration de loco, puis la console affiche
@@ -61,6 +61,13 @@ avec `--yes`, elle provoque un échec avant tout effacement.
 Conserver les réponses en mode 600 et retirer leur support après installation.
 Une ISO construite avec des réponses contient leurs mots de passe : elle doit
 rester privée. L'ISO publique n'embarque ni réponses ni clé SSH.
+
+`SSH_MODE=password` active la connexion `ssh root@adresse-du-serveur` avec
+`ROOT_PASSWORD`, sans `SSH_KEY`. `SSH_MODE=key` demande une clé dans `SSH_KEY` et
+refuse les mots de passe SSH. `SSH_MODE=off` désactive SSH. Sans `SSH_MODE`, les
+anciens fichiers gardent leur comportement : clé renseignée = SSH par clé,
+sinon SSH désactivé. Après installation, `setup-loco` → **Accès SSH** permet de
+changer le mode ; le mot de passe reste celui du compte root.
 
 ## Configuration et mises à jour
 

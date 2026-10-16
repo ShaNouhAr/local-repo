@@ -101,27 +101,38 @@ admin_password() {
 }
 
 ssh_access() {
+    current=off
     if [ -L /etc/runlevels/default/sshd ]; then
-        dialog --backtitle "$TITLE" --yesno "L'accès SSH root par clé est activé. Le désactiver ?" 7 60 || return 0
-        rc-update del sshd default >/dev/null
+        current=key
+        if /usr/sbin/sshd -T 2>/dev/null | grep -qx 'passwordauthentication yes'; then current=password; fi
+    fi
+    mode=$(ask --title "Connexion SSH" --default-item "$current" --menu \
+        "Accès SSH du compte root. Le mode mot de passe utilise le mot de passe root actuel." 13 76 3 \
+        password "Mot de passe root (aucune clé nécessaire)" \
+        key "Clé publique uniquement" off "SSH désactivé") || return 0
+    key=""
+    if [ "$mode" = key ]; then
+        while :; do
+            key=$(ask --title "Clé SSH" --inputbox "Clé publique autorisée pour root (ssh-ed25519 AAAA…) :" 9 76) || return 0
+            appliance_ssh_key_ok "$key" && break
+            msg "SSH" "Clé publique OpenSSH attendue (une ligne)."
+        done
+    fi
+    appliance_write_ssh "" "$mode" "$key" || { msg "SSH" "Configuration SSH invalide."; return 1; }
+    if [ "$mode" = off ]; then
         rc-service sshd stop >/dev/null 2>&1
         msg "SSH" "Accès SSH désactivé."
         return 0
     fi
-    while :; do
-        key=$(ask --title "SSH" --inputbox "Clé publique autorisée pour root (ssh-ed25519 AAAA…) :" 9 76) || return 0
-        appliance_ssh_key_ok "$key" && break
-        msg "SSH" "Clé publique OpenSSH attendue (une ligne)."
-    done
-    install -d -m 700 /root/.ssh
-    printf '%s\n' "$key" >> /root/.ssh/authorized_keys
-    chmod 600 /root/.ssh/authorized_keys
-    install -d /etc/ssh/sshd_config.d
-    printf 'PermitRootLogin prohibit-password\nPasswordAuthentication no\nKbdInteractiveAuthentication no\n' \
-        > /etc/ssh/sshd_config.d/loco.conf
-    rc-update add sshd default >/dev/null
-    rc-service sshd restart >/dev/null 2>&1 || rc-service sshd start >/dev/null
-    msg "SSH" "Accès SSH root par clé activé (mot de passe refusé)."
+    ssh-keygen -A >/dev/null
+    /usr/sbin/sshd -t || { msg "SSH" "Configuration refusée par sshd ; consultez la console."; return 1; }
+    if rc-service sshd restart >/dev/null 2>&1 || rc-service sshd start >/dev/null; then
+        if [ "$mode" = password ]; then msg "SSH" "Accès SSH activé : root et son mot de passe, sans clé publique requise."
+        else msg "SSH" "Accès SSH root par clé activé (mot de passe refusé)."; fi
+    else
+        msg "SSH" "Le service SSH n'a pas démarré ; consultez la console."
+        return 1
+    fi
 }
 
 while :; do
@@ -131,7 +142,7 @@ while :; do
         nom "Nom du serveur" \
         root "Mot de passe root" \
         admin "Mot de passe du compte admin du portail" \
-        ssh "Accès SSH root par clé" \
+        ssh "Accès SSH (mot de passe, clé ou désactivé)" \
         autres "Autres réglages : portail (Configuration) ou loco-config") || break
     case "$choice" in
         reseau) network ;;

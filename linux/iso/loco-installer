@@ -22,9 +22,9 @@ MIN_DISK_GIB=8
 # Réglages (réponses), valeurs par défaut de l'assistant.
 DISK=auto HOSTNAME=loco KEYMAP="fr fr" TIMEZONE=Europe/Paris INTERFACE=auto NETWORK=dhcp ADDRESS="" GATEWAY=""
 DNS="" ROOT_PASSWORD="" ADMIN_PASSWORD="" ALLOW="" ADMIN_ALLOW="" FEATURES="http wu rpm flatpak" PROXY=""
-SSH_KEY="" AFTER="" ANSWERS_DEV=""
+SSH_MODE=auto SSH_KEY="" AFTER="" ANSWERS_DEV=""
 KEYS="DISK HOSTNAME KEYMAP TIMEZONE INTERFACE NETWORK ADDRESS GATEWAY DNS ROOT_PASSWORD ADMIN_PASSWORD ALLOW
-      ADMIN_ALLOW FEATURES PROXY SSH_KEY AFTER"
+      ADMIN_ALLOW FEATURES PROXY SSH_MODE SSH_KEY AFTER"
 
 # dialog écrit le choix sur la sortie d'erreur : échange des descripteurs pour le récupérer.
 ask() { dialog --backtitle "$TITLE" --cancel-label Accueil "$@" 3>&1 1>&2 2>&3; }
@@ -174,7 +174,8 @@ problems() {
     if [ -n "$PROXY" ] && ! printf '%s' "$PROXY" | grep -Eq '^http://([A-Za-z0-9._~%!*+,;=:-]+@)?[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$'; then
         out="$out\n- proxy invalide : $PROXY (http://hôte:port)"
     fi
-    if [ -n "$SSH_KEY" ] && ! appliance_ssh_key_ok "$SSH_KEY"; then out="$out\n- clé SSH publique invalide"; fi
+    ssh_mode=$(appliance_ssh_mode "$SSH_MODE" "$SSH_KEY") || out="$out\n- SSH_MODE : off, password, key ou auto"
+    if [ "$ssh_mode" = key ] && ! appliance_ssh_key_ok "$SSH_KEY"; then out="$out\n- une clé publique valide est requise pour SSH_MODE=key"; fi
     case "$AFTER" in ''|poweroff|reboot) ;; *) out="$out\n- AFTER : poweroff ou reboot" ;; esac
     for key in $KEYS; do
         eval "value=\${$key}"
@@ -302,17 +303,25 @@ EOF
         wu "Cache Windows Update (ports 80 et 443)" "$(on wu)" \
         rpm "Famille Red Hat : dépôts et cache RPM" "$(on rpm)" \
         flatpak "Flatpak : cache Flathub et dépôt local" "$(on flatpak)" \
-        ssh "Accès SSH root par clé publique" "$( [ -n "$SSH_KEY" ] && echo on || echo off)") || return 1
+        ssh "Accès SSH (mot de passe ou clé publique)" "$( [ "$(appliance_ssh_mode "$SSH_MODE" "$SSH_KEY")" != off ] && echo on || echo off)") || return 1
     FEATURES=$(printf '%s\n' "$values" | tr '\n' ' ')
     case " $FEATURES " in
         *" ssh "*)
-            while :; do
-                SSH_KEY=$(ask --title "SSH" --inputbox "Clé publique autorisée pour root (ssh-ed25519 AAAA…) :" 9 76 "$SSH_KEY") || return 1
-                appliance_ssh_key_ok "$SSH_KEY" && break
-                msg "SSH" "Clé publique OpenSSH attendue (une ligne)."
-            done
+            SSH_MODE=$(ask --title "Connexion SSH" --default-item password --menu \
+                "Comment se connecter en SSH avec le compte root ?\nLe mode mot de passe utilise le mot de passe root défini dans cet assistant." 14 76 3 \
+                password "Mot de passe root (aucune clé nécessaire)" \
+                key "Clé publique uniquement" off "SSH désactivé") || return 1
+            if [ "$SSH_MODE" = key ]; then
+                while :; do
+                    SSH_KEY=$(ask --title "Clé SSH" --inputbox "Clé publique autorisée pour root (ssh-ed25519 AAAA…) :" 9 76 "$SSH_KEY") || return 1
+                    appliance_ssh_key_ok "$SSH_KEY" && break
+                    msg "SSH" "Clé publique OpenSSH attendue (une ligne)."
+                done
+            else
+                SSH_KEY=""
+            fi
             ;;
-        *) SSH_KEY="" ;;
+        *) SSH_MODE=off SSH_KEY="" ;;
     esac
     FEATURES=$(for f in $FEATURES; do [ "$f" = ssh ] || printf '%s ' "$f"; done)
     FEATURES=${FEATURES% }
@@ -323,7 +332,7 @@ summary() {
     if [ "$NETWORK" = static ]; then net="$ADDRESS, passerelle ${GATEWAY:-aucune}, DNS $DNS"; else net="DHCP"; fi
     printf 'Disque      /dev/%s (%s Gio, EFFACÉ)\nNom         %s\nRéseau      %s : %s\nFuseau      %s, clavier %s\nPostes      %s\nInterface   %s\nFonctions   %s\nSSH root    %s\n' \
         "$DISK" "$(disk_size "$DISK")" "$HOSTNAME" "$INTERFACE" "$net" "$TIMEZONE" "$KEYMAP" "$ALLOW" "${ADMIN_ALLOW:-$ALLOW}" \
-        "${FEATURES:-aucune}" "$( [ -n "$SSH_KEY" ] && echo 'clé publique' || echo désactivé)"
+        "${FEATURES:-aucune}" "$(case "$(appliance_ssh_mode "$SSH_MODE" "$SSH_KEY")" in password) echo 'mot de passe root' ;; key) echo 'clé publique' ;; *) echo désactivé ;; esac)"
 }
 
 # ---------------------------------------------------------------- installation
@@ -377,20 +386,7 @@ install_system() {
     for s in chronyd:default acpid:default networking:boot local:default; do
         ln -sf "/etc/init.d/${s%%:*}" "$TARGET/etc/runlevels/${s##*:}/${s%%:*}"
     done
-    if [ -n "$SSH_KEY" ]; then
-        install -d -m 700 "$TARGET/root/.ssh"
-        printf '%s\n' "$SSH_KEY" > "$TARGET/root/.ssh/authorized_keys"
-        chmod 600 "$TARGET/root/.ssh/authorized_keys"
-        install -d "$TARGET/etc/ssh/sshd_config.d"
-        printf 'PermitRootLogin prohibit-password\nPasswordAuthentication no\nKbdInteractiveAuthentication no\n' \
-            > "$TARGET/etc/ssh/sshd_config.d/loco.conf"
-        if ! grep -q '^Include /etc/ssh/sshd_config.d/' "$TARGET/etc/ssh/sshd_config"; then
-            sed -i '1i Include /etc/ssh/sshd_config.d/*.conf' "$TARGET/etc/ssh/sshd_config"
-        fi
-        ln -sf /etc/init.d/sshd "$TARGET/etc/runlevels/default/sshd"
-    else
-        rm -f "$TARGET/etc/runlevels/default/sshd"
-    fi
+    appliance_write_ssh "$TARGET" "$(appliance_ssh_mode "$SSH_MODE" "$SSH_KEY")" "$SSH_KEY"
 
     step "Sources de loco $VERSION et premier démarrage"
     install -d "$TARGET/usr/local/src" "$TARGET/etc/loco"

@@ -87,6 +87,30 @@ class ConsoleVM:
         for char in text:
             self.key(symbols.get(char, char))
 
+    def configure_to_features(self):
+        self.key('ret')
+        self.wait_screen('Clavier')
+        self.key('ret')
+        self.wait_screen('Disque')
+        self.key('ret')
+        self.wait_screen('Nom')
+        self.key('ret')
+        self.wait_screen('Adresse du serveur')
+        self.key('down')  # DHCP : pas de formulaire d'adresse fixe.
+        self.key('ret')
+        self.wait_screen('Fuseau horaire')
+        self.key('ret')
+        self.wait_screen('Compte root')
+        self.text('console-test-123\n')
+        self.text('console-test-123\n')
+        self.wait_screen('Portail')
+        self.text('console-portal-123\n')
+        self.text('console-portal-123\n')
+        self.wait_screen('Postes clients')
+        self.key('tab')
+        self.key('ret')
+        self.wait_screen('Fonctions')
+
     def check(self):
         self.monitor = self.connect('monitor')
         self.monitor.settimeout(15)
@@ -140,33 +164,24 @@ class ConsoleVM:
         self.wait_screen('Bienvenue')
 
         # Atteindre les fonctions, puis annuler : aucun récapitulatif/effacement ne doit suivre.
+        self.configure_to_features()
+        self.key('esc')
+        self.wait_screen('Bienvenue')
+        self.configure_to_features()
+        for _ in range(4):
+            self.key('down')
+        self.key('spc')  # Active SSH : mot de passe proposé sans saisir de clé.
         self.key('ret')
-        self.wait_screen('Clavier')
+        self.wait_screen('Connexion SSH')
         self.key('ret')
-        self.wait_screen('Disque')
-        self.key('ret')
-        self.wait_screen('Nom')
-        self.key('ret')
-        self.wait_screen('Adresse du serveur')
-        self.key('down')  # DHCP : pas de formulaire d'adresse fixe.
-        self.key('ret')
-        self.wait_screen('Fuseau horaire')
-        self.key('ret')
-        self.wait_screen('Compte root')
-        self.text('console-test-123\n')
-        self.text('console-test-123\n')
-        self.wait_screen('Portail')
-        self.text('console-portal-123\n')
-        self.text('console-portal-123\n')
-        self.wait_screen('Postes clients')
-        self.key('tab')
-        self.key('ret')
-        self.wait_screen('Fonctions')
+        screen = self.wait_screen('SSH root')
+        # Le texte peut être coupé entre deux lignes de la fenêtre dialog.
+        assert 'mot de passe root' in ' '.join(screen.replace('\xb3', ' ').split())
         self.key('esc')
         self.wait_screen('Bienvenue')
         assert self.command('dd if=/dev/vda bs=1M count=1 2>/dev/null | sha256sum') == original
         assert self.command('ls /sys/block/vda/vda* 2>/dev/null | wc -l') == '0'
-        print('ISO interactive : Échap, Accueil, shell/Ctrl+C/exit, Alt+F1/F7, fonctions annulées, disque intact : OK')
+        print('ISO interactive : Échap, Accueil, shell/Ctrl+C/exit, Alt+F1/F7, fonctions annulées, SSH par mot de passe sans clé, disque intact : OK')
 
 
 def main():
