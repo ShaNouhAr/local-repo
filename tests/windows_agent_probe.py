@@ -92,6 +92,22 @@ wait('résultat de l\'inventaire demandé',
      lambda: re.search(r'<td>Inventaire</td>\s*<td[^>]*>[^<]*</td>\s*<td><span class="st (ok|err)">', get(f'/parc/{dev}')), 900)
 print('Action à distance : inventaire exécuté et rapporté')
 
+# Autre MSI du même numéro de version : remplace le produit sans perdre le service ni l'identité.
+# Deux compilations ont des ProductCode distincts ; réutiliser le même MSI ne teste que la maintenance.
+client_root = Path(os.environ['ProgramData'], 'loco-client')
+identity = (client_root / 'client.json').read_bytes()
+replacement = Path(cfg['program_dir'], 'portal', 'agents', 'reinstall', 'loco-client.msi')
+assert replacement.is_file(), 'MSI de réinstallation absent'
+result = subprocess.run(['msiexec.exe', '/i', str(replacement), '/qn', '/norestart'], timeout=180)
+assert result.returncode in (0, 3010), f'Réinstallation MSI : {result.returncode}'
+assert powershell('(Get-Service loco-client).Status').stdout.strip() == 'Running', 'service perdu à la réinstallation'
+assert (client_root / 'client.json').read_bytes() == identity, 'identité perdue à la réinstallation'
+assert device_id() == dev, 'fiche du poste modifiée à la réinstallation'
+installed = powershell("Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*' | "
+                       "Where-Object DisplayName -eq 'loco-client' | Measure-Object | Select-Object -ExpandProperty Count")
+assert installed.stdout.strip() == '1', 'plusieurs MSI loco-client après réinstallation'
+print('Réinstallation de la même version : service actif, identité conservée, un seul MSI')
+
 url, html = post(f'/parc/{dev}/action', {'csrf': csrf(get(f'/parc/{dev}')), 'action': 'uninstall'})
 wait('retrait de l\'agent', lambda: powershell('if (Get-Service loco-client -ErrorAction SilentlyContinue) { 1 } else { 0 }').stdout.strip() == '0', 600)
 assert hostname not in re.findall(r'class="mono nowrap">([^<]+)<', get('/parc')), 'poste encore dans le parc'

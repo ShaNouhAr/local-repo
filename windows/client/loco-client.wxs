@@ -21,7 +21,10 @@
       <Directory Id="ProgramFiles64Folder">
         <Directory Id="INSTALLDIR" Name="loco-client">
           <Component Id="Service" Guid="bb3352f7-fe8b-4c9b-921f-0765e8872e7f" Win64="yes">
-            <File Id="ClientExe" Name="loco-client.exe" Source="$(var.SourceDir)/loco-client.exe" KeyPath="yes" />
+            <!-- wixl ne lit pas la version PE : sans cette valeur, Windows ignore le composant
+                 lors d'une réinstallation, puis la suppression de l'ancien MSI retire le service. -->
+            <File Id="ClientExe" Name="loco-client.exe" Source="$(var.SourceDir)/loco-client.exe"
+                  DefaultVersion="$(var.Version).0" KeyPath="yes" />
             <File Id="ClientConfig" Name="loco-client.exe.config" Source="$(var.SourceDir)/loco-client.exe.config" />
             <ServiceInstall Id="ClientService" Name="loco-client" DisplayName="loco - agent du parc"
                             Description="Inventaire et mises à jour du poste, piloté depuis le serveur loco."
