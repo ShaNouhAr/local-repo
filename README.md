@@ -286,9 +286,11 @@ Sur Windows, le MSI installe aussi **loco-tray.exe**, lancé dans chaque session
 
 ## Sessions distantes via l’agent
 
-Dans la fiche d’un poste de **Mon parc**, un administrateur peut ouvrir un **Terminal / PowerShell** ou le **Bureau noVNC**. Les boutons **Plein écran** et **Nouvel onglet** sont disponibles dans les deux vues ; le plein écran conserve les commandes de session et adapte le terminal ou le bureau à la place disponible. Le nouvel onglet ouvre une connexion indépendante sur le même poste.
+Dans la fiche d’un poste de **Mon parc**, un administrateur peut ouvrir un **Terminal / PowerShell** ou le **Bureau noVNC**. Les boutons **Plein écran** et **Nouvel onglet** sont disponibles dans les deux vues ; le plein écran conserve les commandes de session et adapte le terminal ou le bureau à la place disponible. Le nouvel onglet ouvre une **console dédiée**, sans la navigation du portail : une petite barre d’outils et tout l’espace disponible pour le poste. La fiche de l’appareil reste ouverte dans son onglet ; chaque console dispose de sa connexion indépendante.
 
 L’agent loco 2.4 ou ultérieur établit lui-même les connexions HTTPS sortantes vers loco, avec l’autorité du serveur épinglée. Aucun port entrant sur le poste, compte SSH, serveur VNC distinct ni accès Proxmox n’est nécessaire. Le terminal utilise un vrai PTY Linux ou ConPTY Windows, avec un shell **root** ou **PowerShell SYSTEM** selon le compte du service.
+
+Le bureau transmet les pixels natifs, sans réduction forcée à 1920 × 1080 ni JPEG. Les rectangles modifiés sont compressés sans perte ; un écran immobile n’est pas retransmis. **Ajuster à la fenêtre** réduit le bureau si nécessaire et ne l’agrandit jamais au-delà de ses pixels. **Taille réelle (1:1)** conserve la netteté native avec défilement si l’écran dépasse la fenêtre ; la résolution et le pourcentage affichés permettent de choisir. Ces options changent l’affichage de la console, pas la résolution physique du poste.
 
 Le bureau partage la session graphique existante : session utilisateur ouverte sous **Windows 11 et Windows Server 2022/2025**, ou bureau **X11** sous Linux (bibliothèques X11 et XTest requises). Le bureau Wayland, l’écran de connexion/verrouillage Windows et le bureau sécurisé UAC ne sont pas pris en charge. Un poste sans session graphique conserve son terminal.
 

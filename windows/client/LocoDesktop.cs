@@ -39,17 +39,16 @@ namespace Loco
         readonly Rectangle bounds;
         readonly int width, height;
         readonly Dictionary<uint, Input> pressed = new Dictionary<uint, Input>();
-        readonly ImageCodecInfo jpeg = ImageCodecInfo.GetImageEncoders().First(c => c.MimeType == "image/jpeg");
+        readonly RfbFramebuffer framebuffer;
         bool tight, rgbOrder;
         byte mouseMask;
-        byte[] lastImage;
         readonly Stopwatch frameTime = Stopwatch.StartNew();
         public RfbDesktop(Stream stream)
         {
             this.stream = stream; bounds = SystemInformation.VirtualScreen;
             if (bounds.Width <= 0 || bounds.Height <= 0 || (long)bounds.Width * bounds.Height > 16777216) throw new IOException("Bureau indisponible");
-            double scale = Math.Min(1, Math.Min(1920.0 / bounds.Width, 1080.0 / bounds.Height));
-            width = Math.Max(1, (int)(bounds.Width * scale)); height = Math.Max(1, (int)(bounds.Height * scale));
+            width = bounds.Width; height = bounds.Height;
+            framebuffer = new RfbFramebuffer(width, height);
         }
         byte[] Read(int n)
         {
@@ -91,7 +90,7 @@ namespace Loco
                         var encodings = Read(count * 4); tight = false;
                         for (int i = 0; i < count; i++) if (I32(encodings, i * 4) == 7) tight = true;
                     }
-                    else if (kind == 3) { Read(9); Frame(); }
+                    else if (kind == 3) { var request = Read(9); Frame(request[0] != 0); }
                     else if (kind == 4) { var p = Read(7); Key(I32(p, 3), p[0] != 0); }
                     else if (kind == 5) { var p = Read(5); Pointer(p[0], I16(p, 1), I16(p, 3)); }
                     else if (kind == 6) { var p = Read(7); uint length = I32(p, 3); if (length > 1024 * 1024) throw new InvalidDataException(); Read((int)length); }
@@ -107,9 +106,9 @@ namespace Loco
                     if ((mouseMask & b[0]) != 0) { var input = new Input(); input.Data.Mouse.Flags = (uint)b[1]; try { Send(input); } catch (IOException) { } }
             }
         }
-        void Frame()
+        void Frame(bool incremental)
         {
-            int wait = 150 - (int)frameTime.ElapsedMilliseconds; if (wait > 0) Thread.Sleep(wait); frameTime.Restart();
+            int wait = 40 - (int)frameTime.ElapsedMilliseconds; if (wait > 0) Thread.Sleep(wait); frameTime.Restart();
             IntPtr desktop = OpenInputDesktop(0, false, 1);
             if (desktop == IntPtr.Zero) throw new IOException("Session verrouillée ou écran sécurisé");
             try
@@ -119,45 +118,20 @@ namespace Loco
                     throw new IOException("Écran sécurisé");
             }
             finally { CloseDesktop(desktop); }
-            using (var source = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppRgb))
-            using (var target = new Bitmap(width, height, PixelFormat.Format32bppArgb))
+            using (var source = new Bitmap(width, height, PixelFormat.Format32bppRgb))
             {
                 using (var graphics = Graphics.FromImage(source)) graphics.CopyFromScreen(bounds.Location, Point.Empty, bounds.Size);
-                using (var graphics = Graphics.FromImage(target)) graphics.DrawImage(source, new Rectangle(0, 0, width, height));
-                byte[] data;
-                if (tight)
+                var bitmap = source.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadOnly, PixelFormat.Format32bppRgb);
+                byte[] data = new byte[width * height * 4];
+                try
                 {
-                    using (var memory = new MemoryStream())
-                    using (var parameters = new EncoderParameters(1))
-                    { parameters.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 65L); target.Save(memory, jpeg, parameters); data = memory.ToArray(); }
-                    if (data.Length >= 4194304) throw new IOException("Image trop volumineuse");
+                    for (int y = 0; y < height; y++) Marshal.Copy(IntPtr.Add(bitmap.Scan0, y * bitmap.Stride), data, y * width * 4, width * 4);
                 }
-                else
-                {
-                    var bitmap = target.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
-                    try
-                    {
-                        data = new byte[width * height * 4];
-                        for (int y = 0; y < height; y++) Marshal.Copy(IntPtr.Add(bitmap.Scan0, y * bitmap.Stride), data, y * width * 4, width * 4);
-                        if (rgbOrder) for (int i = 0; i < data.Length; i += 4) { byte b = data[i]; data[i] = data[i + 2]; data[i + 2] = b; }
-                    }
-                    finally { target.UnlockBits(bitmap); }
-                }
-                if (lastImage != null && data.SequenceEqual(lastImage)) { Write(new byte[4]); return; }
-                lastImage = data;
-                byte[] header = Join(new byte[] { 0, 0, 0, 1, 0, 0, 0, 0 }, U16(width), U16(height), U32(tight ? 7u : 0u));
-                Write(header);
-                if (tight)
-                {
-                    int size = data.Length;
-                    var prefix = new List<byte> { 0x90, (byte)((size & 127) | (size > 127 ? 128 : 0)) };
-                    if (size > 127) prefix.Add((byte)(((size >> 7) & 127) | (size > 16383 ? 128 : 0)));
-                    if (size > 16383) prefix.Add((byte)(size >> 14));
-                    Write(prefix.ToArray());
-                }
-                Write(data);
+                finally { source.UnlockBits(bitmap); }
+                Write(framebuffer.Update(data, incremental, tight, rgbOrder));
             }
         }
+
         void Pointer(byte mask, int x, int y)
         {
             long px = bounds.Left + Math.Min(width - 1, x) * (long)bounds.Width / width;

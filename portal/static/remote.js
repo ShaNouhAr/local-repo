@@ -6,6 +6,11 @@ const closeButton = document.getElementById('remote-close');
 const encoder = new TextEncoder();
 let running = true, inputSeq = 0, outputAck = 0, queue = new Uint8Array(), pending = null;
 let terminal, fit, rfb, channel, failures = 0, cols = 100, rows = 30;
+let pollTimer, inFlight = false;
+function schedulePoll(delay = 0) {
+  if (!running || inFlight) return;
+  clearTimeout(pollTimer); pollTimer = setTimeout(poll, delay);
+}
 function message(text, error = false) { status.textContent = text; status.className = error ? 'note err' : 'note'; }
 function bytes(encoded) { return Uint8Array.from(atob(encoded), c => c.charCodeAt(0)); }
 function base64(data) { let out = ''; for (let i = 0; i < data.length; i += 8192) out += String.fromCharCode(...data.subarray(i, i + 8192)); return btoa(out); }
@@ -13,6 +18,7 @@ function send(data) {
   const part = data instanceof Uint8Array ? data : new Uint8Array(data);
   if (queue.length + part.length > 512 * 1024) { stop('La saisie dépasse la capacité de la session.', true); return; }
   const combined = new Uint8Array(queue.length + part.length); combined.set(queue); combined.set(part, queue.length); queue = combined;
+  schedulePoll();
 }
 function closeRequest(beacon = false) {
   const data = new URLSearchParams({ csrf: root.dataset.csrf, close: '1' });
@@ -21,7 +27,7 @@ function closeRequest(beacon = false) {
 }
 function stop(text = 'Session fermée.', notify = false) {
   if (!running) return;
-  running = false; closeButton.disabled = true; message(text);
+  running = false; clearTimeout(pollTimer); closeButton.disabled = true; message(text);
   document.getElementById('remote-reconnect').hidden = false;
   if (channel) { channel.readyState = 3; if (channel.onclose) channel.onclose({ code: 1000, reason: text }); }
   if (terminal) terminal.options.disableStdin = true;
@@ -37,7 +43,8 @@ class RelayChannel {
   close() { stop('Session fermée.', true); }
 }
 async function poll() {
-  if (!running) return;
+  if (!running || inFlight) return;
+  inFlight = true; let busy = false;
   if (!pending && queue.length) {
     const data = queue.subarray(0, 64 * 1024); queue = queue.slice(data.length);
     pending = { seq: ++inputSeq, data: base64(data) };
@@ -51,7 +58,7 @@ async function poll() {
     if (!response.ok) throw new Error('HTTP ' + response.status);
     const data = await response.json();
     if (!running) return;
-    failures = 0;
+    failures = 0; busy = data.packets.length > 0;
     if (pending && data.ack >= pending.seq) pending = null;
     if (data.state === 'active') {
       message('Connecté · ' + (root.dataset.kind === 'terminal' ? 'terminal du poste' : 'bureau du poste'));
@@ -68,8 +75,8 @@ async function poll() {
   } catch (error) {
     if (++failures >= 10) { stop('Connexion au serveur interrompue.', true); return; }
     message('Reconnexion au serveur…');
-  }
-  if (running) setTimeout(poll, failures ? 1000 : 100);
+  } finally { inFlight = false; }
+  schedulePoll(failures ? 1000 : busy || pending || queue.length ? 0 : 25);
 }
 closeButton.addEventListener('click', () => stop('Session fermée.', true));
 window.addEventListener('pagehide', () => { if (running) { stop('Session fermée.'); closeRequest(true); } });
@@ -93,7 +100,21 @@ if (root.dataset.kind === 'terminal') {
   terminal.onBinary(data => send(Uint8Array.from(data, c => c.charCodeAt(0) & 255)));
 } else {
   const { default: RFB } = await import('./vendor/novnc-1.7.0/core/rfb.js');
-  channel = new RelayChannel(); rfb = new RFB(screen, channel, { shared: true }); rfb.scaleViewport = true; rfb.showDotCursor = true;
+  channel = new RelayChannel(); rfb = new RFB(screen, channel, { shared: true }); rfb.showDotCursor = true;
+  const scale = document.getElementById('remote-scale');
+  const resolution = document.getElementById('remote-resolution');
+  function updateViewport() {
+    const canvas = screen.querySelector('canvas');
+    if (!canvas || !canvas.width || !canvas.height) return;
+    // Réduire si nécessaire ; agrandir une image au-delà de ses pixels rend le texte flou.
+    rfb.scaleViewport = scale.value === 'fit' && (screen.clientWidth < canvas.width || screen.clientHeight < canvas.height);
+    const percent = Math.round(100 * canvas.getBoundingClientRect().width / canvas.width);
+    resolution.textContent = `${canvas.width} × ${canvas.height} · ${percent} %`;
+  }
+  scale.addEventListener('change', updateViewport);
+  new ResizeObserver(updateViewport).observe(screen);
+  new MutationObserver(updateViewport).observe(screen, { childList: true, subtree: true, attributes: true, attributeFilter: ['width', 'height'] });
+  rfb.addEventListener('connect', updateViewport);
   rfb.addEventListener('disconnect', e => { if (running) stop(e.detail.clean ? 'Bureau déconnecté.' : 'La connexion au bureau a été interrompue.', true); });
 }
 poll();

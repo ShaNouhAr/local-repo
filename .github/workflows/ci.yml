@@ -236,7 +236,8 @@ jobs:
           version=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' portal/loco/config.py)
           docker run --rm -v "$PWD:/src" -w /src -e VERSION="$version" debian:13 sh -euc '
             apt-get update -q >/dev/null
-            DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends mono-devel wixl msitools >/dev/null
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends mono-devel wixl msitools python3 >/dev/null
+            python3 -m unittest discover -s tests -p test_desktop_encoding.py -v
             windows/client/build.sh "$VERSION" test-results/windows-client
             msiinfo export test-results/windows-client/loco-client.msi File | tr -d "\\r" | grep -P "^ClientExe\\tService\\t[^\\t]+\\t[0-9]+\\t$VERSION.0\\t"
             msiinfo export test-results/windows-client/loco-client.msi File | tr -d "\\r" | grep -P "^TrayExe\\tService\\t[^\\t]+\\t[0-9]+\\t$VERSION.0\\t"

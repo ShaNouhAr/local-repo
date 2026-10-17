@@ -62,14 +62,19 @@ namespace Loco
                             if (!sessions.TryGetValue(pair.Key, out item)) { item = new RemoteSession(pair.Value, stopping); sessions[pair.Key] = item; }
                             item.Update(pair.Value);
                         }
-                        delay = sessions.Count > 0 ? 100 : 5000;
+                        delay = sessions.Count > 0 ? (sessions.Values.Any(s => s.HasOutput) || descriptors.Values.Any(d => Items(d, "packets").Any()) ? 0 : 25) : 5000;
                     }
                     catch (Exception e)
                     {
-                        Agent.Log("sessions distantes : " + e.Message);
                         var rejected = e as LocoHttpException;
-                        if (lastOk.Elapsed.TotalSeconds > 20 || (rejected != null && (rejected.Status == 401 || rejected.Status == 403)))
-                        { foreach (var item in sessions.Values) item.Dispose(); sessions.Clear(); }
+                        if (rejected != null && rejected.Status == 429)
+                        { lastOk.Restart(); delay = 50; } // Récepteur lent : garder le paquet et reprendre après acquittement.
+                        else
+                        {
+                            Agent.Log("sessions distantes : " + e.Message);
+                            if (lastOk.Elapsed.TotalSeconds > 20 || (rejected != null && (rejected.Status == 401 || rejected.Status == 403)))
+                            { foreach (var item in sessions.Values) item.Dispose(); sessions.Clear(); }
+                        }
                     }
                 }
             }
@@ -189,11 +194,21 @@ namespace Loco
             int nextCols = RemoteControl.Number(descriptor, "cols", 20, 500), nextRows = RemoteControl.Number(descriptor, "rows", 5, 200);
             if (terminal != null && (nextCols != cols || nextRows != rows)) { terminal.Resize(nextCols, nextRows); cols = nextCols; rows = nextRows; }
         }
+        public bool HasOutput { get { lock (gate) return pending != null || output.Count > 0; } }
         public object Payload()
         {
             lock (gate)
             {
-                if (pending == null && output.Count > 0) { pending = output.Dequeue(); queuedBytes -= pending.Length; outputSeq++; Monitor.PulseAll(gate); }
+                if (pending == null && output.Count > 0)
+                {
+                    using (var batch = new MemoryStream())
+                    {
+                        while (output.Count > 0 && batch.Length + output.Peek().Length <= 256 * 1024)
+                        { var part = output.Dequeue(); batch.Write(part, 0, part.Length); queuedBytes -= part.Length; }
+                        pending = batch.ToArray();
+                    }
+                    outputSeq++; Monitor.PulseAll(gate);
+                }
                 return new { id = id, ack = inputAck, seq = outputSeq, data = pending == null ? "" : Convert.ToBase64String(pending),
                     state = disposed || (eof && pending == null && output.Count == 0) ? "closed" : "active", error = error.Length > 300 ? error.Substring(0, 300) : error };
             }

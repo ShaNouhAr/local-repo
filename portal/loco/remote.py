@@ -18,6 +18,7 @@ from .db import db
 
 PACKET = 256 * 1024
 BUFFER = 2 * 1024 * 1024
+BATCH = 1024 * 1024
 OPEN = ("waiting", "active")
 
 
@@ -95,9 +96,10 @@ def _read(row, direction, ack):
     db().execute("DELETE FROM remote_packets WHERE session_id=? AND direction=? AND seq<=?",
                  (row["id"], direction, ack))
     packets, size = [], 0
+    limit = BATCH if direction == "out" else PACKET
     for packet in db().execute("SELECT seq,data FROM remote_packets WHERE session_id=? AND direction=? "
                                "ORDER BY seq", (row["id"], direction)):
-        if size and size + len(packet["data"]) > PACKET:
+        if size and size + len(packet["data"]) > limit:
             break
         packets.append({"seq": packet["seq"], "data": base64.b64encode(packet["data"]).decode()})
         size += len(packet["data"])
@@ -137,7 +139,7 @@ def remote_open(dev_id):
                  "VALUES (?,?,?,?,?,?,?,?,?)", (sid, dev_id, g.user["id"], _owner(), g.user["pw_version"], kind,
                                               now, now, now + 3600))
     audit("parc.session.ouverture", f"{dev['hostname']} : {kind}, {sid}")
-    return redirect(url_for("remote_session", sid=sid))
+    return redirect(url_for("remote_session", sid=sid, **({"view": "console"} if request.form.get("view") == "console" else {})))
 
 
 @app.route("/parc/session/<sid>")
@@ -152,7 +154,7 @@ def remote_session(sid):
         db().execute("UPDATE remote_sessions SET browser_attached=1 WHERE id=?", (sid,))
     row = _browser_session(sid)
     db().commit()
-    return render_template("remote_session.html", remote=row)
+    return render_template("remote_session.html", remote=row, detached=request.args.get("view") == "console")
 
 
 @app.route("/parc/session/<sid>/io", methods=["POST"])
@@ -227,4 +229,4 @@ def remote_agent():
     conn.commit()
     for detail in finished:
         audit("parc.session.fin", detail, username="agent")
-    return {"sessions": output, "interval": 0.1 if output else 5}, 200, {"Cache-Control": "no-store"}
+    return {"sessions": output, "interval": 0.025 if output else 5}, 200, {"Cache-Control": "no-store"}

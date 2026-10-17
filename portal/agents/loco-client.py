@@ -15,6 +15,7 @@ import base64
 import ctypes
 import datetime
 import fcntl
+import http.client
 import json
 import os
 import platform
@@ -33,6 +34,7 @@ import time
 import zlib
 import urllib.error
 import urllib.request
+import urllib.parse
 import uuid
 
 VERSION = "@VERSION@"
@@ -499,10 +501,20 @@ class RemoteProcess:
     def payload(self):
         if self.state == "active" and not self.pending:
             try:
-                data = os.read(self.reader, 64 * 1024)
+                parts, size, eof = [], 0, False
+                while size < 256 * 1024:
+                    try:
+                        part = os.read(self.reader, 256 * 1024 - size)
+                    except BlockingIOError:
+                        break
+                    if not part:
+                        eof = True
+                        break
+                    parts.append(part); size += len(part)
+                data = b"".join(parts)
                 if data:
                     self.pending, self.seq = data, self.seq + 1
-                else:
+                elif eof:
                     self.state = "closed"
             except BlockingIOError:
                 pass
@@ -538,6 +550,47 @@ class RemoteProcess:
             self.master = None
 
 
+class RemoteTransport:
+    """Connexion HTTPS persistante dédiée au flux distant (CA et nom toujours vérifiés)."""
+    def __init__(self):
+        self.connection, self.key = None, None
+
+    def close(self):
+        if self.connection:
+            self.connection.close()
+        self.connection, self.key = None, None
+
+    def exchange(self, server, data, token):
+        parsed = urllib.parse.urlsplit(server)
+        ca_stamp = os.stat(CA).st_mtime_ns if os.path.isfile(CA) else None
+        key = (server, ca_stamp)
+        try:
+            if self.key != key:
+                self.close()
+                if parsed.scheme == "https":
+                    self.connection = http.client.HTTPSConnection(parsed.hostname, parsed.port, timeout=10, context=context())
+                elif parsed.scheme == "http":
+                    self.connection = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=10)
+                else:
+                    raise ValueError("Adresse du serveur invalide")
+                self.key = key
+            self.connection.request("POST", parsed.path.rstrip("/") + "/agent/api/remote", json.dumps(data).encode(),
+                                    {"Content-Type": "application/json", "Authorization": "Bearer " + token,
+                                     "User-Agent": "loco-client/" + VERSION})
+            response = self.connection.getresponse()
+            body = response.read(4 * 1024 * 1024 + 1)
+            if response.status != 200:
+                raise urllib.error.HTTPError(server, response.status, response.reason, response.headers, None)
+            if len(body) > 4 * 1024 * 1024:
+                raise ValueError("Réponse distante trop volumineuse")
+            return json.loads(body)
+        except (OSError, ValueError, http.client.HTTPException) as exc:
+            self.close()
+            if isinstance(exc, http.client.HTTPException):
+                raise OSError(str(exc)) from exc
+            raise
+
+
 def remote_service():
     stopping = [False]
     signal.signal(signal.SIGTERM, lambda *_: stopping.__setitem__(0, True))
@@ -548,6 +601,7 @@ def remote_service():
         except BlockingIOError:
             return 0
         sessions, last_ok = {}, time.monotonic()
+        transport = RemoteTransport()
         loaded = os.stat(PROGRAM)
         signature = (loaded.st_ino, loaded.st_mtime_ns, loaded.st_size)
         try:
@@ -561,8 +615,7 @@ def remote_service():
                     conf = load(CONFIG)
                     if not conf.get("token"):
                         break
-                    answer = call(conf["server"], "/agent/api/remote", {"sessions": [s.payload() for s in sessions.values()]},
-                                  conf["token"], timeout=10)
+                    answer = transport.exchange(conf["server"], {"sessions": [s.payload() for s in sessions.values()]}, conf["token"])
                     last_ok = time.monotonic()
                     descriptors = {d["id"]: d for d in answer["sessions"]}
                     for sid in list(sessions):
@@ -578,17 +631,23 @@ def remote_service():
                         except (OSError, ValueError) as e:
                             sessions[sid].error = str(e)[:300]
                             sessions[sid].close()
-                    delay = 0.1 if sessions else 5
+                    busy = any(item.pending for item in sessions.values()) or any(d.get("packets") for d in descriptors.values())
+                    delay = (0 if busy else 0.025) if sessions else 5
                 except (OSError, ValueError, KeyError) as e:
-                    log("session distante : " + str(e)[:200])
-                    if time.monotonic() - last_ok > 20 or getattr(e, "code", 0) in (401, 403):
-                        for item in sessions.values():
-                            item.close()
-                        sessions.clear()
+                    if getattr(e, "code", 0) == 429:
+                        # Le navigateur doit vider sa file : réessayer le même paquet, sans coupure ni rejeu.
+                        last_ok, delay = time.monotonic(), 0.05
+                    else:
+                        log("session distante : " + str(e)[:200])
+                        if time.monotonic() - last_ok > 20 or getattr(e, "code", 0) in (401, 403):
+                            for item in sessions.values():
+                                item.close()
+                            sessions.clear()
                 until = time.monotonic() + delay
                 while not stopping[0] and time.monotonic() < until:
                     time.sleep(min(0.1, max(0, until - time.monotonic())))
         finally:
+            transport.close()
             for item in sessions.values():
                 item.close()
     return 0
@@ -624,6 +683,43 @@ def x11_environment():
             return env
     raise RuntimeError("Bureau Wayland non pris en charge ; une session X11 est nécessaire." if wayland else
                        "Aucune session graphique X11 ouverte sur ce poste.")
+
+
+def rfb_frame(data, width, height, previous=None, incremental=True, tight=True, rgb_order=False):
+    """Rectangles natifs modifiés, sans perte ; les buffers restent bornés à une capture."""
+    if not 1 <= width <= 65535 or not 1 <= height <= 65535 or width * height > 16777216 or len(data) != width * height * 4:
+        raise ValueError("Capture RFB invalide")
+    rectangles = []
+    for y in range(0, height, 128):
+        for x in range(0, width, 128):
+            w, h = min(128, width - x), min(128, height - y)
+            offsets = [(row * width + x) * 4 for row in range(y, y + h)]
+            if incremental and previous is not None and all(data[p:p + w * 4] == previous[p:p + w * 4] for p in offsets):
+                continue
+            raw = b"".join(data[p:p + w * 4] for p in offsets)
+            header = struct.pack(">HHHHi", x, y, w, h, 7 if tight else 0)
+            if tight:
+                rgb = bytearray(w * h * 3)
+                rgb[0::3], rgb[1::3], rgb[2::3] = raw[2::4], raw[1::4], raw[0::4]
+                if rgb == rgb[:3] * (w * h):
+                    payload = b"\x80" + rgb[:3]
+                elif len(rgb) < 12:
+                    payload = b"\x01" + rgb
+                else:
+                    compressed = zlib.compress(rgb, 1)
+                    n = len(compressed)
+                    size = bytes([(n & 127) | (128 if n > 127 else 0)])
+                    if n > 127:
+                        size += bytes([((n >> 7) & 127) | (128 if n > 16383 else 0)])
+                    if n > 16383:
+                        size += bytes([n >> 14])
+                    payload = b"\x01" + size + compressed
+            else:
+                payload = bytearray(raw)
+                if rgb_order:
+                    payload[0::4], payload[2::4] = raw[2::4], raw[0::4]
+            rectangles.append(header + payload)
+    return b"\0\0" + struct.pack(">H", len(rectangles)) + b"".join(rectangles)
 
 
 def linux_desktop():
@@ -667,14 +763,8 @@ def linux_desktop():
     def write(data):
         out.write(data)
         out.flush()
-    def compact(n):
-        data = bytes([(n & 127) | (128 if n > 127 else 0)])
-        if n > 127:
-            data += bytes([((n >> 7) & 127) | (128 if n > 16383 else 0)])
-        if n > 16383:
-            data += bytes([(n >> 14) & 255])
-        return data
     pressed, mask, tight, last_frame, rgb_order = set(), 0, False, 0, False
+    previous = None
     def interrupted(_signum, _frame):
         raise EOFError()
     # SIGTERM doit aussi relâcher les modificateurs si la console est fermée pendant une frappe.
@@ -704,8 +794,8 @@ def linux_desktop():
                     raise ValueError("Trop d'encodages RFB")
                 tight = 7 in struct.unpack(">" + "i" * count, read(count * 4))
             elif kind == 3:
-                read(9)
-                time.sleep(max(0, 0.15 - (time.monotonic() - last_frame)))
+                incremental = read(9)[0] != 0
+                time.sleep(max(0, 0.04 - (time.monotonic() - last_frame)))
                 image = get_image(display, root, 0, 0, width, height, ctypes.c_ulong(-1).value, 2)
                 if not image:
                     raise RuntimeError("Capture de la session X11 impossible")
@@ -718,23 +808,8 @@ def linux_desktop():
                         data = b"".join(data[y * im.bytes_per_line:y * im.bytes_per_line + width * 4] for y in range(height))
                 finally:
                     destroy(image)
-                if tight:
-                    # Bandes < 4 Mio : limite du préfixe compact Tight et du tampon de décodage noVNC.
-                    write(b"\0\0" + struct.pack(">H", (height + 127) // 128))
-                    for y in range(0, height, 128):
-                        h = min(128, height - y)
-                        stripe = data[y * width * 4:(y + h) * width * 4]
-                        rgb = bytearray(width * h * 3)
-                        rgb[0::3], rgb[1::3], rgb[2::3] = stripe[2::4], stripe[1::4], stripe[0::4]
-                        compressed = zlib.compress(rgb, 2)
-                        payload = b"\x01" + (compact(len(compressed)) + compressed if len(rgb) >= 12 else bytes(rgb))
-                        write(struct.pack(">HHHHi", 0, y, width, h, 7) + payload)
-                else:
-                    if rgb_order:
-                        rgb = bytearray(data)
-                        rgb[0::4], rgb[2::4] = data[2::4], data[0::4]
-                        data = bytes(rgb)
-                    write(b"\0\0\0\x01" + struct.pack(">HHHHi", 0, 0, width, height, 0) + data)
+                write(rfb_frame(data, width, height, previous, incremental, tight, rgb_order))
+                previous = data
                 last_frame = time.monotonic()
             elif kind == 4:
                 down, sym = struct.unpack(">BxxI", read(7))

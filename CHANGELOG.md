@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 2.6.0 — 2026-10-17
+
+- **Console dans un onglet dédié** : terminal et noVNC sans la navigation du portail, barre d’outils compacte et surface disponible pour le poste ; plein écran, retour vers sa fiche et fermeture explicite.
+- **Bureau natif et net** : capture Windows sans réduction imposée à 1920 × 1080, compression Tight sans perte sur Windows et X11, affichage ajusté sans agrandissement artificiel ou taille réelle 1:1 avec défilement et indication de résolution.
+- **Fluidité** : rectangles modifiés au lieu d’images complètes, regroupement des paquets, envoi immédiat des saisies et des flux en attente, connexion HTTPS persistante Linux, suppression des attentes TCP inutiles sous Windows. Files bornées et acquittements conservés, reprise sans rejeu quand le récepteur ralentit.
+
 ## 2.5.0 — 2026-10-16
 
 - **Profils d’accès granulaires** : 46 permissions par action, profils personnalisés réutilisables et modèles Administrateur, Lecture seule, Technicien du parc, Gestionnaire des dépôts et Auditeur. Duplication des modèles, attribution par compte et consultation de ses propres droits.

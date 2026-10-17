@@ -197,6 +197,8 @@ namespace Loco
             r.Method = method;
             r.Timeout = timeout;
             r.ReadWriteTimeout = timeout;
+            r.ServicePoint.Expect100Continue = false;
+            r.ServicePoint.UseNagleAlgorithm = false;
             r.Proxy = null;                      // serveur loco sur le réseau local
             r.UserAgent = "loco-client/" + Version;
             r.ServerCertificateValidationCallback = check ?? CheckCertificate;

@@ -152,3 +152,47 @@ class TestRemote(FleetTest):
         self.assertEqual(self.io(sid).get_json()['state'], 'closed')
         with transaction() as conn:
             self.assertEqual(conn.execute('SELECT COUNT(*) FROM remote_packets WHERE session_id=?', (sid,)).fetchone()[0], 0)
+
+    def test_new_tab_is_a_console_without_portal_navigation_and_keeps_access_checks(self):
+        response = self.admin.post(f'/parc/{self.dev_id}/session', {'kind': 'desktop', 'view': 'console'})
+        location = response.headers['Location']
+        self.assertIn('?view=console', location)
+        page = self.admin.c.get(location).get_data(as_text=True)
+        self.assertIn('remote-detached', page)
+        self.assertIn('id="remote-screen"', page)
+        self.assertIn('Taille réelle (1:1)', page)
+        self.assertNotIn('aria-label="Navigation principale"', page)
+        other = fixture.Browser(); other.login('admin', fixture.ADMIN_PW)
+        self.assertEqual(other.c.get(location).status_code, 404)
+
+    def test_browser_drains_a_large_frame_in_one_batch_without_raising_the_packet_limit(self):
+        sid = self.open('desktop')
+        blocks = [bytes([n]) * (256 * 1024) for n in range(1, 6)]
+        for seq, block in enumerate(blocks, 1):
+            self.assertEqual(self.exchange([{'id': sid, 'seq': seq, 'data': base64.b64encode(block).decode()}]).status_code, 200)
+        response = self.io(sid).get_json()
+        self.assertEqual([p['seq'] for p in response['packets']], [1, 2, 3, 4])
+        self.assertEqual(b''.join(base64.b64decode(p['data']) for p in response['packets']), b''.join(blocks[:4]))
+        response = self.io(sid, {'ack': 4}).get_json()
+        self.assertEqual([p['seq'] for p in response['packets']], [5])
+        self.assertEqual(base64.b64decode(response['packets'][0]['data']), blocks[4])
+
+    def test_slow_browser_backpressure_retries_the_same_packet_without_losing_bytes(self):
+        sid = self.open('desktop')
+        block = base64.b64encode(b'x' * (256 * 1024)).decode()
+        for seq in range(1, 9):
+            self.assertEqual(self.exchange([{'id': sid, 'seq': seq, 'data': block}]).status_code, 200)
+        pending = [{'id': sid, 'seq': 9, 'data': block}]
+        self.assertEqual(self.exchange(pending).status_code, 429)
+        first = self.io(sid).get_json()['packets']
+        self.assertEqual([p['seq'] for p in first], [1, 2, 3, 4])
+        self.io(sid, {'ack': 4})
+        for _ in range(2):
+            response = self.exchange(pending)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.get_json()['sessions'][0]['ack'], 9)
+        remaining = self.io(sid, {'ack': 4}).get_json()['packets']
+        self.assertEqual([p['seq'] for p in remaining], [5, 6, 7, 8])
+        last = self.io(sid, {'ack': 8}).get_json()['packets']
+        self.assertEqual([p['seq'] for p in last], [9])
+        self.assertEqual(base64.b64decode(last[0]['data']), b'x' * (256 * 1024))
